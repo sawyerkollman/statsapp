@@ -23,7 +23,7 @@ public sealed class SettingsService
                 ? JsonSerializer.Deserialize<AppSettings>(File.ReadAllText(_path)) ?? new AppSettings()
                 : new AppSettings();
         }
-        catch (JsonException)
+        catch (Exception ex) when (ex is JsonException or IOException or UnauthorizedAccessException)
         {
             settings = new AppSettings();
         }

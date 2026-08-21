@@ -61,4 +61,15 @@ public class SettingsServiceTests : IDisposable
         svc.Save(new AppSettings { PollIntervalSeconds = stored });
         Assert.Equal(expected, svc.Load().PollIntervalSeconds);
     }
+
+    [Fact]
+    public void Load_FileLockedByAnotherHandle_ReturnsDefaults()
+    {
+        Directory.CreateDirectory(_dir);
+        var path = Path.Combine(_dir, "settings.json");
+        File.WriteAllText(path, "{\"PollIntervalSeconds\": 3.0}");
+        using var exclusive = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.None);
+        var s = new SettingsService(_dir).Load();
+        Assert.Equal(1.0, s.PollIntervalSeconds); // defaults, not a crash
+    }
 }
