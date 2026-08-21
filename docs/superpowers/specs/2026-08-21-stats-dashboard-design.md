@@ -69,7 +69,7 @@ Custom lightweight `Polyline` rendering inside each tile. 120 points per tile; n
 - **Sensor absent on this machine:** metric never appears in picker; no dead tiles.
 - **Kernel driver init failure:** non-blocking warning banner; app degrades to WMI/`PerformanceCounter` fallback providing CPU load, RAM, disk activity, network throughput. Temps, power, clocks, voltages unavailable in degraded mode and marked so in picker.
 - **GPU asleep/removed mid-session:** affected tiles show "—", recover automatically when sensor returns.
-- **Settings file corrupt/missing:** fall back to defaults (sensible starter metric set), rewrite file on next save.
+- **Settings file corrupt/missing:** fall back to defaults, rewrite file on next save. Default dashboard set: `cpu.package.temp`, `cpu.total.load`, `cpu.package.power`, `cpu.ppt`, `gpu.temp`, `gpu.core.clock`, `gpu.power`, `mem.used`, one `disk.*.activity` per disk, one `net.*.down` per adapter. Default overlay set: `cpu.package.temp`, `gpu.temp`, `gpu.core.clock`.
 
 ## 5. Testing
 
