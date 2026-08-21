@@ -42,6 +42,7 @@ public static class SensorMapper
             "Load" => ("%", "F0"),
             "Power" => ("W", "F1"),
             "Voltage" => ("V", "F3"),
+            "Current" => ("A", "F1"),
             "Fan" => ("RPM", "F0"),
             "Control" => ("%", "F0"),
             "Throughput" => ("B/s", "F0"),

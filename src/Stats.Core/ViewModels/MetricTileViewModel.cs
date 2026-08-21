@@ -1,3 +1,4 @@
+using System.Globalization;
 using CommunityToolkit.Mvvm.ComponentModel;
 using Stats.Core.Metrics;
 
@@ -29,9 +30,9 @@ public sealed partial class MetricTileViewModel : ObservableObject
         CurrentText = ValueFormatter.Format(Definition, _history.Current);
         MinMaxText = float.IsNaN(_history.SessionMin)
             ? ""
-            : $"min {ValueFormatter.Format(Definition, _history.SessionMin)}   max {ValueFormatter.Format(Definition, _history.SessionMax)}";
-        LimitText = _limit is float limit && _history.Current is float current
-            ? $"{current / limit * 100:F0}% of {ValueFormatter.Format(Definition, limit)}"
+            : $"min {ValueFormatter.Format(Definition, _history.SessionMin)}   avg {ValueFormatter.Format(Definition, _history.SessionAvg)}   max {ValueFormatter.Format(Definition, _history.SessionMax)}";
+        LimitText = _limit is float limit && limit > 0 && _history.Current is float current
+            ? string.Create(CultureInfo.InvariantCulture, $"{current / limit * 100:F0}% of {ValueFormatter.Format(Definition, limit)}")
             : "";
         HistoryValues = _history.ToArray();
     }

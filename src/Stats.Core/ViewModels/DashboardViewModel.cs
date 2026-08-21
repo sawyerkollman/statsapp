@@ -34,12 +34,16 @@ public sealed partial class DashboardViewModel : ObservableObject
     public List<MetricPickerItem> PickerItems { get; } = new();
 
     public event Action? OverlayMetricsChanged;
+    public event Action? OverlayToggleRequested;
 
     [ObservableProperty] private bool _isDegraded;
     [ObservableProperty] private bool _isPickerOpen;
 
     [RelayCommand]
     private void TogglePicker() => IsPickerOpen = !IsPickerOpen;
+
+    [RelayCommand]
+    private void ToggleOverlay() => OverlayToggleRequested?.Invoke();
 
     public void RefreshAll()
     {

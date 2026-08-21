@@ -38,7 +38,7 @@ public sealed class SensorPoller : IDisposable
             {
                 PollOnce();
                 try { await Task.Delay(Interval, ct); }
-                catch (TaskCanceledException) { break; }
+                catch (OperationCanceledException) { break; }
             }
         }, ct);
     }

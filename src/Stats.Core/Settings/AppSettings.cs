@@ -3,6 +3,8 @@ namespace Stats.Core.Settings;
 public sealed class AppSettings
 {
     public double PollIntervalSeconds { get; set; } = 1.0;
+    /// <summary>True once first-run defaults have been applied; lets "user unchecked everything" survive restarts.</summary>
+    public bool DefaultsApplied { get; set; }
     public List<string> DashboardMetrics { get; set; } = new();
     public List<string> OverlayMetrics { get; set; } = new();
     /// <summary>Optional user-entered limits (e.g. PBO PPT watts) keyed by metric id; tile shows "% of limit" when set.</summary>

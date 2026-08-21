@@ -15,7 +15,8 @@ public static class DefaultSelector
             FirstId(defs, MetricGroup.Gpu, "°C", "core"),
             FirstId(defs, MetricGroup.Gpu, "MHz", "core"),
             FirstId(defs, MetricGroup.Gpu, "W", "package", "power"),
-            FirstId(defs, MetricGroup.Memory, "%", "memory"),
+            FirstId(defs, MetricGroup.Memory, "%", "memory")
+                ?? defs.FirstOrDefault(d => d.Group == MetricGroup.Memory)?.Id,
         };
 
         foreach (var hw in defs.Where(d => d.Group == MetricGroup.Storage).Select(d => d.HardwareName).Distinct())

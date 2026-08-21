@@ -53,6 +53,16 @@ public class DefaultSelectorTests
     }
 
     [Fact]
+    public void DashboardDefaults_NoPercentMemoryMetric_FallsBackToAnyMemoryMetric()
+    {
+        var defs = new List<MetricDefinition>
+        {
+            new("mem.perf.used", "Memory Used", MetricGroup.Memory, "Memory", "GB", "F1"),
+        };
+        Assert.Contains("mem.perf.used", DefaultSelector.DashboardDefaults(defs));
+    }
+
+    [Fact]
     public void Defaults_EmptyDiscovery_ReturnsEmpty()
     {
         Assert.Empty(DefaultSelector.DashboardDefaults(new List<MetricDefinition>()));

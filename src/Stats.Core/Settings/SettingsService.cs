@@ -34,6 +34,8 @@ public sealed class SettingsService
     public void Save(AppSettings settings)
     {
         Directory.CreateDirectory(_directory);
-        File.WriteAllText(_path, JsonSerializer.Serialize(settings, Options));
+        var tmp = _path + ".tmp";
+        File.WriteAllText(tmp, JsonSerializer.Serialize(settings, Options));
+        File.Move(tmp, _path, overwrite: true);
     }
 }

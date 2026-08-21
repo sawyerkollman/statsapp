@@ -57,6 +57,11 @@ public sealed class PerfCounterSensorReader : ISensorReader
             }
         });
 
+        foreach (var (_, counter) in _counters)
+        {
+            try { counter.NextValue(); } catch { /* priming read; real value next tick */ }
+        }
+        try { _memAvailable?.NextValue(); } catch { }
         return _definitions;
     }
 

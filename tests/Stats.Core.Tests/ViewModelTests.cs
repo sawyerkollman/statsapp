@@ -28,7 +28,18 @@ public class ViewModelTests
         Assert.Equal("45.0 °C", tile.CurrentText);
         Assert.Contains("40.0", tile.MinMaxText);
         Assert.Contains("45.0", tile.MinMaxText);
+        Assert.Contains("avg 42.5", tile.MinMaxText);
         Assert.Equal(2, tile.HistoryValues.Length);
+    }
+
+    [Fact]
+    public void Tile_WithZeroLimit_ShowsNoLimitText()
+    {
+        var store = NewStore();
+        Push(store, 40f, 75f, 2400f);
+        var tile = new MetricTileViewModel(CpuPpt, store["cpu.ppt"], limit: 0f);
+        tile.Refresh();
+        Assert.Equal("", tile.LimitText);
     }
 
     [Fact]

@@ -44,6 +44,7 @@ public class SensorMapperTests
     [InlineData("Load", "%")]
     [InlineData("Power", "W")]
     [InlineData("Voltage", "V")]
+    [InlineData("Current", "A")]
     [InlineData("Fan", "RPM")]
     [InlineData("Throughput", "B/s")]
     [InlineData("Data", "GB")]
