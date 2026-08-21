@@ -34,20 +34,28 @@ public partial class App : Application
         _settingsService = new SettingsService(settingsDir);
         _settings = _settingsService.Load();
 
+        IReadOnlyList<MetricDefinition> definitions;
         try
         {
             _reader = new LhmSensorReader();
+            definitions = _reader.Discover();
         }
         catch (Exception)
         {
+            _reader?.Dispose();
             _reader = new PerfCounterSensorReader();
+            definitions = _reader.Discover();
         }
+        // LHM does not throw when its kernel driver fails to load — CPU temp/power sensors are simply absent.
+        bool cpuSensorsMissing = !definitions.Any(d => d.Group == MetricGroup.Cpu && d.Unit == "°C");
+        bool degraded = _reader.IsDegraded || cpuSensorsMissing;
 
-        var definitions = _reader.Discover();
-        if (_settings.DashboardMetrics.Count == 0)
+        if (!_settings.DefaultsApplied)
+        {
             _settings.DashboardMetrics = DefaultSelector.DashboardDefaults(definitions);
-        if (_settings.OverlayMetrics.Count == 0)
             _settings.OverlayMetrics = DefaultSelector.OverlayDefaults(definitions);
+            _settings.DefaultsApplied = true;
+        }
 
         _store = new MetricStore(definitions);
         _poller = new SensorPoller(_reader)
@@ -57,7 +65,7 @@ public partial class App : Application
 
         _dashboardVm = new DashboardViewModel(_store, _settings, SaveSettings)
         {
-            IsDegraded = _reader.IsDegraded,
+            IsDegraded = degraded,
         };
 
         _overlayVm = new OverlayViewModel(_store, _settings);
@@ -66,16 +74,17 @@ public partial class App : Application
             DataContext = _overlayVm,
             Opacity = _settings.OverlayOpacity,
         };
-        if (_settings.OverlayLeft is double ol) _overlay.Left = ol;
-        if (_settings.OverlayTop is double ot) _overlay.Top = ot;
+        if (_settings.OverlayLeft is double ol) _overlay.Left = ClampToVirtualScreenX(ol, 100);
+        if (_settings.OverlayTop is double ot) _overlay.Top = ClampToVirtualScreenY(ot, 40);
         _overlay.LocationChanged += (_, _) =>
         {
             _settings.OverlayLeft = _overlay.Left;
             _settings.OverlayTop = _overlay.Top;
         };
         _dashboardVm.OverlayMetricsChanged += () => _overlayVm.Rebuild();
+        _dashboardVm.OverlayToggleRequested += ToggleOverlay;
 
-        _trayCpuTempId = DefaultSelector.OverlayDefaults(definitions).FirstOrDefault();
+        _trayCpuTempId = definitions.FirstOrDefault(d => d.Group == MetricGroup.Cpu && d.Unit == "°C")?.Id;
         _trayGpuTempId = definitions.FirstOrDefault(d =>
             d.Group == MetricGroup.Gpu && d.Unit == "°C")?.Id;
         SetupTray();
@@ -92,7 +101,8 @@ public partial class App : Application
         });
 
         _dashboard.AllowClose = false; // close button hides to tray; exit via tray menu
-        _dashboard.Closing += (_, _) => SaveWindowBounds();
+        _dashboard.LocationChanged += (_, _) => SaveWindowBounds();
+        _dashboard.SizeChanged += (_, _) => SaveWindowBounds();
         _dashboard.Show();
         _poller.Start();
     }
@@ -107,26 +117,38 @@ public partial class App : Application
 
     private void SaveSettings()
     {
-        if (_settings is not null) _settingsService?.Save(_settings);
+        if (_settings is null) return;
+        try { _settingsService?.Save(_settings); }
+        catch (Exception) { /* disk unavailable — keep running; next save retries */ }
     }
 
     private void RestoreWindowBounds()
     {
         if (_dashboard is null || _settings is null) return;
-        if (_settings.WindowLeft is double left) _dashboard.Left = left;
-        if (_settings.WindowTop is double top) _dashboard.Top = top;
         if (_settings.WindowWidth is double width) _dashboard.Width = width;
         if (_settings.WindowHeight is double height) _dashboard.Height = height;
+        if (_settings.WindowLeft is double left) _dashboard.Left = ClampToVirtualScreenX(left, 200);
+        if (_settings.WindowTop is double top) _dashboard.Top = ClampToVirtualScreenY(top, 100);
     }
 
     private void SaveWindowBounds()
     {
         if (_dashboard is null || _settings is null) return;
+        if (_dashboard.WindowState != WindowState.Normal) return;
         _settings.WindowLeft = _dashboard.Left;
         _settings.WindowTop = _dashboard.Top;
         _settings.WindowWidth = _dashboard.Width;
         _settings.WindowHeight = _dashboard.Height;
     }
+
+    /// <summary>Keeps at least <paramref name="minVisible"/> px of the window inside the combined monitor area.</summary>
+    private static double ClampToVirtualScreenX(double left, double minVisible) =>
+        Math.Max(SystemParameters.VirtualScreenLeft,
+                 Math.Min(left, SystemParameters.VirtualScreenLeft + SystemParameters.VirtualScreenWidth - minVisible));
+
+    private static double ClampToVirtualScreenY(double top, double minVisible) =>
+        Math.Max(SystemParameters.VirtualScreenTop,
+                 Math.Min(top, SystemParameters.VirtualScreenTop + SystemParameters.VirtualScreenHeight - minVisible));
 
     private void SetupTray()
     {
@@ -150,6 +172,8 @@ public partial class App : Application
         menu.Items.Add(exit);
         _tray.ContextMenu = menu;
         _tray.TrayLeftMouseUp += (_, _) => ShowDashboard();
+        // TaskbarIcon only materializes the shell icon on Loaded; created in code it must be forced.
+        _tray.ForceCreate(enablesEfficiencyMode: false);
     }
 
     private void UpdateTrayTooltip()
