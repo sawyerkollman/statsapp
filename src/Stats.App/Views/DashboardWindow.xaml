@@ -31,7 +31,7 @@
         <Border DockPanel.Dock="Top" Background="#7A2D2D" Padding="10,6"
                 Visibility="{Binding IsDegraded, Converter={StaticResource BoolToVis}}">
             <TextBlock Foreground="White" TextWrapping="Wrap"
-                       Text="CPU sensor driver unavailable — degraded mode: no CPU temperatures, clocks, power, or voltages. Run as administrator to enable them."/>
+                       Text="CPU sensor driver could not load — degraded mode: no CPU temperatures, clocks, power, or voltages. Usually another monitoring tool holds the driver, or it is blocked by Windows (vulnerable-driver blocklist / Secure Boot). Close other monitors and restart Stats."/>
         </Border>
 
         <Border DockPanel.Dock="Top" Padding="14,10">

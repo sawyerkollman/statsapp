@@ -42,7 +42,7 @@ public partial class App : Application
         }
         catch (Exception)
         {
-            _reader?.Dispose();
+            try { _reader?.Dispose(); } catch (Exception) { /* failed reader; fall through to fallback */ }
             _reader = new PerfCounterSensorReader();
             definitions = _reader.Discover();
         }
@@ -52,8 +52,12 @@ public partial class App : Application
 
         if (!_settings.DefaultsApplied)
         {
-            _settings.DashboardMetrics = DefaultSelector.DashboardDefaults(definitions);
-            _settings.OverlayMetrics = DefaultSelector.OverlayDefaults(definitions);
+            // Seed only a genuinely fresh settings file; a pre-flag file with selections keeps them.
+            if (_settings.DashboardMetrics.Count == 0 && _settings.OverlayMetrics.Count == 0)
+            {
+                _settings.DashboardMetrics = DefaultSelector.DashboardDefaults(definitions);
+                _settings.OverlayMetrics = DefaultSelector.OverlayDefaults(definitions);
+            }
             _settings.DefaultsApplied = true;
         }
 
@@ -78,13 +82,17 @@ public partial class App : Application
         if (_settings.OverlayTop is double ot) _overlay.Top = ClampToVirtualScreenY(ot, 40);
         _overlay.LocationChanged += (_, _) =>
         {
+            if (double.IsNaN(_overlay.Left) || double.IsNaN(_overlay.Top)) return;
             _settings.OverlayLeft = _overlay.Left;
             _settings.OverlayTop = _overlay.Top;
         };
         _dashboardVm.OverlayMetricsChanged += () => _overlayVm.Rebuild();
         _dashboardVm.OverlayToggleRequested += ToggleOverlay;
 
-        _trayCpuTempId = definitions.FirstOrDefault(d => d.Group == MetricGroup.Cpu && d.Unit == "°C")?.Id;
+        var cpuTemps = definitions.Where(d => d.Group == MetricGroup.Cpu && d.Unit == "°C").ToList();
+        _trayCpuTempId = (cpuTemps.FirstOrDefault(d => d.DisplayName.Contains("tctl", StringComparison.OrdinalIgnoreCase))
+                       ?? cpuTemps.FirstOrDefault(d => d.DisplayName.Contains("package", StringComparison.OrdinalIgnoreCase))
+                       ?? cpuTemps.FirstOrDefault())?.Id;
         _trayGpuTempId = definitions.FirstOrDefault(d =>
             d.Group == MetricGroup.Gpu && d.Unit == "°C")?.Id;
         SetupTray();
@@ -135,6 +143,7 @@ public partial class App : Application
     {
         if (_dashboard is null || _settings is null) return;
         if (_dashboard.WindowState != WindowState.Normal) return;
+        if (double.IsNaN(_dashboard.Left) || double.IsNaN(_dashboard.Top)) return;
         _settings.WindowLeft = _dashboard.Left;
         _settings.WindowTop = _dashboard.Top;
         _settings.WindowWidth = _dashboard.Width;
@@ -173,7 +182,8 @@ public partial class App : Application
         _tray.ContextMenu = menu;
         _tray.TrayLeftMouseUp += (_, _) => ShowDashboard();
         // TaskbarIcon only materializes the shell icon on Loaded; created in code it must be forced.
-        _tray.ForceCreate(enablesEfficiencyMode: false);
+        try { _tray.ForceCreate(enablesEfficiencyMode: false); }
+        catch (Exception) { /* shell not ready (logon / explorer restart); dashboard still usable */ }
     }
 
     private void UpdateTrayTooltip()
