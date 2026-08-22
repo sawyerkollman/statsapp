@@ -10,9 +10,10 @@ temps, fan, power, VRAM; RAM; per-disk activity; per-adapter network throughput.
     dotnet build -c Release
     src\Stats.App\bin\Release\net8.0-windows\Stats.App.exe
 
-Requires administrator (UAC prompt) — the LibreHardwareMonitor kernel driver
-needs it for CPU temperature/power sensors, same as Core Temp or Ryzen Master.
-Without it the app falls back to a degraded mode (loads/usage only).
+Requires administrator (UAC prompt) and the **PawnIO** kernel driver
+(`winget install namazso.PawnIO` or https://pawnio.eu) — LibreHardwareMonitor 0.9.6
+reads CPU temperature/clock/power through PawnIO only, same as Core Temp or Ryzen Master.
+Without it the app shows a degraded-mode banner (loads/usage only).
 
 ## Use
 

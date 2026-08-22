@@ -1,9 +1,10 @@
 using LibreHardwareMonitor.Hardware;
+using LibreHardwareMonitor.PawnIo;
 using Stats.Core.Metrics;
 
 namespace Stats.Core.Sensors;
 
-/// <summary>Wraps LibreHardwareMonitor. Requires admin for the kernel driver (CPU temps/power/clocks).</summary>
+/// <summary>Wraps LibreHardwareMonitor. CPU temps/clocks/power need the PawnIO kernel driver (installed separately) plus admin.</summary>
 public sealed class LhmSensorReader : ISensorReader
 {
     private readonly Computer _computer;
@@ -24,7 +25,8 @@ public sealed class LhmSensorReader : ISensorReader
     }
 
     public string Name => "LibreHardwareMonitor";
-    public bool IsDegraded => false;
+    // LHM 0.9.6 reads CPU MSR/SMN only through PawnIO; without it the sensors exist but read 0.
+    public bool IsDegraded => !PawnIo.IsInstalled;
 
     public IReadOnlyList<MetricDefinition> Discover()
     {
