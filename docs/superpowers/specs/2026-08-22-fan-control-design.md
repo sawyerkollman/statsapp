@@ -63,7 +63,6 @@ public interface IFanControlBackend
     IReadOnlyList<FanChannel> Channels { get; }        // discovered once, after Discover()
     void SetPercent(string channelId, float percent);  // poll thread only; clamps to channel range
     void SetAuto(string channelId);                    // poll thread only; IControl.SetDefault()
-    float? CurrentPercent(string channelId);           // last value LHM reports for the control sensor
 }
 ```
 Channel discovery: every sensor whose `Control` is non-null — for `Control`-type sensors the RPM sensor is
@@ -79,7 +78,7 @@ ordinary metrics (dashboard, overlay, peaks, thresholds). `Control` sensors are 
 the current PWM is a metric.
 
 **`PerfCounterSensorReader`** — implements `IFanControlBackend` with zero channels (degraded mode: no fan
-control). `CompositeSensorReader` forwards `IFanControlBackend` to the first reader that implements it.
+control). `CompositeSensorReader` forwards `IFanControlBackend` to the first reader that implements it and exposes at least one channel (a channel-less degraded reader never swallows writes). The current PWM is read from the control sensor's metric (`PercentMetricId`) in the snapshot, falling back to the last written value.
 
 ### Stats.Core/Fans (new)
 
