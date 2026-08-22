@@ -174,7 +174,7 @@ non-Store PowerShell / cmd.
   checked in under `tests/Stats.Core.Tests/Fixtures/presentmon-2.5.1-sample.csv` (captured from a
   non-packaged elevated terminal during implementation; the plan's first task produces it).
 - `FrameStatsAggregatorTests` — FPS/frametime over window; `null` under 10 frames; 1% low null under
-  100 frames; percentile index on exact boundaries (n=100, n=1000); ring-buffer cap at 1000; stale PID
+  100 frames; percentile index on exact boundaries (n=100, n=1000); ring-buffer cap at 5000 and 1% low over the newest 1000; stale PID
   pruning at 10 s; per-PID isolation; thread-safety smoke (concurrent Add + Snapshot, no exception).
 - `CompositeSensorReaderTests` — Discover concatenation; Read merge; one reader throwing doesn't drop
   the other's values; Dispose fans out.
