@@ -72,4 +72,93 @@ public class SettingsServiceTests : IDisposable
         var s = new SettingsService(_dir).Load();
         Assert.Equal(1.0, s.PollIntervalSeconds); // defaults, not a crash
     }
+
+    [Fact]
+    public void Load_SeedsThresholdRulesWhenEmpty()
+    {
+        var s = new SettingsService(_dir).Load();
+        Assert.Equal(4, s.ThresholdRules.Count);
+        var cpu = s.ThresholdRules.First(r => r.Group == Stats.Core.Metrics.MetricGroup.Cpu && r.Unit == "°C");
+        Assert.Equal(85f, cpu.Warn);
+        Assert.Equal(92f, cpu.Crit);
+    }
+
+    [Fact]
+    public void SaveThenLoad_RoundTripsV11Fields_WithStringEnums()
+    {
+        var svc = new SettingsService(_dir);
+        var s = new AppSettings
+        {
+            HistoryWindowMinutes = 15,
+            ShowCoreMatrix = false,
+            OverlayOrientation = OverlayOrientation.Vertical,
+            OverlayFontScale = 1.4,
+            OverlayClickThrough = true,
+            OverlayHotkey = "F9",
+            CollapsedGroups = { "Storage" },
+            PeaksWidth = 640,
+        };
+        s.PrefFor("cpu.ppt").Kind = TileKind.Gauge;
+        s.PrefFor("cpu.ppt").Size = TileSize.L;
+        s.PrefFor("cpu.ppt").Name = "PPT";
+        s.PrefFor("cpu.ppt").Max = 150f;
+        s.ThresholdOverrides["cpu.temp"] = new ThresholdRule { Warn = 70, Crit = 80 };
+        svc.Save(s);
+
+        var json = File.ReadAllText(Path.Combine(_dir, "settings.json"));
+        Assert.Contains("\"Kind\": \"Gauge\"", json);      // enums as strings, not ints
+        Assert.Contains("\"OverlayOrientation\": \"Vertical\"", json);
+
+        var l = new SettingsService(_dir).Load();
+        Assert.Equal(15, l.HistoryWindowMinutes);
+        Assert.False(l.ShowCoreMatrix);
+        Assert.Equal(OverlayOrientation.Vertical, l.OverlayOrientation);
+        Assert.Equal(1.4, l.OverlayFontScale);
+        Assert.True(l.OverlayClickThrough);
+        Assert.Equal("F9", l.OverlayHotkey);
+        Assert.Equal(new[] { "Storage" }, l.CollapsedGroups);
+        Assert.Equal(640, l.PeaksWidth);
+        var pref = l.TilePrefs["cpu.ppt"];
+        Assert.Equal(TileKind.Gauge, pref.Kind);
+        Assert.Equal(TileSize.L, pref.Size);
+        Assert.Equal("PPT", pref.Name);
+        Assert.Equal(150f, pref.Max);
+        Assert.Equal(80f, l.ThresholdOverrides["cpu.temp"].Crit);
+    }
+
+    [Fact]
+    public void Load_V1File_GetsDefaultsForNewFields()
+    {
+        Directory.CreateDirectory(_dir);
+        File.WriteAllText(Path.Combine(_dir, "settings.json"),
+            "{\"PollIntervalSeconds\":1.0,\"DefaultsApplied\":true,\"DashboardMetrics\":[\"a\"],\"OverlayMetrics\":[],\"MetricLimits\":{},\"OverlayOpacity\":0.85}");
+        var l = new SettingsService(_dir).Load();
+        Assert.Equal(new[] { "a" }, l.DashboardMetrics);
+        Assert.Empty(l.TilePrefs);
+        Assert.Equal(2, l.HistoryWindowMinutes);
+        Assert.True(l.ShowCoreMatrix);
+        Assert.Equal("Ctrl+Shift+O", l.OverlayHotkey);
+        Assert.Equal(4, l.ThresholdRules.Count);
+    }
+
+    [Theory]
+    [InlineData(0, 2)]
+    [InlineData(7, 5)]
+    [InlineData(600, 60)]
+    public void Load_SnapsHistoryWindowToAllowedValues(int stored, int expected)
+    {
+        var svc = new SettingsService(_dir);
+        svc.Save(new AppSettings { HistoryWindowMinutes = stored });
+        Assert.Equal(expected, svc.Load().HistoryWindowMinutes);
+    }
+
+    [Fact]
+    public void PrefFor_CreatesOnce()
+    {
+        var s = new AppSettings();
+        var a = s.PrefFor("x");
+        a.Size = TileSize.S;
+        Assert.Same(a, s.PrefFor("x"));
+        Assert.Equal(TileSize.S, s.TilePrefs["x"].Size);
+    }
 }
