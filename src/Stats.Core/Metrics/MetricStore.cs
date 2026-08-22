@@ -25,4 +25,14 @@ public sealed class MetricStore
         foreach (var (id, history) in _histories)
             history.Add(snapshot.Values.TryGetValue(id, out var v) ? v : null);
     }
+
+    public void ResizeAll(int capacity)
+    {
+        foreach (var history in _histories.Values) history.Resize(capacity);
+    }
+
+    public void ResetSession()
+    {
+        foreach (var history in _histories.Values) history.ResetSession();
+    }
 }
