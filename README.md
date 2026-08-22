@@ -16,6 +16,11 @@ LibreHardwareMonitor reads CPU temperature/clock/power through PawnIO only, same
 or Ryzen Master. Without it the app shows a degraded-mode banner (loads/usage only).
 Optional checkbox: start Stats at sign-in (a Scheduled Task, so no UAC prompt each login).
 Uninstall from Settings → Apps; PawnIO is left installed because other tools may use it.
+- **FPS counter** — select FPS / 1% Low FPS / Frame Time from the *Game* group. Stats runs
+  the bundled Intel PresentMon helper only while one of them is selected. Launch Stats from
+  the Start menu or desktop shortcut: processes started from the Microsoft Store build of
+  PowerShell/Terminal inherit an MSIX identity that Windows blocks from ETW tracing, so FPS
+  stays blank there.
 
 ## Run from source
 
@@ -23,6 +28,8 @@ Uninstall from Settings → Apps; PawnIO is left installed because other tools m
     src\Stats.App\bin\Release\net8.0-windows\Stats.App.exe
 
 Requires administrator (UAC prompt) and PawnIO (`winget install namazso.PawnIO`).
+For FPS while running from source, run `installer\build.ps1` once (or download
+`PresentMon-2.5.1-x64.exe` into `installer\vendor\`); the app finds it there.
 
 ## Build the installer
 
