@@ -19,6 +19,29 @@
     <ApplicationIcon>Assets\app.ico</ApplicationIcon>
   </PropertyGroup>
 
+  <!-- Version: build.ps1 / CI pass -p:StatsVersion=1.2.3 (or 1.2.3-beta). Local builds get 0.0.0-dev.
+       .NET derives AssemblyVersion/FileVersion (numeric) and InformationalVersion (full) from Version. -->
+  <PropertyGroup>
+    <StatsVersion Condition="'$(StatsVersion)' == ''">0.0.0-dev</StatsVersion>
+    <Version>$(StatsVersion)</Version>
+    <Product>Stats</Product>
+    <AssemblyTitle>Stats</AssemblyTitle>
+    <Company>Sawyer Kollman</Company>
+    <Copyright>Copyright © Sawyer Kollman</Copyright>
+    <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
+  </PropertyGroup>
+
+  <!-- Publish-only: self-contained single-file win-x64. _IsPublishing is set by `dotnet publish` (SDK 7+),
+       so plain build/test output is unaffected. PublishTrimmed is deliberately absent (WPF unsupported). -->
+  <PropertyGroup Condition="'$(_IsPublishing)' == 'true'">
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <SelfContained>true</SelfContained>
+    <PublishSingleFile>true</PublishSingleFile>
+    <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
+    <DebugType>none</DebugType>
+    <DebugSymbols>false</DebugSymbols>
+  </PropertyGroup>
+
   <ItemGroup>
     <Resource Include="Assets\app.ico" />
   </ItemGroup>
