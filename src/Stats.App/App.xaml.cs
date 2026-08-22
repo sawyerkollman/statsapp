@@ -1,8 +1,10 @@
 using System.IO;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Resources;
 using H.NotifyIcon;
 using Stats.App.Helpers;
+using Stats.App.Tray;
 using Stats.App.Views;
 using Stats.Core.Metrics;
 using Stats.Core.Sensors;
@@ -32,6 +34,9 @@ public partial class App : Application
     private GlobalHotkey? _hotkey;
     private PeaksWindow? _peaks;
     private PeaksViewModel? _peaksVm;
+    private TrayIconRenderer? _trayRenderer;
+    private System.Drawing.Icon? _appIcon;
+    private MetricDefinition? _trayCpuTempDef;
 
     protected override void OnStartup(StartupEventArgs e)
     {
@@ -119,6 +124,8 @@ public partial class App : Application
                        ?? cpuTemps.FirstOrDefault())?.Id;
         _trayGpuTempId = definitions.FirstOrDefault(d =>
             d.Group == MetricGroup.Gpu && d.Unit == "°C")?.Id;
+        _trayCpuTempDef = definitions.FirstOrDefault(d => d.Id == _trayCpuTempId);
+        _trayRenderer = new TrayIconRenderer();
         SetupTray();
 
         _dashboard = new DashboardWindow { DataContext = _dashboardVm };
@@ -146,6 +153,8 @@ public partial class App : Application
         _poller?.Dispose();
         _reader?.Dispose();
         SaveSettings();
+        _trayRenderer?.Dispose();
+        _appIcon?.Dispose();
         base.OnExit(e);
     }
 
@@ -190,7 +199,7 @@ public partial class App : Application
         _tray = new TaskbarIcon
         {
             ToolTipText = "Stats",
-            Icon = System.Drawing.SystemIcons.Application,
+            Icon = LoadAppIcon(),
         };
         var menu = new ContextMenu();
 
@@ -218,14 +227,36 @@ public partial class App : Application
         catch (Exception) { /* shell not ready (logon / explorer restart); dashboard still usable */ }
     }
 
+    private System.Drawing.Icon LoadAppIcon()
+    {
+        try
+        {
+            StreamResourceInfo? sri = GetResourceStream(new Uri("pack://application:,,,/Assets/app.ico"));
+            if (sri?.Stream is Stream s) { _appIcon = new System.Drawing.Icon(s); return _appIcon; }
+        }
+        catch { /* fall back below */ }
+        return System.Drawing.SystemIcons.Application;
+    }
+
     private void UpdateTrayTooltip()
     {
-        if (_tray is null || _store is null) return;
+        if (_tray is null || _store is null || _settings is null) return;
         string Part(string? id, string label) =>
             id is not null && _store.TryGet(id, out var h) && h.Current is float v
                 ? $"{label} {v:F0}°C" : "";
         var text = $"Stats  {Part(_trayCpuTempId, "CPU")}  {Part(_trayGpuTempId, "GPU")}".Trim();
         _tray.ToolTipText = text.Length > 0 ? text : "Stats";
+
+        if (_trayRenderer is null || _trayCpuTempDef is null) return;
+        float? temp = _store.TryGet(_trayCpuTempDef.Id, out var hist) ? hist.Current : null;
+        var label = temp is float t ? t.ToString("F0") : "–";
+        var severity = ThresholdEvaluator.Evaluate(_trayCpuTempDef, temp, _settings);
+        try
+        {
+            var icon = _trayRenderer.Render(label, severity);
+            if (icon is not null) _tray.Icon = icon;
+        }
+        catch { /* keep previous icon */ }
     }
 
     private void ShowDashboard()
