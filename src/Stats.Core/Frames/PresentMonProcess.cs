@@ -13,7 +13,6 @@ public sealed class PresentMonProcess : IFrameSource
     private readonly string _excludeExeName;
     private readonly object _gate = new();
     private Process? _process;
-    private bool _stopping;
     private readonly Queue<string> _stderr = new();
 
     public PresentMonProcess(string exePath, string excludeExeName = "Stats.App.exe")
@@ -36,8 +35,7 @@ public sealed class PresentMonProcess : IFrameSource
         lock (_gate)
         {
             if (_process is { HasExited: false }) return;
-            _stopping = false;
-            _stderr.Clear();
+            lock (_stderr) _stderr.Clear();
             var psi = new ProcessStartInfo(_exePath, BuildArguments(_excludeExeName))
             {
                 UseShellExecute = false,
@@ -64,18 +62,23 @@ public sealed class PresentMonProcess : IFrameSource
 
     private void OnExited(object? sender, EventArgs e)
     {
-        int code;
-        bool announce;
+        if (sender is not Process p) return;
+        bool isCurrent;
         lock (_gate)
         {
-            if (sender is not Process p || !ReferenceEquals(p, _process)) return;
-            try { p.WaitForExit(); } catch { /* flushes the async stdout/stderr readers so the stderr tail is complete */ }
-            code = SafeExitCode(p);
-            announce = !_stopping;
-            _process = null;
-            p.Dispose();
+            isCurrent = ReferenceEquals(p, _process);
+            if (isCurrent) _process = null;
         }
-        if (!announce) return;
+        if (!isCurrent)
+        {
+            // Superseded by Stop() or a later Start(); that call owns/owned disposal, but
+            // dispose here too in case it raced us and never got to — Process.Dispose() is idempotent.
+            try { p.Dispose(); } catch { /* already gone */ }
+            return;
+        }
+        try { p.WaitForExit(); } catch { /* flushes the async stdout/stderr readers so the stderr tail is complete */ }
+        int code = SafeExitCode(p);
+        p.Dispose();
         string tail;
         lock (_stderr) tail = string.Join(Environment.NewLine, _stderr);
         Exited?.Invoke(code, tail);
@@ -87,7 +90,6 @@ public sealed class PresentMonProcess : IFrameSource
         lock (_gate)
         {
             p = _process;
-            _stopping = true;
             _process = null;
         }
         if (p is null) return;

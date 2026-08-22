@@ -132,6 +132,7 @@ public sealed class FrameRateReader : ISensorReader
         catch (Exception ex)
         {
             _source = null;
+            try { src.Dispose(); } catch { /* best effort */ }
             MarkUnavailable($"PresentMon could not be started: {ex.Message}");
         }
     }
