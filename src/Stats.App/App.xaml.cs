@@ -30,6 +30,8 @@ public partial class App : Application
     private string? _trayGpuTempId;
     private SettingsViewModel? _settingsVm;
     private GlobalHotkey? _hotkey;
+    private PeaksWindow? _peaks;
+    private PeaksViewModel? _peaksVm;
 
     protected override void OnStartup(StartupEventArgs e)
     {
@@ -108,6 +110,9 @@ public partial class App : Application
 
         _store.ResizeAll(HistoryCapacity.Compute(_settings.HistoryWindowMinutes, _settings.PollIntervalSeconds));
 
+        _dashboardVm.OpenPeaksRequested += ShowPeaks;
+        _dashboardVm.DashboardMetricsChanged += () => _peaksVm?.RebuildRows();
+
         var cpuTemps = definitions.Where(d => d.Group == MetricGroup.Cpu && d.Unit == "°C").ToList();
         _trayCpuTempId = (cpuTemps.FirstOrDefault(d => d.DisplayName.Contains("tctl", StringComparison.OrdinalIgnoreCase))
                        ?? cpuTemps.FirstOrDefault(d => d.DisplayName.Contains("package", StringComparison.OrdinalIgnoreCase))
@@ -125,6 +130,7 @@ public partial class App : Application
             _dashboardVm.RefreshAll();
             _overlayVm?.RefreshAll();
             UpdateTrayTooltip();
+            if (_peaks is { IsVisible: true }) _peaksVm?.Refresh();
         });
 
         _dashboard.AllowClose = false; // close button hides to tray; exit via tray menu
@@ -192,11 +198,17 @@ public partial class App : Application
         open.Click += (_, _) => ShowDashboard();
         var overlay = new MenuItem { Header = "Toggle overlay" };
         overlay.Click += (_, _) => ToggleOverlay();
+        var peaks = new MenuItem { Header = "Session peaks" };
+        peaks.Click += (_, _) => ShowPeaks();
+        var settings = new MenuItem { Header = "Settings" };
+        settings.Click += (_, _) => { ShowDashboard(); _dashboardVm?.OpenSettingsCommand.Execute(null); };
         var exit = new MenuItem { Header = "Exit" };
         exit.Click += (_, _) => ExitApp();
 
         menu.Items.Add(open);
         menu.Items.Add(overlay);
+        menu.Items.Add(peaks);
+        menu.Items.Add(settings);
         menu.Items.Add(new Separator());
         menu.Items.Add(exit);
         _tray.ContextMenu = menu;
@@ -229,6 +241,37 @@ public partial class App : Application
         if (_overlay is null) return;
         if (_overlay.IsVisible) _overlay.Hide();
         else _overlay.Show();
+    }
+
+    private void ShowPeaks()
+    {
+        if (_store is null || _settings is null) return;
+        if (_peaks is null)
+        {
+            _peaksVm = new PeaksViewModel(_store, _settings);
+            _peaks = new PeaksWindow { DataContext = _peaksVm };
+            if (_settings.PeaksWidth is double w) _peaks.Width = w;
+            if (_settings.PeaksHeight is double h) _peaks.Height = h;
+            if (_settings.PeaksLeft is double l) _peaks.Left = ClampToVirtualScreenX(l, 200);
+            if (_settings.PeaksTop is double t) _peaks.Top = ClampToVirtualScreenY(t, 100);
+            _peaks.LocationChanged += (_, _) => SavePeaksBounds();
+            _peaks.SizeChanged += (_, _) => SavePeaksBounds();
+        }
+        _peaksVm!.RebuildRows();
+        _peaks.Show();
+        _peaks.WindowState = WindowState.Normal;
+        _peaks.Activate();
+    }
+
+    private void SavePeaksBounds()
+    {
+        if (_peaks is null || _settings is null) return;
+        if (_peaks.WindowState != WindowState.Normal) return;
+        if (double.IsNaN(_peaks.Left) || double.IsNaN(_peaks.Top)) return;
+        _settings.PeaksLeft = _peaks.Left;
+        _settings.PeaksTop = _peaks.Top;
+        _settings.PeaksWidth = _peaks.Width;
+        _settings.PeaksHeight = _peaks.Height;
     }
 
     private void OnSettingsChanged(SettingsChange change)
@@ -292,6 +335,7 @@ public partial class App : Application
     private void ExitApp()
     {
         if (_dashboard is not null) _dashboard.AllowClose = true;
+        if (_peaks is not null) _peaks.AllowClose = true;
         _tray?.Dispose();
         SaveWindowBounds();
         Shutdown();
