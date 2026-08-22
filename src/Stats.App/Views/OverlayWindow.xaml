@@ -1,0 +1,27 @@
+<Window x:Class="Stats.App.Views.OverlayWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        WindowStyle="None" AllowsTransparency="True" Background="Transparent"
+        Topmost="True" ShowInTaskbar="False" SizeToContent="WidthAndHeight"
+        ResizeMode="NoResize">
+    <Border Background="#E01B1B1C" CornerRadius="8" Padding="12,8">
+        <ItemsControl ItemsSource="{Binding Tiles}">
+            <ItemsControl.ItemsPanel>
+                <ItemsPanelTemplate>
+                    <StackPanel Orientation="Horizontal"/>
+                </ItemsPanelTemplate>
+            </ItemsControl.ItemsPanel>
+            <ItemsControl.ItemTemplate>
+                <DataTemplate>
+                    <StackPanel Margin="10,0">
+                        <TextBlock Text="{Binding DisplayName}" FontSize="10"
+                                   Foreground="{StaticResource TextSecondary}"
+                                   TextTrimming="CharacterEllipsis" MaxWidth="120"/>
+                        <TextBlock Text="{Binding CurrentText}" FontSize="16" FontWeight="SemiBold"
+                                   Foreground="{StaticResource TextPrimary}"/>
+                    </StackPanel>
+                </DataTemplate>
+            </ItemsControl.ItemTemplate>
+        </ItemsControl>
+    </Border>
+</Window>
