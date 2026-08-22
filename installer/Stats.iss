@@ -120,6 +120,18 @@ begin
     InstallPawnIo;
 end;
 
+function InitializeUninstall(): Boolean;
+var
+  ResultCode: Integer;
+begin
+  // The uninstaller has no CloseApplications equivalent: stop a running Stats so {app} can be removed.
+  if Exec(ExpandConstant('{sys}\taskkill.exe'), '/F /T /IM {#AppExe}', '', SW_HIDE, ewWaitUntilTerminated, ResultCode) then
+    Log(Format('taskkill Stats.App.exe exit code %d (128 = not running)', [ResultCode]))
+  else
+    Log('taskkill could not be started: ' + SysErrorMessage(ResultCode));
+  Result := True;
+end;
+
 procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
 var
   SettingsDir: String;
