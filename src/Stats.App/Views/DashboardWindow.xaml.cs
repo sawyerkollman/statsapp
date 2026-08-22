@@ -1,6 +1,7 @@
 using System.ComponentModel;
 using System.Windows;
 using System.Windows.Data;
+using Stats.App.Helpers;
 using Stats.Core.ViewModels;
 
 namespace Stats.App.Views;
@@ -13,6 +14,7 @@ public partial class DashboardWindow : Window
     public DashboardWindow()
     {
         InitializeComponent();
+        DarkTitleBar.Apply(this);
         DataContextChanged += (_, _) =>
         {
             if (DataContext is not DashboardViewModel vm) return;
