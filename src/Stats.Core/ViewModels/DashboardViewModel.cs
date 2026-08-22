@@ -44,6 +44,7 @@ public sealed partial class DashboardViewModel : ObservableObject
     public event Action? OverlayMetricsChanged;
     public event Action? OverlayToggleRequested;
     public event Action? OpenPeaksRequested;
+    public event Action? OpenFansRequested;
     /// <summary>Dashboard selection or order changed (picker, move, remove).</summary>
     public event Action? DashboardMetricsChanged;
 
@@ -57,6 +58,7 @@ public sealed partial class DashboardViewModel : ObservableObject
     [RelayCommand] private void TogglePicker() => IsPickerOpen = !IsPickerOpen;
     [RelayCommand] private void ToggleOverlay() => OverlayToggleRequested?.Invoke();
     [RelayCommand] private void OpenPeaks() => OpenPeaksRequested?.Invoke();
+    [RelayCommand] private void OpenFans() => OpenFansRequested?.Invoke();
     [RelayCommand] private void OpenSettings() { FlyoutTabIndex = 1; IsPickerOpen = true; }
     [RelayCommand] private void CollapseAll() { foreach (var s in Sections) s.IsExpanded = false; }
     [RelayCommand] private void ExpandAll() { foreach (var s in Sections) s.IsExpanded = true; }

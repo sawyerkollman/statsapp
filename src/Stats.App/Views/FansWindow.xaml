@@ -1,0 +1,86 @@
+<Window x:Class="Stats.App.Views.FansWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:ctl="clr-namespace:Stats.App.Controls"
+        Title="Stats — Fans" Width="760" Height="640" MinWidth="560" MinHeight="360"
+        Background="{StaticResource WindowBg}">
+    <DockPanel Margin="12">
+        <DockPanel DockPanel.Dock="Top" Margin="0,0,0,6">
+            <Button DockPanel.Dock="Right" Content="All to Auto" Command="{Binding SetAllAutoCommand}" Style="{StaticResource HeaderButton}"/>
+            <CheckBox DockPanel.Dock="Right" Content="Enable fan control" IsChecked="{Binding Enabled}" VerticalAlignment="Center" Margin="0,0,12,0"
+                      Foreground="{StaticResource TextPrimary}"/>
+            <TextBlock Text="Fans" FontSize="18" FontWeight="Bold" Foreground="{StaticResource TextPrimary}"/>
+        </DockPanel>
+        <Border DockPanel.Dock="Top" Background="#4A3A1E" CornerRadius="4" Padding="10,6" Margin="0,0,0,10">
+            <TextBlock Foreground="{StaticResource TextPrimary}" TextWrapping="Wrap" FontSize="12"
+                       Text="Writes fan speeds to your hardware. Close other fan software (MSI Center, Fan Control, Afterburner fan curves) first — two controllers fighting over the same fan is unsafe. Speeds return to device control when you switch a fan to Auto, turn this off, or exit Stats. Changes apply on the next sensor poll (≈1 s)."/>
+        </Border>
+        <TextBlock DockPanel.Dock="Top" Foreground="{StaticResource TextSecondary}" Margin="0,0,0,8"
+                   Text="Fan control unavailable — the hardware reader is not active (degraded mode) or no controllable fans were found."
+                   Visibility="{Binding HasChannels, Converter={StaticResource InverseBoolToVis}}"/>
+        <ScrollViewer VerticalScrollBarVisibility="Auto">
+            <ItemsControl ItemsSource="{Binding Devices}">
+                <ItemsControl.ItemTemplate>
+                    <DataTemplate>
+                        <StackPanel Margin="0,0,0,14">
+                            <TextBlock Text="{Binding Device}" FontSize="13" FontWeight="SemiBold" Foreground="{StaticResource TextSecondary}" Margin="0,0,0,4"/>
+                            <ItemsControl ItemsSource="{Binding Channels}">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <Border Background="{StaticResource TileBg}" CornerRadius="4" Padding="10,8" Margin="0,3">
+                                            <StackPanel>
+                                                <Grid>
+                                                    <Grid.ColumnDefinitions>
+                                                        <ColumnDefinition Width="*"/>
+                                                        <ColumnDefinition Width="90"/>
+                                                        <ColumnDefinition Width="70"/>
+                                                        <ColumnDefinition Width="Auto"/>
+                                                    </Grid.ColumnDefinitions>
+                                                    <TextBox Text="{Binding Name, UpdateSourceTrigger=LostFocus}" Background="Transparent" BorderThickness="0"
+                                                             Foreground="{StaticResource TextPrimary}" FontSize="13" FontWeight="SemiBold" VerticalAlignment="Center"
+                                                             ToolTip="Click to rename"/>
+                                                    <TextBlock Grid.Column="1" Text="{Binding RpmText}" Foreground="{StaticResource TextPrimary}" FontSize="13" TextAlignment="Right" VerticalAlignment="Center"/>
+                                                    <TextBlock Grid.Column="2" Text="{Binding PercentText}" Foreground="{StaticResource TextSecondary}" FontSize="13" TextAlignment="Right" VerticalAlignment="Center"/>
+                                                    <StackPanel Grid.Column="3" Orientation="Horizontal" Margin="16,0,0,0">
+                                                        <!-- GroupName per channel: without it every RadioButton in the window shares one group. -->
+                                                        <RadioButton Content="Auto" Margin="0,0,10,0" Foreground="{StaticResource TextPrimary}" GroupName="{Binding Id}"
+                                                                     IsChecked="{Binding Mode, Converter={StaticResource Equals}, ConverterParameter=Auto}"/>
+                                                        <RadioButton Content="Manual" Margin="0,0,10,0" Foreground="{StaticResource TextPrimary}" GroupName="{Binding Id}"
+                                                                     IsChecked="{Binding Mode, Converter={StaticResource Equals}, ConverterParameter=Manual}"/>
+                                                        <RadioButton Content="Curve" Foreground="{StaticResource TextPrimary}" GroupName="{Binding Id}"
+                                                                     IsChecked="{Binding Mode, Converter={StaticResource Equals}, ConverterParameter=Curve}"/>
+                                                    </StackPanel>
+                                                </Grid>
+                                                <TextBlock Text="{Binding StatusText}" Foreground="{StaticResource TextSecondary}" FontSize="11" Margin="0,2,0,0"/>
+                                                <DockPanel Margin="0,6,0,0" Visibility="{Binding IsManual, Converter={StaticResource BoolToVis}}">
+                                                    <TextBlock DockPanel.Dock="Right" Text="{Binding ManualPercent, StringFormat={}{0:F0} %}" Width="48" TextAlignment="Right"
+                                                               Foreground="{StaticResource TextPrimary}" VerticalAlignment="Center"/>
+                                                    <Slider Minimum="{Binding MinPercent}" Maximum="{Binding MaxPercent}" Value="{Binding ManualPercent, Delay=250}"
+                                                            TickFrequency="5" IsSnapToTickEnabled="True" VerticalAlignment="Center"/>
+                                                </DockPanel>
+                                                <StackPanel Margin="0,6,0,0" Visibility="{Binding IsCurve, Converter={StaticResource BoolToVis}}">
+                                                    <DockPanel Margin="0,0,0,6">
+                                                        <Button DockPanel.Dock="Right" Content="Reset curve" Command="{Binding ResetCurveCommand}" Style="{StaticResource HeaderButton}" FontSize="11"/>
+                                                        <TextBlock DockPanel.Dock="Right" Text="{Binding TargetText, StringFormat='target {0}'}" Foreground="{StaticResource TextSecondary}" Margin="12,0" VerticalAlignment="Center"/>
+                                                        <TextBlock DockPanel.Dock="Right" Text="{Binding SourceTempText}" Foreground="{StaticResource TextPrimary}" VerticalAlignment="Center"/>
+                                                        <TextBlock Text="Source" Foreground="{StaticResource TextSecondary}" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                                                        <ComboBox ItemsSource="{Binding SourceOptions}" DisplayMemberPath="Label" SelectedValuePath="Id"
+                                                                  SelectedValue="{Binding SourceMetricId}" MinWidth="200" HorizontalAlignment="Left"/>
+                                                    </DockPanel>
+                                                    <ctl:FanCurveEditor Points="{Binding Points}" MinPercent="{Binding MinPercent}" MaxPercent="{Binding MaxPercent}"
+                                                                        LiveTemp="{Binding LiveTemp}" LiveTarget="{Binding LiveTarget}" Height="150"
+                                                                        LineBrush="{StaticResource AccentBrush}" PointBrush="{StaticResource TextPrimary}"
+                                                                        AxisBrush="{StaticResource BorderDim}" TextBrush="{StaticResource TextSecondary}"/>
+                                                </StackPanel>
+                                            </StackPanel>
+                                        </Border>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </StackPanel>
+                    </DataTemplate>
+                </ItemsControl.ItemTemplate>
+            </ItemsControl>
+        </ScrollViewer>
+    </DockPanel>
+</Window>
