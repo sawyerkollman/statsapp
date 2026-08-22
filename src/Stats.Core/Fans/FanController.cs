@@ -33,6 +33,7 @@ public sealed class FanController
     private readonly object _gate = new();
     private readonly Dictionary<string, Runtime> _rt = new();
     private DateTime? _firstTick;
+    private bool _pendingSave;
 
     public FanController(IFanControlBackend backend, AppSettings settings, Action saveSettings)
     {
@@ -71,7 +72,9 @@ public sealed class FanController
             if (!_settings.FanChannels.TryGetValue(id, out var pref))
                 _settings.FanChannels[id] = pref = new FanChannelPref();
             change(pref);
-            Rt(id).LastSourceUsed = null; // re-evaluate immediately on next tick
+            var rt = Rt(id);
+            rt.LastSourceUsed = null; // re-evaluate immediately on next tick
+            rt.Failures = 0;          // the user acted on this channel: give it a fresh retry budget
         }
         _save();
     }
@@ -80,6 +83,7 @@ public sealed class FanController
 
     public void Tick(SensorSnapshot snapshot, DateTime nowUtc)
     {
+        bool needsSave;
         lock (_gate)
         {
             _firstTick ??= nowUtc;
@@ -91,7 +95,7 @@ public sealed class FanController
 
                 if (!_settings.FanControlEnabled)
                 {
-                    ReleaseLocked(ch, rt, FanChannelStatus.Idle);
+                    ReleaseLocked(ch.Id, rt, FanChannelStatus.Idle);
                     rt.Percent = reported; rt.Target = null; rt.SourceTemp = null;
                     continue;
                 }
@@ -104,7 +108,7 @@ public sealed class FanController
                 switch (mode)
                 {
                     case FanMode.Auto:
-                        ReleaseLocked(ch, rt, FanChannelStatus.Idle);
+                        ReleaseLocked(ch.Id, rt, FanChannelStatus.Idle);
                         break;
 
                     case FanMode.Manual:
@@ -123,7 +127,7 @@ public sealed class FanController
                         var lastSeen = rt.LastSourceSeen ?? _firstTick.Value;
                         if (src is null && nowUtc - lastSeen > SourceStaleAfter)
                         {
-                            ReleaseLocked(ch, rt, FanChannelStatus.SourceUnavailable);
+                            ReleaseLocked(ch.Id, rt, FanChannelStatus.SourceUnavailable);
                             rt.LastSourceUsed = null;
                             break;
                         }
@@ -156,15 +160,21 @@ public sealed class FanController
 
                 rt.Percent = reported ?? (rt.InSoftware ? rt.LastWritten : null);
             }
+            needsSave = _pendingSave;
+            _pendingSave = false;
         }
+        if (needsSave) _save();
     }
 
     private void WriteLocked(FanChannel ch, Runtime rt, float percent, FanChannelPref pref)
     {
+        // LHM's SetSoftware may switch the control into software mode before the hardware write itself fails
+        // (a "partial write"), so mark InSoftware before the call — otherwise a failed write would leave the
+        // channel pinned at whatever PWM it landed on while we believe it's still under device control.
+        rt.InSoftware = true;
         try
         {
             _backend.SetPercent(ch.Id, percent);
-            rt.InSoftware = true;
             rt.LastWritten = percent;
             rt.Failures = 0;
             rt.Status = FanChannelStatus.Active;
@@ -177,33 +187,51 @@ public sealed class FanController
             if (rt.Failures >= MaxWriteFailures)
             {
                 pref.Mode = FanMode.Auto;
-                ReleaseLocked(ch, rt, FanChannelStatus.WriteFailed);
+                _pendingSave = true; // persist the fail-safe mode flip; _save() must run outside _gate
+                ReleaseLocked(ch.Id, rt, FanChannelStatus.WriteFailed);
                 Trace.WriteLine($"[Stats.FanController] {ch.Id} set to Auto after repeated write failures");
             }
         }
     }
 
-    /// <summary>Hands the channel back to device control if we were driving it. Always sets the status.</summary>
-    private void ReleaseLocked(FanChannel ch, Runtime rt, FanChannelStatus status)
+    /// <summary>
+    /// Hands the channel back to device control if we were driving it. Only clears InSoftware/LastWritten when
+    /// SetAuto actually succeeds — if it throws, the channel is still pinned in software, so we keep tracking
+    /// it (and keep reporting WriteFailed) so the next Tick or RestoreAll retries the release. One attempt per call.
+    /// </summary>
+    private void ReleaseLocked(string id, Runtime rt, FanChannelStatus status)
     {
         if (rt.InSoftware)
         {
-            try { _backend.SetAuto(ch.Id); }
-            catch (Exception ex) { Trace.WriteLine($"[Stats.FanController] SetAuto {ch.Id} failed: {ex.Message}"); }
-            rt.InSoftware = false;
-            rt.LastWritten = null;
+            try
+            {
+                _backend.SetAuto(id);
+                rt.InSoftware = false;
+                rt.LastWritten = null;
+            }
+            catch (Exception ex)
+            {
+                Trace.WriteLine($"[Stats.FanController] SetAuto {id} failed: {ex.Message}");
+                rt.Status = FanChannelStatus.WriteFailed;
+                rt.Target = null;
+                return; // InSoftware stays true — retry on the next Tick/RestoreAll
+            }
         }
         rt.Target = null;
         rt.Status = status;
     }
 
-    /// <summary>Return every channel we ever wrote to device control. Call after the poller is stopped (or from Tick's thread).</summary>
+    /// <summary>Release every channel we ever wrote to, including ones no longer reported by the backend
+    /// (a driven channel that vanished from discovery must still be handed back). Call after the poller is
+    /// stopped (or from Tick's thread). Safe to call repeatedly — a failed release is retried on the next call.</summary>
     public void RestoreAll()
     {
         lock (_gate)
         {
-            foreach (var ch in _backend.Channels)
-                ReleaseLocked(ch, Rt(ch.Id), FanChannelStatus.Idle);
+            foreach (var (id, rt) in _rt)
+            {
+                if (rt.InSoftware) ReleaseLocked(id, rt, FanChannelStatus.Idle);
+            }
         }
     }
 

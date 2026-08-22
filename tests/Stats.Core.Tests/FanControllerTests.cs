@@ -11,9 +11,21 @@ public class FanControllerTests
         public List<FanChannel> Chans = new();
         public List<(string Id, float? Pct)> Writes = new();
         public Func<string, bool>? FailWrite;
+        public Func<string, bool>? FailAuto;
+        public bool RecordBeforeThrow; // models a partial write: the hardware saw it, then the call still threw
         public IReadOnlyList<FanChannel> Channels => Chans;
-        public void SetPercent(string id, float p) { if (FailWrite?.Invoke(id) == true) throw new InvalidOperationException("io"); Writes.Add((id, p)); }
-        public void SetAuto(string id) => Writes.Add((id, null));
+        public void SetPercent(string id, float p)
+        {
+            bool fail = FailWrite?.Invoke(id) == true;
+            if (fail && RecordBeforeThrow) Writes.Add((id, p));
+            if (fail) throw new InvalidOperationException("io");
+            Writes.Add((id, p));
+        }
+        public void SetAuto(string id)
+        {
+            if (FailAuto?.Invoke(id) == true) throw new InvalidOperationException("io-auto");
+            Writes.Add((id, null));
+        }
     }
 
     private const string Case = "/lpc/it8696e/0/control/0";
@@ -170,7 +182,60 @@ public class FanControllerTests
         Assert.Equal(FanMode.Auto, h.S.FanChannels[Case].Mode);
         Assert.Equal(FanChannelStatus.WriteFailed, h.C.Views().Single(v => v.Id == Case).Status); // status kept for the user
         h.Tick(50);
-        Assert.Empty(h.WritesFor(Case)); // all attempts threw; SetAuto not needed (never in software)
+        // The 3rd failing write still marked InSoftware before the throw, so the fail-safe flip released the
+        // channel via a (successful) SetAuto — one (Case, null) entry. The 4th tick (now Auto, already released)
+        // writes nothing further.
+        Assert.Equal(new (string, float?)[] { (Case, null) }, h.WritesFor(Case));
+    }
+
+    [Fact]
+    public void FailedSetAuto_KeepsChannelTracked_AndRetriesNextTick()
+    {
+        var h = new H();
+        h.C.SetMode(Case, FanMode.Manual); h.C.SetManualPercent(Case, 40);
+        h.Tick(50);
+        Assert.Equal(new (string, float?)[] { (Case, 40f) }, h.WritesFor(Case));
+
+        h.B.FailAuto = id => id == Case;
+        h.C.SetMode(Case, FanMode.Auto);
+        h.Tick(50); // SetAuto attempted, throws — channel stays tracked in software
+        Assert.Equal(new (string, float?)[] { (Case, 40f) }, h.WritesFor(Case)); // no new write recorded
+        Assert.Equal(FanChannelStatus.WriteFailed, h.C.Views().Single(v => v.Id == Case).Status);
+
+        h.B.FailAuto = null;
+        h.Tick(50); // retried automatically — SetAuto now succeeds
+        Assert.Equal(new (string, float?)[] { (Case, 40f), (Case, null) }, h.WritesFor(Case));
+        Assert.Equal(FanChannelStatus.Idle, h.C.Views().Single(v => v.Id == Case).Status);
+    }
+
+    [Fact]
+    public void RestoreAll_RetriesAfterFailedRelease()
+    {
+        var h = new H();
+        h.C.SetMode(Case, FanMode.Manual); h.C.SetManualPercent(Case, 40);
+        h.Tick(50);
+
+        h.B.FailAuto = id => id == Case;
+        h.C.RestoreAll(); // SetAuto throws — channel still tracked as in-software
+        Assert.Equal(new (string, float?)[] { (Case, 40f) }, h.WritesFor(Case));
+
+        h.B.FailAuto = null;
+        h.C.RestoreAll(); // retried — succeeds this time
+        Assert.Equal(new (string, float?)[] { (Case, 40f), (Case, null) }, h.WritesFor(Case));
+    }
+
+    [Fact]
+    public void PartialWriteFailure_StillReleasedAfterThreeFailures()
+    {
+        var h = new H();
+        h.B.FailWrite = id => id == Case;
+        h.B.RecordBeforeThrow = true; // the hardware took the value, then the call still threw
+        h.C.SetMode(Case, FanMode.Manual); h.C.SetManualPercent(Case, 40);
+        h.Tick(50); h.Tick(50); h.Tick(50);
+        // Each failing write is recorded (partial write) then throws; on the 3rd failure the channel is marked
+        // InSoftware before the throw, so the fail-safe flip can actually release it via SetAuto.
+        Assert.Equal(new (string, float?)[] { (Case, 40f), (Case, 40f), (Case, 40f), (Case, null) }, h.WritesFor(Case));
+        Assert.Equal(FanMode.Auto, h.S.FanChannels[Case].Mode);
     }
 
     [Fact]

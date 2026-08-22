@@ -20,7 +20,10 @@ public sealed class CompositeSensorReader : ISensorReader, IFanControlBackend
     private IFanControlBackend? FanBackend => _readers.OfType<IFanControlBackend>().FirstOrDefault(b => b.Channels.Count > 0);
     public IReadOnlyList<FanChannel> Channels => FanBackend?.Channels ?? Array.Empty<FanChannel>();
     public void SetPercent(string channelId, float percent) => FanBackend?.SetPercent(channelId, percent);
-    public void SetAuto(string channelId) => FanBackend?.SetAuto(channelId);
+    // SetAuto is documented as a no-op for an unknown id, so when no reader currently reports channels
+    // (e.g. a driven channel vanished from discovery) it's safe to sweep every backend rather than silently
+    // dropping a pending release — each one no-ops harmlessly except the one that still owns the control.
+    public void SetAuto(string channelId) { if (FanBackend is { } b) b.SetAuto(channelId); else foreach (var f in _readers.OfType<IFanControlBackend>()) f.SetAuto(channelId); }
 
     public IReadOnlyList<MetricDefinition> Discover()
     {
