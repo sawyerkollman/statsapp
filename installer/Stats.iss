@@ -105,12 +105,12 @@ begin
   begin
     Log(Format('PawnIO_setup.exe exited with code %d', [ResultCode]));
     if ResultCode <> 0 then
-      MsgBox(Format('The PawnIO driver installer returned code %d.', [ResultCode]) + #13#10#13#10 + PawnIoHint, mbError, MB_OK);
+      SuppressibleMsgBox(Format('The PawnIO driver installer returned code %d.', [ResultCode]) + #13#10#13#10 + PawnIoHint, mbError, MB_OK, IDOK);
   end
   else
   begin
     Log('Failed to launch PawnIO_setup.exe: ' + SysErrorMessage(ResultCode));
-    MsgBox('The PawnIO driver installer could not be started: ' + SysErrorMessage(ResultCode) + #13#10#13#10 + PawnIoHint, mbError, MB_OK);
+    SuppressibleMsgBox('The PawnIO driver installer could not be started: ' + SysErrorMessage(ResultCode) + #13#10#13#10 + PawnIoHint, mbError, MB_OK, IDOK);
   end;
 end;
 
@@ -129,7 +129,7 @@ begin
     SettingsDir := ExpandConstant('{userappdata}\Stats');
     if DirExists(SettingsDir) then
     begin
-      if MsgBox('Also delete your Stats settings and layout?' + #13#10 + SettingsDir, mbConfirmation, MB_YESNO or MB_DEFBUTTON2) = IDYES then
+      if SuppressibleMsgBox('Also delete your Stats settings and layout?' + #13#10 + SettingsDir, mbConfirmation, MB_YESNO or MB_DEFBUTTON2, IDNO) = IDYES then
       begin
         DelTree(SettingsDir, True, True, True);
         Log('Deleted ' + SettingsDir);
@@ -137,6 +137,6 @@ begin
       else
         Log('Kept ' + SettingsDir);
     end;
-    MsgBox('Stats has been removed.' + #13#10#13#10 + 'The PawnIO driver was left installed because other monitoring tools may use it. Remove it from Settings > Apps > Installed apps if you no longer need it.', mbInformation, MB_OK);
+    SuppressibleMsgBox('Stats has been removed.' + #13#10#13#10 + 'The PawnIO driver was left installed because other monitoring tools may use it. Remove it from Settings > Apps > Installed apps if you no longer need it.', mbInformation, MB_OK, IDOK);
   end;
 end;
