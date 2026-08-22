@@ -9,9 +9,13 @@ namespace Stats.Core.ViewModels;
 
 public sealed partial class DashboardViewModel : ObservableObject
 {
+    private static readonly MetricGroup[] GroupOrder =
+        { MetricGroup.Cpu, MetricGroup.Gpu, MetricGroup.Memory, MetricGroup.Storage, MetricGroup.Network };
+
     private readonly MetricStore _store;
     private readonly AppSettings _settings;
     private readonly Action _saveSettings;
+    private bool _suppressPickerEvents;
 
     public DashboardViewModel(MetricStore store, AppSettings settings, Action saveSettings)
     {
@@ -23,36 +27,87 @@ public sealed partial class DashboardViewModel : ObservableObject
         {
             var item = new MetricPickerItem(def,
                 settings.DashboardMetrics.Contains(def.Id),
-                settings.OverlayMetrics.Contains(def.Id));
+                settings.OverlayMetrics.Contains(def.Id),
+                FriendlyName(def));
             item.PropertyChanged += OnPickerItemChanged;
             PickerItems.Add(item);
         }
-        RebuildTiles();
+        RebuildSections();
     }
 
+    public ObservableCollection<GroupSectionViewModel> Sections { get; } = new();
+    /// <summary>All dashboard tiles, flat (same instances as in Sections), group order then user order.</summary>
     public ObservableCollection<MetricTileViewModel> Tiles { get; } = new();
     public List<MetricPickerItem> PickerItems { get; } = new();
+    public CoreMatrixViewModel? CoreMatrix { get; private set; }
 
     public event Action? OverlayMetricsChanged;
     public event Action? OverlayToggleRequested;
+    public event Action? OpenPeaksRequested;
+    /// <summary>Dashboard selection or order changed (picker, move, remove).</summary>
+    public event Action? DashboardMetricsChanged;
 
     [ObservableProperty] private bool _isDegraded;
     [ObservableProperty] private bool _isPickerOpen;
+    [ObservableProperty] private int _flyoutTabIndex;
+    [ObservableProperty] private string _pickerFilter = "";
+    /// <summary>Set by the composition root once the SettingsViewModel exists; bound by the Settings tab.</summary>
+    [ObservableProperty] private SettingsViewModel? _settingsPanel;
 
-    [RelayCommand]
-    private void TogglePicker() => IsPickerOpen = !IsPickerOpen;
+    [RelayCommand] private void TogglePicker() => IsPickerOpen = !IsPickerOpen;
+    [RelayCommand] private void ToggleOverlay() => OverlayToggleRequested?.Invoke();
+    [RelayCommand] private void OpenPeaks() => OpenPeaksRequested?.Invoke();
+    [RelayCommand] private void OpenSettings() { FlyoutTabIndex = 1; IsPickerOpen = true; }
+    [RelayCommand] private void CollapseAll() { foreach (var s in Sections) s.IsExpanded = false; }
+    [RelayCommand] private void ExpandAll() { foreach (var s in Sections) s.IsExpanded = true; }
 
-    [RelayCommand]
-    private void ToggleOverlay() => OverlayToggleRequested?.Invoke();
+    // ---- refresh ----
 
     public void RefreshAll()
     {
         foreach (var tile in Tiles) tile.Refresh();
+        CoreMatrix?.Refresh();
+        if (IsPickerOpen)
+        {
+            foreach (var item in PickerItems)
+                item.CurrentText = ValueFormatter.Format(item.Definition, _store[item.Definition.Id].Current);
+        }
+    }
+
+    // ---- picker ----
+
+    public bool PickerMatches(MetricPickerItem item)
+    {
+        if (string.IsNullOrWhiteSpace(PickerFilter)) return true;
+        var f = PickerFilter.Trim();
+        return item.DisplayName.Contains(f, StringComparison.OrdinalIgnoreCase)
+            || item.Definition.DisplayName.Contains(f, StringComparison.OrdinalIgnoreCase)
+            || item.Definition.HardwareName.Contains(f, StringComparison.OrdinalIgnoreCase);
+    }
+
+    public void SelectAllInGroup(string pickerGroupName, bool selected)
+    {
+        _suppressPickerEvents = true;
+        try
+        {
+            foreach (var item in PickerItems.Where(p => p.GroupName == pickerGroupName))
+            {
+                item.IsChecked = selected;
+                if (selected && !_settings.DashboardMetrics.Contains(item.Definition.Id))
+                    _settings.DashboardMetrics.Add(item.Definition.Id);
+                else if (!selected)
+                    _settings.DashboardMetrics.Remove(item.Definition.Id);
+            }
+        }
+        finally { _suppressPickerEvents = false; }
+        RebuildSections();
+        DashboardMetricsChanged?.Invoke();
+        _saveSettings();
     }
 
     private void OnPickerItemChanged(object? sender, PropertyChangedEventArgs e)
     {
-        if (sender is not MetricPickerItem item) return;
+        if (_suppressPickerEvents || sender is not MetricPickerItem item) return;
 
         if (e.PropertyName == nameof(MetricPickerItem.IsChecked))
         {
@@ -60,7 +115,8 @@ public sealed partial class DashboardViewModel : ObservableObject
                 _settings.DashboardMetrics.Add(item.Definition.Id);
             else if (!item.IsChecked)
                 _settings.DashboardMetrics.Remove(item.Definition.Id);
-            RebuildTiles();
+            RebuildSections();
+            DashboardMetricsChanged?.Invoke();
             _saveSettings();
         }
         else if (e.PropertyName == nameof(MetricPickerItem.IsOnOverlay))
@@ -74,15 +130,100 @@ public sealed partial class DashboardViewModel : ObservableObject
         }
     }
 
-    private void RebuildTiles()
+    // ---- tile operations ----
+
+    public void MoveTile(string fromId, string toId)
+    {
+        if (fromId == toId) return;
+        var list = _settings.DashboardMetrics;
+        int from = list.IndexOf(fromId), to = list.IndexOf(toId);
+        if (from < 0 || to < 0) return;
+        if (!_store.TryGet(fromId, out _) || !_store.TryGet(toId, out _)) return;
+        if (GroupOf(fromId) != GroupOf(toId)) return;
+        list.RemoveAt(from);
+        list.Insert(to, fromId);
+        RebuildSections();
+        DashboardMetricsChanged?.Invoke();
+        _saveSettings();
+    }
+
+    public void SetTileKind(string id, TileKind kind) { _settings.PrefFor(id).Kind = kind; AfterPrefChange(id); }
+    public void SetTileSize(string id, TileSize size) { _settings.PrefFor(id).Size = size; AfterPrefChange(id); }
+    public void SetTileMax(string id, float? max) { _settings.PrefFor(id).Max = max is > 0 ? max : null; AfterPrefChange(id); }
+
+    public void RenameTile(string id, string? name)
+    {
+        _settings.PrefFor(id).Name = string.IsNullOrWhiteSpace(name) ? null : name.Trim();
+        var picker = PickerItems.FirstOrDefault(p => p.Definition.Id == id);
+        if (picker is not null) picker.DisplayName = FriendlyName(picker.Definition);
+        AfterPrefChange(id);
+    }
+
+    public void RemoveTile(string id)
+    {
+        var picker = PickerItems.FirstOrDefault(p => p.Definition.Id == id);
+        if (picker is not null) picker.IsChecked = false; // handler persists + rebuilds + saves
+    }
+
+    private void AfterPrefChange(string id)
+    {
+        // Kind/Size changes need new containers (template selection happens once per container), so rebuild.
+        RebuildSections();
+        _saveSettings();
+    }
+
+    // ---- sections ----
+
+    public void ToggleGroup(string name)
+    {
+        var section = Sections.FirstOrDefault(s => s.Name == name);
+        if (section is not null) section.IsExpanded = !section.IsExpanded;
+    }
+
+    public void RebuildSections()
     {
         Tiles.Clear();
-        var selected = _settings.DashboardMetrics.ToHashSet();
-        foreach (var def in _store.Definitions.Where(d => selected.Contains(d.Id)))
+        Sections.Clear();
+
+        CoreMatrix = _settings.ShowCoreMatrix ? new CoreMatrixViewModel(_store, _settings) : null;
+        if (CoreMatrix is { HasCores: false }) CoreMatrix = null;
+        CoreMatrix?.Refresh();
+
+        var ordered = _settings.DashboardMetrics.Where(id => _store.TryGet(id, out _)).ToList();
+        var defsById = _store.Definitions.ToDictionary(d => d.Id);
+
+        foreach (var group in GroupOrder)
         {
-            var tile = new MetricTileViewModel(def, _store[def.Id], _settings);
-            tile.Refresh();
-            Tiles.Add(tile);
+            var ids = ordered.Where(id => defsById[id].Group == group).ToList();
+            var matrix = group == MetricGroup.Cpu ? CoreMatrix : null;
+            if (ids.Count == 0 && matrix is null) continue;
+
+            var section = new GroupSectionViewModel(group, !_settings.CollapsedGroups.Contains(group.ToString()), OnSectionExpandedChanged)
+            {
+                CoreMatrix = matrix,
+            };
+            foreach (var id in ids)
+            {
+                var tile = new MetricTileViewModel(defsById[id], _store[id], _settings);
+                tile.Refresh();
+                section.Tiles.Add(tile);
+                Tiles.Add(tile);
+            }
+            Sections.Add(section);
         }
     }
+
+    private void OnSectionExpandedChanged(string name, bool expanded)
+    {
+        bool changed = expanded ? _settings.CollapsedGroups.Remove(name)
+                                : !_settings.CollapsedGroups.Contains(name) && Add(_settings.CollapsedGroups, name);
+        if (changed) _saveSettings();
+
+        static bool Add(List<string> list, string v) { list.Add(v); return true; }
+    }
+
+    private MetricGroup? GroupOf(string id) => _store.TryGet(id, out _) ? _store.Definitions.First(d => d.Id == id).Group : null;
+
+    private string FriendlyName(MetricDefinition def) =>
+        _settings.TilePrefs.TryGetValue(def.Id, out var p) && !string.IsNullOrWhiteSpace(p.Name) ? p.Name! : def.DisplayName;
 }
