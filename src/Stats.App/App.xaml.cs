@@ -2,6 +2,7 @@ using System.IO;
 using System.Windows;
 using System.Windows.Controls;
 using H.NotifyIcon;
+using Stats.App.Helpers;
 using Stats.App.Views;
 using Stats.Core.Metrics;
 using Stats.Core.Sensors;
@@ -27,6 +28,8 @@ public partial class App : Application
     private TaskbarIcon? _tray;
     private string? _trayCpuTempId;
     private string? _trayGpuTempId;
+    private SettingsViewModel? _settingsVm;
+    private GlobalHotkey? _hotkey;
 
     protected override void OnStartup(StartupEventArgs e)
     {
@@ -92,6 +95,19 @@ public partial class App : Application
         _dashboardVm.OverlayMetricsChanged += () => _overlayVm.Rebuild();
         _dashboardVm.OverlayToggleRequested += ToggleOverlay;
 
+        _settingsVm = new SettingsViewModel(_settings, definitions, SaveSettings);
+        _dashboardVm.SettingsPanel = _settingsVm;
+        _settingsVm.Changed += OnSettingsChanged;
+        _settingsVm.OverlayPositionResetRequested += ResetOverlayPosition;
+
+        ClickThrough.Set(_overlay, _settings.OverlayClickThrough);
+
+        _hotkey = new GlobalHotkey();
+        _hotkey.Pressed += ToggleOverlay;
+        ApplyHotkey();
+
+        _store.ResizeAll(HistoryCapacity.Compute(_settings.HistoryWindowMinutes, _settings.PollIntervalSeconds));
+
         var cpuTemps = definitions.Where(d => d.Group == MetricGroup.Cpu && d.Unit == "°C").ToList();
         _trayCpuTempId = (cpuTemps.FirstOrDefault(d => d.DisplayName.Contains("tctl", StringComparison.OrdinalIgnoreCase))
                        ?? cpuTemps.FirstOrDefault(d => d.DisplayName.Contains("package", StringComparison.OrdinalIgnoreCase))
@@ -120,6 +136,7 @@ public partial class App : Application
 
     protected override void OnExit(ExitEventArgs e)
     {
+        _hotkey?.Dispose();
         _poller?.Dispose();
         _reader?.Dispose();
         SaveSettings();
@@ -212,6 +229,64 @@ public partial class App : Application
         if (_overlay is null) return;
         if (_overlay.IsVisible) _overlay.Hide();
         else _overlay.Show();
+    }
+
+    private void OnSettingsChanged(SettingsChange change)
+    {
+        if (_settings is null) return;
+        switch (change)
+        {
+            case SettingsChange.PollInterval:
+                if (_poller is not null) _poller.Interval = TimeSpan.FromSeconds(_settings.PollIntervalSeconds);
+                _store?.ResizeAll(HistoryCapacity.Compute(_settings.HistoryWindowMinutes, _settings.PollIntervalSeconds));
+                break;
+            case SettingsChange.HistoryWindow:
+                _store?.ResizeAll(HistoryCapacity.Compute(_settings.HistoryWindowMinutes, _settings.PollIntervalSeconds));
+                _dashboardVm?.RefreshAll();
+                break;
+            case SettingsChange.Thresholds:
+                _dashboardVm?.RefreshAll();
+                _overlayVm?.RefreshAll();
+                break;
+            case SettingsChange.Limits:
+                _dashboardVm?.RebuildSections(); // limits can flip Auto kind to Gauge
+                break;
+            case SettingsChange.Overlay:
+                if (_overlay is not null)
+                {
+                    _overlay.Opacity = _settings.OverlayOpacity;
+                    ClickThrough.Set(_overlay, _settings.OverlayClickThrough);
+                }
+                _overlayVm?.ApplyLayout();
+                break;
+            case SettingsChange.Hotkey:
+                ApplyHotkey();
+                break;
+            case SettingsChange.CoreMatrix:
+                _dashboardVm?.RebuildSections();
+                break;
+        }
+    }
+
+    private void ApplyHotkey()
+    {
+        if (_hotkey is null || _settings is null || _settingsVm is null) return;
+        var parsed = HotkeyParser.Parse(_settings.OverlayHotkey);
+        bool ok = _hotkey.Register(parsed);
+        if (!ok) _settingsVm.HotkeyStatus = "Hotkey unavailable — in use by another app";
+        else if (parsed is null && _settings.OverlayHotkey.Length == 0) _settingsVm.HotkeyStatus = "Hotkey disabled";
+        else _settingsVm.HotkeyStatus = "";
+    }
+
+    private void ResetOverlayPosition()
+    {
+        if (_overlay is null || _settings is null) return;
+        _overlay.Left = SystemParameters.PrimaryScreenWidth / 2 - 150;
+        _overlay.Top = 40;
+        _settings.OverlayLeft = _overlay.Left;
+        _settings.OverlayTop = _overlay.Top;
+        if (!_overlay.IsVisible) _overlay.Show();
+        SaveSettings();
     }
 
     private void ExitApp()
