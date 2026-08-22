@@ -10,7 +10,7 @@ namespace Stats.Core.ViewModels;
 public sealed partial class DashboardViewModel : ObservableObject
 {
     private static readonly MetricGroup[] GroupOrder =
-        { MetricGroup.Cpu, MetricGroup.Gpu, MetricGroup.Memory, MetricGroup.Storage, MetricGroup.Network, MetricGroup.Game };
+        { MetricGroup.Cpu, MetricGroup.Gpu, MetricGroup.Memory, MetricGroup.Storage, MetricGroup.Network, MetricGroup.Game, MetricGroup.Motherboard, MetricGroup.Cooler };
 
     private readonly MetricStore _store;
     private readonly AppSettings _settings;

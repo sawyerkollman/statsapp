@@ -28,8 +28,15 @@ public class FrameMetricsTests
         Assert.Equal(expected, FrameMetrics.IsFrameMetric(id));
 
     [Fact]
-    public void Game_IsLastEnumMember_SoSerializedRulesStayStable() =>
-        Assert.Equal(MetricGroup.Game, Enum.GetValues<MetricGroup>().Max());
+    public void MetricGroup_ExistingOrdinalsAreStable()
+    {
+        // Append-only enum: these values are what older settings files (if ever written numerically) mean.
+        Assert.Equal(0, (int)MetricGroup.Cpu);
+        Assert.Equal(4, (int)MetricGroup.Network);
+        Assert.Equal(5, (int)MetricGroup.Game);
+        Assert.Equal(6, (int)MetricGroup.Motherboard);
+        Assert.Equal(7, (int)MetricGroup.Cooler);
+    }
 
     [Fact]
     public void DashboardViewModel_PlacesGameSectionLast()

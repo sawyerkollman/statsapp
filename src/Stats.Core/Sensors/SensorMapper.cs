@@ -31,6 +31,8 @@ public static class SensorMapper
             "Memory" => MetricGroup.Memory,
             "Storage" => MetricGroup.Storage,
             "Network" => MetricGroup.Network,
+            "Motherboard" or "SuperIO" => MetricGroup.Motherboard,
+            "Cooler" => MetricGroup.Cooler,
             _ => null,
         };
         if (group is null) return null;
