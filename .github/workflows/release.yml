@@ -25,7 +25,7 @@ jobs:
         run: dotnet test -c Release --nologo
 
       - name: Install Inno Setup
-        run: choco install innosetup --version 6.7.3 --no-progress -y
+        run: choco install innosetup --version 6.7.1 --no-progress -y
 
       - name: Resolve version
         id: ver
