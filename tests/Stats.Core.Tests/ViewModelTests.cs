@@ -9,27 +9,49 @@ public class ViewModelTests
 {
     private static readonly MetricDefinition CpuTemp = new("cpu.temp", "Tctl", MetricGroup.Cpu, "CPU", "°C", "F1");
     private static readonly MetricDefinition CpuPpt = new("cpu.ppt", "CPU PPT", MetricGroup.Cpu, "CPU", "W", "F1");
+    private static readonly MetricDefinition CpuLoad = new("cpu.load", "CPU Total", MetricGroup.Cpu, "CPU", "%");
     private static readonly MetricDefinition GpuClock = new("gpu.clock", "GPU Core", MetricGroup.Gpu, "GPU", "MHz");
 
-    private static MetricStore NewStore() => new(new[] { CpuTemp, CpuPpt, GpuClock });
+    private static MetricStore NewStore() => new(new[] { CpuTemp, CpuPpt, CpuLoad, GpuClock });
 
-    private static void Push(MetricStore store, float temp, float ppt, float clock) =>
+    private static void Push(MetricStore store, float temp, float ppt, float clock, float load = 50f) =>
         store.Apply(new SensorSnapshot(new Dictionary<string, float?>
-        { ["cpu.temp"] = temp, ["cpu.ppt"] = ppt, ["gpu.clock"] = clock }, DateTime.UtcNow));
+        { ["cpu.temp"] = temp, ["cpu.ppt"] = ppt, ["gpu.clock"] = clock, ["cpu.load"] = load }, DateTime.UtcNow));
+
+    private static AppSettings Seeded() => new() { ThresholdRules = ThresholdDefaults.Rules() };
+
+    // ---- tile ----
 
     [Fact]
-    public void Tile_Refresh_FormatsCurrentMinMax()
+    public void Tile_Refresh_FormatsCurrentMinAvgMax()
     {
         var store = NewStore();
         Push(store, 40f, 70f, 2400f);
         Push(store, 45f, 71f, 2500f);
-        var tile = new MetricTileViewModel(CpuTemp, store["cpu.temp"]);
+        var tile = new MetricTileViewModel(CpuTemp, store["cpu.temp"], new AppSettings());
         tile.Refresh();
         Assert.Equal("45.0 °C", tile.CurrentText);
-        Assert.Contains("40.0", tile.MinMaxText);
-        Assert.Contains("45.0", tile.MinMaxText);
+        Assert.Contains("min 40.0", tile.MinMaxText);
         Assert.Contains("avg 42.5", tile.MinMaxText);
+        Assert.Contains("max 45.0", tile.MinMaxText);
         Assert.Equal(2, tile.HistoryValues.Length);
+        Assert.Equal("2m", tile.HistoryWindowTag);
+        Assert.Equal("°C", tile.Unit);
+    }
+
+    [Fact]
+    public void Tile_WithLimit_ShowsPercentOfLimit_AndGaugeKind()
+    {
+        var store = NewStore();
+        Push(store, 40f, 75f, 2400f);
+        var s = new AppSettings { MetricLimits = { ["cpu.ppt"] = 150f } };
+        var tile = new MetricTileViewModel(CpuPpt, store["cpu.ppt"], s);
+        tile.Refresh();
+        Assert.Equal("50% of 150.0 W", tile.LimitText);
+        Assert.Equal(TileKind.Gauge, tile.Kind);   // explicit max → Auto resolves to Gauge
+        Assert.Equal(150f, tile.Max);
+        Assert.Equal(0.5f, tile.Fraction01, 3);
+        Assert.Equal("150.0 W", tile.MaxText);
     }
 
     [Fact]
@@ -37,28 +59,73 @@ public class ViewModelTests
     {
         var store = NewStore();
         Push(store, 40f, 75f, 2400f);
-        var tile = new MetricTileViewModel(CpuPpt, store["cpu.ppt"], limit: 0f);
+        var s = new AppSettings { MetricLimits = { ["cpu.ppt"] = 0f } };
+        var tile = new MetricTileViewModel(CpuPpt, store["cpu.ppt"], s);
         tile.Refresh();
         Assert.Equal("", tile.LimitText);
     }
 
     [Fact]
-    public void Tile_WithLimit_ShowsPercentOfLimit()
+    public void Tile_FriendlyName_FromPrefs()
     {
         var store = NewStore();
-        Push(store, 40f, 75f, 2400f);
-        var tile = new MetricTileViewModel(CpuPpt, store["cpu.ppt"], limit: 150f);
+        var s = new AppSettings();
+        s.PrefFor("cpu.temp").Name = "CPU Temp";
+        var tile = new MetricTileViewModel(CpuTemp, store["cpu.temp"], s);
         tile.Refresh();
-        Assert.Equal("50% of 150.0 W", tile.LimitText);
+        Assert.Equal("CPU Temp", tile.DisplayName);
     }
 
     [Fact]
-    public void Dashboard_BuildsTilesOnlyForSelectedMetrics_InDefinitionOrder()
+    public void Tile_Severity_FromThresholds()
+    {
+        var store = NewStore();
+        Push(store, 93f, 70f, 2400f);
+        var tile = new MetricTileViewModel(CpuTemp, store["cpu.temp"], Seeded());
+        tile.Refresh();
+        Assert.Equal(Severity.Crit, tile.Severity);
+    }
+
+    [Fact]
+    public void Tile_Kind_AutoRules()
+    {
+        var store = NewStore();
+        Push(store, 40f, 70f, 2400f);
+        var s = new AppSettings();
+        var load = new MetricTileViewModel(CpuLoad, store["cpu.load"], s); load.Refresh();
+        var clock = new MetricTileViewModel(GpuClock, store["gpu.clock"], s); clock.Refresh();
+        Assert.Equal(TileKind.Gauge, load.Kind);       // % → gauge with max 100
+        Assert.Equal(100f, load.Max);
+        Assert.Equal(TileKind.Sparkline, clock.Kind);  // no explicit max → sparkline
+        Assert.Equal(2400f, clock.Max);                // derived from session max for Bar scale
+    }
+
+    [Fact]
+    public void Tile_Kind_And_Size_PrefOverride()
+    {
+        var store = NewStore();
+        Push(store, 40f, 70f, 2400f);
+        var s = new AppSettings();
+        s.PrefFor("gpu.clock").Kind = TileKind.Bar;
+        s.PrefFor("gpu.clock").Size = TileSize.L;
+        s.PrefFor("gpu.clock").Max = 3000f;
+        var tile = new MetricTileViewModel(GpuClock, store["gpu.clock"], s);
+        tile.Refresh();
+        Assert.Equal(TileKind.Bar, tile.Kind);
+        Assert.Equal(TileSize.L, tile.Size);
+        Assert.Equal(3000f, tile.Max);
+        Assert.Equal(0.8f, tile.Fraction01, 3);
+    }
+
+    // ---- dashboard (v1 behaviors still hold) ----
+
+    [Fact]
+    public void Dashboard_BuildsTilesOnlyForSelectedMetrics()
     {
         var store = NewStore();
         var settings = new AppSettings { DashboardMetrics = { "gpu.clock", "cpu.temp" } };
         var vm = new DashboardViewModel(store, settings, () => { });
-        Assert.Equal(new[] { "cpu.temp", "gpu.clock" }, vm.Tiles.Select(t => t.Definition.Id));
+        Assert.Equal(new[] { "cpu.temp", "gpu.clock" }.OrderBy(x => x), vm.Tiles.Select(t => t.Definition.Id).OrderBy(x => x));
     }
 
     [Fact]
@@ -94,6 +161,8 @@ public class ViewModelTests
         Assert.Equal(1, raised);
     }
 
+    // ---- overlay ----
+
     [Fact]
     public void Overlay_Rebuild_TracksSettings()
     {
@@ -104,5 +173,18 @@ public class ViewModelTests
         settings.OverlayMetrics.Add("gpu.clock");
         vm.Rebuild();
         Assert.Equal(2, vm.Tiles.Count);
+    }
+
+    [Fact]
+    public void Overlay_ApplyLayout_ReadsOrientationAndScale()
+    {
+        var store = NewStore();
+        var settings = new AppSettings { OverlayOrientation = OverlayOrientation.Vertical, OverlayFontScale = 1.3 };
+        var vm = new OverlayViewModel(store, settings);
+        Assert.Equal(OverlayOrientation.Vertical, vm.Orientation);
+        Assert.Equal(1.3, vm.FontScale);
+        settings.OverlayOrientation = OverlayOrientation.Horizontal;
+        vm.ApplyLayout();
+        Assert.Equal(OverlayOrientation.Horizontal, vm.Orientation);
     }
 }

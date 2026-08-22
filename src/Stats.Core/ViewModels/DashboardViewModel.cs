@@ -80,8 +80,7 @@ public sealed partial class DashboardViewModel : ObservableObject
         var selected = _settings.DashboardMetrics.ToHashSet();
         foreach (var def in _store.Definitions.Where(d => selected.Contains(d.Id)))
         {
-            float? limit = _settings.MetricLimits.TryGetValue(def.Id, out var l) ? l : null;
-            var tile = new MetricTileViewModel(def, _store[def.Id], limit);
+            var tile = new MetricTileViewModel(def, _store[def.Id], _settings);
             tile.Refresh();
             Tiles.Add(tile);
         }
