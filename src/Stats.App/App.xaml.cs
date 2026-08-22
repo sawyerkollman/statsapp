@@ -14,6 +14,9 @@ public partial class App : Application
 {
     private SettingsService? _settingsService;
     private AppSettings? _settings;
+
+    /// <summary>Loaded settings; read-only access for views that need raw prefs (e.g. context menus).</summary>
+    public AppSettings? Settings => _settings;
     private ISensorReader? _reader;
     private MetricStore? _store;
     private SensorPoller? _poller;
