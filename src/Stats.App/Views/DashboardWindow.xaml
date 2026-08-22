@@ -65,10 +65,55 @@
                 </ItemsControl>
             </ScrollViewer>
 
-            <!-- Metric picker flyout: filled in Task 13 -->
             <Border x:Name="PickerFlyout" HorizontalAlignment="Right" Width="380"
                     Background="{StaticResource FlyoutBg}"
-                    Visibility="{Binding IsPickerOpen, Converter={StaticResource BoolToVis}}"/>
+                    Visibility="{Binding IsPickerOpen, Converter={StaticResource BoolToVis}}">
+                <DockPanel Margin="12">
+                    <Grid DockPanel.Dock="Top" Margin="0,0,0,8">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="46"/>
+                            <ColumnDefinition Width="52"/>
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Text="Metrics" FontSize="16" FontWeight="Bold"
+                                   Foreground="{StaticResource TextPrimary}"/>
+                        <TextBlock Grid.Column="1" Text="Dash" FontSize="11"
+                                   Foreground="{StaticResource TextSecondary}" VerticalAlignment="Bottom"/>
+                        <TextBlock Grid.Column="2" Text="Overlay" FontSize="11"
+                                   Foreground="{StaticResource TextSecondary}" VerticalAlignment="Bottom"/>
+                    </Grid>
+                    <ScrollViewer VerticalScrollBarVisibility="Auto">
+                        <ItemsControl x:Name="PickerList">
+                            <ItemsControl.GroupStyle>
+                                <GroupStyle>
+                                    <GroupStyle.HeaderTemplate>
+                                        <DataTemplate>
+                                            <TextBlock Text="{Binding Name}" Style="{StaticResource GroupHeader}" Margin="0,10,0,2"/>
+                                        </DataTemplate>
+                                    </GroupStyle.HeaderTemplate>
+                                </GroupStyle>
+                            </ItemsControl.GroupStyle>
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <Grid Margin="0,1">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*"/>
+                                            <ColumnDefinition Width="46"/>
+                                            <ColumnDefinition Width="52"/>
+                                        </Grid.ColumnDefinitions>
+                                        <TextBlock Text="{Binding DisplayName}" FontSize="12"
+                                                   Foreground="{StaticResource TextPrimary}"
+                                                   TextTrimming="CharacterEllipsis" ToolTip="{Binding DisplayName}"
+                                                   VerticalAlignment="Center"/>
+                                        <CheckBox Grid.Column="1" IsChecked="{Binding IsChecked}" HorizontalAlignment="Center"/>
+                                        <CheckBox Grid.Column="2" IsChecked="{Binding IsOnOverlay}" HorizontalAlignment="Center"/>
+                                    </Grid>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </ScrollViewer>
+                </DockPanel>
+            </Border>
         </Grid>
     </DockPanel>
 </Window>

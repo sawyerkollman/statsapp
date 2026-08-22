@@ -19,6 +19,10 @@ public partial class DashboardWindow : Window
             var view = new ListCollectionView(vm.Tiles);
             view.GroupDescriptions.Add(new PropertyGroupDescription(nameof(MetricTileViewModel.GroupName)));
             TileList.ItemsSource = view;
+
+            var pickerView = new ListCollectionView(vm.PickerItems);
+            pickerView.GroupDescriptions.Add(new PropertyGroupDescription(nameof(MetricPickerItem.GroupName)));
+            PickerList.ItemsSource = pickerView;
         };
     }
 
