@@ -28,6 +28,9 @@ Uninstall from Settings → Apps; PawnIO is left installed because other tools m
   disappears for 10 s, pumps never below 50 %; fans return to device control when you exit Stats.
   Close MSI Center / Fan Control / Afterburner fan curves first. If Stats *crashes* (not exits),
   fans keep their last speed until Stats runs again or you reboot.
+  Stats now also reads the motherboard Super-I/O chip and USB fan/AIO controllers through
+  LibreHardwareMonitor (new *Motherboard* and *Cooler* metric groups); if another vendor tool owns
+  those devices you may see contention — close it or don't enable fan control.
 
 ## Run from source
 
