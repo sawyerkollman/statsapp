@@ -1,10 +1,11 @@
 using System.Diagnostics;
+using Stats.Core.Fans;
 using Stats.Core.Metrics;
 
 namespace Stats.Core.Sensors;
 
 /// <summary>Windows performance-counter fallback used when the LHM driver can't initialize.</summary>
-public sealed class PerfCounterSensorReader : ISensorReader
+public sealed class PerfCounterSensorReader : ISensorReader, IFanControlBackend
 {
     private readonly List<(MetricDefinition Def, PerformanceCounter Counter)> _counters = new();
     private readonly List<MetricDefinition> _definitions = new();
@@ -15,6 +16,10 @@ public sealed class PerfCounterSensorReader : ISensorReader
 
     public string Name => "Performance Counters (degraded)";
     public bool IsDegraded => true;
+
+    public IReadOnlyList<FanChannel> Channels => Array.Empty<FanChannel>();
+    public void SetPercent(string channelId, float percent) => throw new KeyNotFoundException(channelId);
+    public void SetAuto(string channelId) { }
 
     public IReadOnlyList<MetricDefinition> Discover()
     {

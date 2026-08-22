@@ -1,9 +1,10 @@
+using Stats.Core.Fans;
 using Stats.Core.Metrics;
 
 namespace Stats.Core.Sensors;
 
 /// <summary>Presents several readers as one. Identity (Name/IsDegraded) is the primary's; values are merged.</summary>
-public sealed class CompositeSensorReader : ISensorReader
+public sealed class CompositeSensorReader : ISensorReader, IFanControlBackend
 {
     private readonly ISensorReader[] _readers;
     private IReadOnlyList<MetricDefinition>? _definitions;
@@ -15,6 +16,11 @@ public sealed class CompositeSensorReader : ISensorReader
 
     public string Name => _readers[0].Name;
     public bool IsDegraded => _readers[0].IsDegraded;
+
+    private IFanControlBackend? FanBackend => _readers.OfType<IFanControlBackend>().FirstOrDefault(b => b.Channels.Count > 0);
+    public IReadOnlyList<FanChannel> Channels => FanBackend?.Channels ?? Array.Empty<FanChannel>();
+    public void SetPercent(string channelId, float percent) => FanBackend?.SetPercent(channelId, percent);
+    public void SetAuto(string channelId) => FanBackend?.SetAuto(channelId);
 
     public IReadOnlyList<MetricDefinition> Discover()
     {
