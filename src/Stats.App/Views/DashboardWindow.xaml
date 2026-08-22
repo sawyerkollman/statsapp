@@ -71,49 +71,170 @@
                 </ItemsControl>
             </ScrollViewer>
 
-            <Border x:Name="PickerFlyout" HorizontalAlignment="Right" Width="420"
+            <Border x:Name="PickerFlyout" HorizontalAlignment="Right" Width="440"
                     Background="{StaticResource FlyoutBg}"
                     Visibility="{Binding IsPickerOpen, Converter={StaticResource BoolToVis}}">
-                <DockPanel Margin="12">
-                    <Grid DockPanel.Dock="Top" Margin="0,0,0,8">
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="*"/>
-                            <ColumnDefinition Width="46"/>
-                            <ColumnDefinition Width="52"/>
-                        </Grid.ColumnDefinitions>
-                        <TextBlock Text="Metrics" FontSize="16" FontWeight="Bold" Foreground="{StaticResource TextPrimary}"/>
-                        <TextBlock Grid.Column="1" Text="Dash" FontSize="11" Foreground="{StaticResource TextSecondary}" VerticalAlignment="Bottom"/>
-                        <TextBlock Grid.Column="2" Text="Overlay" FontSize="11" Foreground="{StaticResource TextSecondary}" VerticalAlignment="Bottom"/>
-                    </Grid>
-                    <ScrollViewer VerticalScrollBarVisibility="Auto">
-                        <ItemsControl x:Name="PickerList">
-                            <ItemsControl.GroupStyle>
-                                <GroupStyle>
-                                    <GroupStyle.HeaderTemplate>
+                <TabControl SelectedIndex="{Binding FlyoutTabIndex, Mode=TwoWay}" Margin="12">
+
+                    <!-- ============ Metrics ============ -->
+                    <TabItem Header="Metrics">
+                        <DockPanel Margin="0,8,0,0">
+                            <TextBox DockPanel.Dock="Top" Margin="0,0,0,8" FontSize="12"
+                                     Text="{Binding PickerFilter, UpdateSourceTrigger=PropertyChanged}"
+                                     ToolTip="Filter by sensor, friendly name, or hardware"/>
+                            <Grid DockPanel.Dock="Top" Margin="0,0,0,4">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="70"/>
+                                    <ColumnDefinition Width="46"/>
+                                    <ColumnDefinition Width="52"/>
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Text="Sensor" FontSize="11" Foreground="{StaticResource TextSecondary}"/>
+                                <TextBlock Grid.Column="1" Text="Now" FontSize="11" Foreground="{StaticResource TextSecondary}"/>
+                                <TextBlock Grid.Column="2" Text="Dash" FontSize="11" Foreground="{StaticResource TextSecondary}" HorizontalAlignment="Center"/>
+                                <TextBlock Grid.Column="3" Text="Overlay" FontSize="11" Foreground="{StaticResource TextSecondary}" HorizontalAlignment="Center"/>
+                            </Grid>
+                            <ScrollViewer VerticalScrollBarVisibility="Auto">
+                                <ItemsControl x:Name="PickerList">
+                                    <ItemsControl.GroupStyle>
+                                        <GroupStyle>
+                                            <GroupStyle.HeaderTemplate>
+                                                <DataTemplate>
+                                                    <DockPanel Margin="0,10,0,2">
+                                                        <Button DockPanel.Dock="Right" Content="None" Tag="{Binding Name}" Click="PickerGroupNone_Click"
+                                                                Style="{StaticResource HeaderButton}" FontSize="10" Padding="6,1" Margin="4,0,0,0"/>
+                                                        <Button DockPanel.Dock="Right" Content="All" Tag="{Binding Name}" Click="PickerGroupAll_Click"
+                                                                Style="{StaticResource HeaderButton}" FontSize="10" Padding="6,1"/>
+                                                        <TextBlock Text="{Binding Name}" Style="{StaticResource GroupHeader}" Margin="0"/>
+                                                    </DockPanel>
+                                                </DataTemplate>
+                                            </GroupStyle.HeaderTemplate>
+                                        </GroupStyle>
+                                    </ItemsControl.GroupStyle>
+                                    <ItemsControl.ItemTemplate>
                                         <DataTemplate>
-                                            <TextBlock Text="{Binding Name}" Style="{StaticResource GroupHeader}" Margin="0,10,0,2"/>
+                                            <Grid Margin="0,1">
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="*"/>
+                                                    <ColumnDefinition Width="70"/>
+                                                    <ColumnDefinition Width="46"/>
+                                                    <ColumnDefinition Width="52"/>
+                                                </Grid.ColumnDefinitions>
+                                                <TextBlock Text="{Binding DisplayName}" FontSize="12" Foreground="{StaticResource TextPrimary}"
+                                                           TextTrimming="CharacterEllipsis" ToolTip="{Binding Definition.DisplayName}" VerticalAlignment="Center"/>
+                                                <TextBlock Grid.Column="1" Text="{Binding CurrentText}" FontSize="11" Foreground="{StaticResource TextSecondary}" VerticalAlignment="Center"/>
+                                                <CheckBox Grid.Column="2" IsChecked="{Binding IsChecked}" HorizontalAlignment="Center"/>
+                                                <CheckBox Grid.Column="3" IsChecked="{Binding IsOnOverlay}" HorizontalAlignment="Center"/>
+                                            </Grid>
                                         </DataTemplate>
-                                    </GroupStyle.HeaderTemplate>
-                                </GroupStyle>
-                            </ItemsControl.GroupStyle>
-                            <ItemsControl.ItemTemplate>
-                                <DataTemplate>
-                                    <Grid Margin="0,1">
-                                        <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="*"/>
-                                            <ColumnDefinition Width="46"/>
-                                            <ColumnDefinition Width="52"/>
-                                        </Grid.ColumnDefinitions>
-                                        <TextBlock Text="{Binding DisplayName}" FontSize="12" Foreground="{StaticResource TextPrimary}"
-                                                   TextTrimming="CharacterEllipsis" ToolTip="{Binding DisplayName}" VerticalAlignment="Center"/>
-                                        <CheckBox Grid.Column="1" IsChecked="{Binding IsChecked}" HorizontalAlignment="Center"/>
-                                        <CheckBox Grid.Column="2" IsChecked="{Binding IsOnOverlay}" HorizontalAlignment="Center"/>
-                                    </Grid>
-                                </DataTemplate>
-                            </ItemsControl.ItemTemplate>
-                        </ItemsControl>
-                    </ScrollViewer>
-                </DockPanel>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                            </ScrollViewer>
+                        </DockPanel>
+                    </TabItem>
+
+                    <!-- ============ Settings ============ -->
+                    <TabItem Header="Settings">
+                        <ScrollViewer VerticalScrollBarVisibility="Auto" Margin="0,8,0,0">
+                            <StackPanel DataContext="{Binding SettingsPanel}" Margin="0,0,8,16">
+
+                                <TextBlock Text="Polling" Style="{StaticResource SettingsHeader}" Margin="0,0,0,6"/>
+                                <DockPanel>
+                                    <TextBlock DockPanel.Dock="Right" Width="44" TextAlignment="Right" Style="{StaticResource SettingsLabel}"
+                                               Text="{Binding PollIntervalSeconds, StringFormat='{}{0:0.0} s'}"/>
+                                    <Slider Minimum="0.5" Maximum="5" TickFrequency="0.5" IsSnapToTickEnabled="True"
+                                            Value="{Binding PollIntervalSeconds}"/>
+                                </DockPanel>
+
+                                <TextBlock Text="History window" Style="{StaticResource SettingsHeader}"/>
+                                <StackPanel Orientation="Horizontal">
+                                    <RadioButton Content="2 min" IsChecked="{Binding HistoryWindowMinutes, Converter={StaticResource Equals}, ConverterParameter=2}"/>
+                                    <RadioButton Content="5 min" IsChecked="{Binding HistoryWindowMinutes, Converter={StaticResource Equals}, ConverterParameter=5}"/>
+                                    <RadioButton Content="15 min" IsChecked="{Binding HistoryWindowMinutes, Converter={StaticResource Equals}, ConverterParameter=15}"/>
+                                    <RadioButton Content="60 min" IsChecked="{Binding HistoryWindowMinutes, Converter={StaticResource Equals}, ConverterParameter=60}"/>
+                                </StackPanel>
+
+                                <TextBlock Text="Thresholds (warn / crit)" Style="{StaticResource SettingsHeader}"/>
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="120"/>
+                                        <ColumnDefinition Width="70"/>
+                                        <ColumnDefinition Width="70"/>
+                                    </Grid.ColumnDefinitions>
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition/><RowDefinition/><RowDefinition/>
+                                    </Grid.RowDefinitions>
+                                    <TextBlock Text="CPU temp °C" Style="{StaticResource SettingsLabel}"/>
+                                    <TextBox Grid.Column="1" Margin="0,2,6,2" Text="{Binding CpuTempWarn, UpdateSourceTrigger=LostFocus}"/>
+                                    <TextBox Grid.Column="2" Margin="0,2,0,2" Text="{Binding CpuTempCrit, UpdateSourceTrigger=LostFocus}"/>
+                                    <TextBlock Grid.Row="1" Text="GPU temp °C" Style="{StaticResource SettingsLabel}"/>
+                                    <TextBox Grid.Row="1" Grid.Column="1" Margin="0,2,6,2" Text="{Binding GpuTempWarn, UpdateSourceTrigger=LostFocus}"/>
+                                    <TextBox Grid.Row="1" Grid.Column="2" Margin="0,2,0,2" Text="{Binding GpuTempCrit, UpdateSourceTrigger=LostFocus}"/>
+                                    <TextBlock Grid.Row="2" Text="Load %" Style="{StaticResource SettingsLabel}"/>
+                                    <TextBox Grid.Row="2" Grid.Column="1" Margin="0,2,6,2" Text="{Binding LoadWarn, UpdateSourceTrigger=LostFocus}"/>
+                                    <TextBox Grid.Row="2" Grid.Column="2" Margin="0,2,0,2" Text="{Binding LoadCrit, UpdateSourceTrigger=LostFocus}"/>
+                                </Grid>
+                                <TextBlock Text="{Binding ThresholdError}" Foreground="{StaticResource CritBrush}" FontSize="11"/>
+
+                                <TextBlock Text="Limits (for % of limit / gauges)" Style="{StaticResource SettingsHeader}"/>
+                                <TextBlock Text="Enter your PBO PPT/TDC/EDC or GPU power limit. Blank = none."
+                                           Foreground="{StaticResource TextSecondary}" FontSize="11" TextWrapping="Wrap" Margin="0,0,0,4"/>
+                                <ItemsControl ItemsSource="{Binding LimitItems}">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate>
+                                            <DockPanel Margin="0,2">
+                                                <TextBox DockPanel.Dock="Right" Width="80" Text="{Binding ValueText, UpdateSourceTrigger=LostFocus}">
+                                                    <TextBox.Style>
+                                                        <Style TargetType="TextBox" BasedOn="{StaticResource {x:Type TextBox}}">
+                                                            <Style.Triggers>
+                                                                <DataTrigger Binding="{Binding IsInvalid}" Value="True">
+                                                                    <Setter Property="BorderBrush" Value="{StaticResource CritBrush}"/>
+                                                                </DataTrigger>
+                                                            </Style.Triggers>
+                                                        </Style>
+                                                    </TextBox.Style>
+                                                </TextBox>
+                                                <TextBlock Text="{Binding Label}" Style="{StaticResource SettingsLabel}" TextTrimming="CharacterEllipsis"/>
+                                            </DockPanel>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+
+                                <TextBlock Text="Overlay" Style="{StaticResource SettingsHeader}"/>
+                                <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
+                                    <RadioButton Content="Horizontal" IsChecked="{Binding OverlayIsVertical, Converter={StaticResource InverseBool}}"/>
+                                    <RadioButton Content="Vertical" IsChecked="{Binding OverlayIsVertical}"/>
+                                </StackPanel>
+                                <DockPanel Margin="0,2">
+                                    <TextBlock Text="Font scale" Width="90" Style="{StaticResource SettingsLabel}"/>
+                                    <TextBlock DockPanel.Dock="Right" Width="40" TextAlignment="Right" Style="{StaticResource SettingsLabel}"
+                                               Text="{Binding OverlayFontScale, StringFormat='{}{0:0.0}×'}"/>
+                                    <Slider Minimum="0.8" Maximum="1.6" TickFrequency="0.1" IsSnapToTickEnabled="True" Value="{Binding OverlayFontScale}"/>
+                                </DockPanel>
+                                <DockPanel Margin="0,2">
+                                    <TextBlock Text="Opacity" Width="90" Style="{StaticResource SettingsLabel}"/>
+                                    <TextBlock DockPanel.Dock="Right" Width="40" TextAlignment="Right" Style="{StaticResource SettingsLabel}"
+                                               Text="{Binding OverlayOpacity, StringFormat='{}{0:P0}'}"/>
+                                    <Slider Minimum="0.3" Maximum="1.0" TickFrequency="0.05" IsSnapToTickEnabled="True" Value="{Binding OverlayOpacity}"/>
+                                </DockPanel>
+                                <CheckBox Content="Click-through (mouse passes through the overlay; turn off to drag it)" Margin="0,4"
+                                          IsChecked="{Binding OverlayClickThrough}"/>
+                                <DockPanel Margin="0,4">
+                                    <TextBlock Text="Toggle hotkey" Width="90" Style="{StaticResource SettingsLabel}"/>
+                                    <Button DockPanel.Dock="Right" Content="Clear" Click="HotkeyClear_Click" Style="{StaticResource HeaderButton}" FontSize="11"/>
+                                    <TextBox x:Name="HotkeyBox" IsReadOnly="True" Text="{Binding OverlayHotkey, Mode=OneWay}"
+                                             PreviewKeyDown="HotkeyBox_PreviewKeyDown" ToolTip="Click, then press the key combination"/>
+                                </DockPanel>
+                                <TextBlock Text="{Binding HotkeyStatus}" Foreground="{StaticResource WarnBrush}" FontSize="11"/>
+                                <Button Content="Reset overlay position" Command="{Binding ResetOverlayPositionCommand}"
+                                        Style="{StaticResource HeaderButton}" HorizontalAlignment="Left" Margin="0,6,0,0" FontSize="11"/>
+
+                                <TextBlock Text="Dashboard" Style="{StaticResource SettingsHeader}"/>
+                                <CheckBox Content="Show CPU core matrix" IsChecked="{Binding ShowCoreMatrix}"/>
+                            </StackPanel>
+                        </ScrollViewer>
+                    </TabItem>
+                </TabControl>
             </Border>
         </Grid>
     </DockPanel>

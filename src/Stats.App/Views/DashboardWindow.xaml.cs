@@ -145,4 +145,49 @@ public partial class DashboardWindow : Window
         if (result.Trim().Length == 0) { vm.SetTileMax(tile.Definition.Id, null); return; }
         if (float.TryParse(result, NumberStyles.Float, CultureInfo.InvariantCulture, out var v)) vm.SetTileMax(tile.Definition.Id, v);
     }
+
+    // ---- picker group bulk ----
+
+    private void PickerGroupAll_Click(object sender, RoutedEventArgs e) => BulkSelect(sender, true);
+    private void PickerGroupNone_Click(object sender, RoutedEventArgs e) => BulkSelect(sender, false);
+
+    private void BulkSelect(object sender, bool selected)
+    {
+        if ((sender as FrameworkElement)?.Tag is string groupName) Vm?.SelectAllInGroup(groupName, selected);
+    }
+
+    // ---- hotkey capture ----
+
+    private void HotkeyBox_PreviewKeyDown(object sender, KeyEventArgs e)
+    {
+        e.Handled = true;
+        var key = e.Key == Key.System ? e.SystemKey : e.Key;
+        if (key is Key.LeftCtrl or Key.RightCtrl or Key.LeftShift or Key.RightShift
+                or Key.LeftAlt or Key.RightAlt or Key.LWin or Key.RWin) return; // wait for the real key
+
+        var parts = new List<string>();
+        if (Keyboard.Modifiers.HasFlag(ModifierKeys.Control)) parts.Add("Ctrl");
+        if (Keyboard.Modifiers.HasFlag(ModifierKeys.Shift)) parts.Add("Shift");
+        if (Keyboard.Modifiers.HasFlag(ModifierKeys.Alt)) parts.Add("Alt");
+        if (Keyboard.Modifiers.HasFlag(ModifierKeys.Windows)) parts.Add("Win");
+
+        string? name = key switch
+        {
+            >= Key.A and <= Key.Z => key.ToString(),
+            >= Key.D0 and <= Key.D9 => key.ToString()[1..],
+            >= Key.F1 and <= Key.F24 => key.ToString(),
+            Key.Space => "Space", Key.Pause => "Pause", Key.Insert => "Insert", Key.Delete => "Delete",
+            Key.Home => "Home", Key.End => "End", Key.PageUp => "PageUp", Key.PageDown => "PageDown",
+            Key.Scroll => "ScrollLock", Key.NumLock => "NumLock", Key.Tab => "Tab",
+            _ => null,
+        };
+        if (name is null) return;
+        parts.Add(name);
+        if (Vm?.SettingsPanel is SettingsViewModel svm) svm.OverlayHotkey = string.Join("+", parts);
+    }
+
+    private void HotkeyClear_Click(object sender, RoutedEventArgs e)
+    {
+        if (Vm?.SettingsPanel is SettingsViewModel svm) svm.OverlayHotkey = "";
+    }
 }
