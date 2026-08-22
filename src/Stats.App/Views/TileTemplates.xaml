@@ -3,6 +3,10 @@
                     xmlns:controls="clr-namespace:Stats.App.Controls"
                     xmlns:views="clr-namespace:Stats.App.Views">
 
+    <ResourceDictionary.MergedDictionaries>
+        <ResourceDictionary Source="pack://application:,,,/Stats.App;component/Views/Theme.xaml"/>
+    </ResourceDictionary.MergedDictionaries>
+
     <!-- Outer tile chrome; Width/Height follow TileSize -->
     <Style x:Key="TileBorder" TargetType="Border">
         <Setter Property="Width" Value="{Binding Size, Converter={StaticResource TileSizeToLength}, ConverterParameter=W}"/>
