@@ -29,7 +29,7 @@ public class FrameMetricsTests
 
     [Fact]
     public void Game_IsLastEnumMember_SoSerializedRulesStayStable() =>
-        Assert.Equal(Enum.GetValues<MetricGroup>().Max(), MetricGroup.Game);
+        Assert.Equal(MetricGroup.Game, Enum.GetValues<MetricGroup>().Max());
 
     [Fact]
     public void DashboardViewModel_PlacesGameSectionLast()
