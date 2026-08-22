@@ -1,5 +1,6 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using Stats.Core.Fans;
 using Stats.Core.Metrics;
 
 namespace Stats.Core.Settings;
@@ -42,6 +43,12 @@ public sealed class SettingsService
         if (settings.ThresholdRules.Count == 0)
             settings.ThresholdRules = ThresholdDefaults.Rules();
         settings.OverlayHotkey ??= "";
+        foreach (var pref in settings.FanChannels.Values)
+        {
+            pref.ManualPercent = Math.Clamp(pref.ManualPercent, 0f, 100f);
+            if (!FanCurve.TryCreate(pref.Points, out _))
+                pref.Points = FanCurve.DefaultPoints.ToList();
+        }
         return settings;
     }
 

@@ -35,6 +35,16 @@ public sealed class AppSettings
     public double? PeaksWidth { get; set; }
     public double? PeaksHeight { get; set; }
 
+    // ---- v1.3 fan control ----
+    /// <summary>Master switch: nothing is written to fan controls while false.</summary>
+    public bool FanControlEnabled { get; set; }
+    /// <summary>Per-channel desired state keyed by LHM control identifier (e.g. "/lpc/it8696e/0/control/0").</summary>
+    public Dictionary<string, FanChannelPref> FanChannels { get; set; } = new();
+    public double? FansLeft { get; set; }
+    public double? FansTop { get; set; }
+    public double? FansWidth { get; set; }
+    public double? FansHeight { get; set; }
+
     /// <summary>Get-or-create the TilePref for a metric id.</summary>
     public TilePref PrefFor(string metricId)
     {
