@@ -5,10 +5,6 @@
              ShutdownMode="OnExplicitShutdown">
     <Application.Resources>
         <ResourceDictionary>
-            <ResourceDictionary.MergedDictionaries>
-                <ResourceDictionary Source="Views/TileTemplates.xaml"/>
-            </ResourceDictionary.MergedDictionaries>
-
             <!-- Palette -->
             <SolidColorBrush x:Key="WindowBg" Color="#FF1B1B1C"/>
             <SolidColorBrush x:Key="TileBg" Color="#FF252528"/>
@@ -117,6 +113,10 @@
                 <Setter Property="Foreground" Value="{StaticResource TextPrimary}"/>
                 <Setter Property="BorderBrush" Value="{StaticResource BorderDim}"/>
             </Style>
+
+            <ResourceDictionary.MergedDictionaries>
+                <ResourceDictionary Source="Views/TileTemplates.xaml"/>
+            </ResourceDictionary.MergedDictionaries>
         </ResourceDictionary>
     </Application.Resources>
 </Application>

@@ -61,6 +61,7 @@ public partial class DashboardWindow : Window
     private void Tile_PreviewMouseMove(object sender, MouseEventArgs e)
     {
         if (_dragTileId is null || e.LeftButton != MouseButtonState.Pressed) return;
+        if ((sender as FrameworkElement)?.DataContext is not MetricTileViewModel t || t.Definition.Id != _dragTileId) return;
         var delta = e.GetPosition(this) - _dragStart;
         if (Math.Abs(delta.X) < SystemParameters.MinimumHorizontalDragDistance &&
             Math.Abs(delta.Y) < SystemParameters.MinimumVerticalDragDistance) return;
@@ -68,6 +69,8 @@ public partial class DashboardWindow : Window
         _dragTileId = null;
         DragDrop.DoDragDrop((DependencyObject)sender, new DataObject(DragFormat, id), DragDropEffects.Move);
     }
+
+    private void Tile_PreviewMouseLeftButtonUp(object sender, MouseButtonEventArgs e) => _dragTileId = null;
 
     private void Tile_DragOver(object sender, DragEventArgs e)
     {
@@ -113,6 +116,8 @@ public partial class DashboardWindow : Window
         rename.Click += (_, _) => PromptRename(vm, tile);
         var setMax = new MenuItem { Header = "Set gauge/bar max…" };
         setMax.Click += (_, _) => PromptMax(vm, tile);
+        var thresholds = new MenuItem { Header = "Set warn/crit thresholds…" };
+        thresholds.Click += (_, _) => PromptThresholds(vm, tile);
         var remove = new MenuItem { Header = "Remove from dashboard" };
         remove.Click += (_, _) => vm.RemoveTile(id);
 
@@ -121,6 +126,7 @@ public partial class DashboardWindow : Window
         menu.Items.Add(new Separator());
         menu.Items.Add(rename);
         menu.Items.Add(setMax);
+        menu.Items.Add(thresholds);
         menu.Items.Add(new Separator());
         menu.Items.Add(remove);
         menu.IsOpen = true;
@@ -146,6 +152,23 @@ public partial class DashboardWindow : Window
         if (float.TryParse(result, NumberStyles.Float, CultureInfo.InvariantCulture, out var v)) vm.SetTileMax(tile.Definition.Id, v);
     }
 
+    private void PromptThresholds(DashboardViewModel vm, MetricTileViewModel tile)
+    {
+        var settings = (Application.Current as App)?.Settings;
+        var current = settings is not null && settings.ThresholdOverrides.TryGetValue(tile.Definition.Id, out var o)
+            ? string.Create(CultureInfo.InvariantCulture, $"{o.Warn:0.##}/{o.Crit:0.##}") : "";
+        var result = InputDialog.Show(this, "Thresholds for this tile",
+            $"Warn/Crit in {tile.Unit}, e.g. 85/92. Blank = use the group rule.", current);
+        if (result is null) return;
+        var parts = result.Split('/', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
+        if (parts.Length == 2
+            && float.TryParse(parts[0], NumberStyles.Float, CultureInfo.InvariantCulture, out var warn)
+            && float.TryParse(parts[1], NumberStyles.Float, CultureInfo.InvariantCulture, out var crit))
+            vm.SetTileThresholds(tile.Definition.Id, warn, crit);
+        else
+            vm.SetTileThresholds(tile.Definition.Id, null, null);
+    }
+
     // ---- picker group bulk ----
 
     private void PickerGroupAll_Click(object sender, RoutedEventArgs e) => BulkSelect(sender, true);
@@ -160,6 +183,8 @@ public partial class DashboardWindow : Window
 
     private void HotkeyBox_PreviewKeyDown(object sender, KeyEventArgs e)
     {
+        if (e.Key == Key.Tab) return;                       // let focus move on
+        if (e.Key == Key.Escape) { e.Handled = true; Keyboard.ClearFocus(); return; }
         e.Handled = true;
         var key = e.Key == Key.System ? e.SystemKey : e.Key;
         if (key is Key.LeftCtrl or Key.RightCtrl or Key.LeftShift or Key.RightShift
@@ -178,7 +203,7 @@ public partial class DashboardWindow : Window
             >= Key.F1 and <= Key.F24 => key.ToString(),
             Key.Space => "Space", Key.Pause => "Pause", Key.Insert => "Insert", Key.Delete => "Delete",
             Key.Home => "Home", Key.End => "End", Key.PageUp => "PageUp", Key.PageDown => "PageDown",
-            Key.Scroll => "ScrollLock", Key.NumLock => "NumLock", Key.Tab => "Tab",
+            Key.Scroll => "ScrollLock", Key.NumLock => "NumLock",
             _ => null,
         };
         if (name is null) return;

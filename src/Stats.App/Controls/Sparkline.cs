@@ -78,12 +78,15 @@ public sealed class Sparkline : FrameworkElement
         double X(int i) => w * i / (values.Count - 1);
         double Y(float v) => h - 2 - (v - min) / range * (h - 4);
 
+        int stride = Math.Max(1, values.Count / Math.Max(1, (int)(w * 2)));
+
         // fill
         var fill = new StreamGeometry();
         using (var ctx = fill.Open())
         {
             ctx.BeginFigure(new Point(0, h), true, true);
-            for (int i = 0; i < values.Count; i++) ctx.LineTo(new Point(X(i), Y(values[i])), false, false);
+            for (int i = 0; i < values.Count; i += stride) ctx.LineTo(new Point(X(i), Y(values[i])), false, false);
+            if ((values.Count - 1) % stride != 0) ctx.LineTo(new Point(X(values.Count - 1), Y(values[values.Count - 1])), false, false);
             ctx.LineTo(new Point(w, h), false, false);
         }
         fill.Freeze();
@@ -101,7 +104,8 @@ public sealed class Sparkline : FrameworkElement
         using (var ctx = line.Open())
         {
             ctx.BeginFigure(new Point(X(0), Y(values[0])), false, false);
-            for (int i = 1; i < values.Count; i++) ctx.LineTo(new Point(X(i), Y(values[i])), true, false);
+            for (int i = stride; i < values.Count; i += stride) ctx.LineTo(new Point(X(i), Y(values[i])), true, false);
+            if ((values.Count - 1) % stride != 0) ctx.LineTo(new Point(X(values.Count - 1), Y(values[values.Count - 1])), true, false);
         }
         line.Freeze();
         dc.DrawGeometry(null, new Pen(Stroke, 1.5) { LineJoin = PenLineJoin.Round }, line);

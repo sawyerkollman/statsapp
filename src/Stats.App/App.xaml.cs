@@ -143,6 +143,7 @@ public partial class App : Application
         _dashboard.AllowClose = false; // close button hides to tray; exit via tray menu
         _dashboard.LocationChanged += (_, _) => SaveWindowBounds();
         _dashboard.SizeChanged += (_, _) => SaveWindowBounds();
+        SessionEnding += (_, _) => ExitApp();
         _dashboard.Show();
         _poller.Start();
     }
@@ -348,7 +349,7 @@ public partial class App : Application
         var parsed = HotkeyParser.Parse(_settings.OverlayHotkey);
         bool ok = _hotkey.Register(parsed);
         if (!ok) _settingsVm.HotkeyStatus = "Hotkey unavailable — in use by another app";
-        else if (parsed is null && _settings.OverlayHotkey.Length == 0) _settingsVm.HotkeyStatus = "Hotkey disabled";
+        else if (parsed is null) _settingsVm.HotkeyStatus = _settings.OverlayHotkey.Length == 0 ? "Hotkey disabled" : "Invalid hotkey — disabled";
         else _settingsVm.HotkeyStatus = "";
     }
 
