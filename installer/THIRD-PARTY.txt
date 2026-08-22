@@ -12,6 +12,12 @@ LibreHardwareMonitorLib — https://github.com/LibreHardwareMonitor/LibreHardwar
   Licensed under the Mozilla Public License 2.0. Source for the library as used is
   available at the URL above (NuGet package LibreHardwareMonitorLib 0.9.6).
 
+PresentMon (frame-timing capture tool) — https://github.com/GameTechDev/PresentMon
+  Copyright (c) Intel Corporation. Licensed under the MIT License.
+  Stats ships the unmodified PresentMon 2.5.1 console executable as PresentMon.exe and
+  runs it as a helper process only while an FPS metric is selected. It uses Windows
+  Event Tracing to observe frame presentation; it does not modify or inject into games.
+
 H.NotifyIcon.Wpf (MIT), CommunityToolkit.Mvvm (MIT), and the .NET 8 runtime (MIT)
   are redistributed in binary form under their respective licenses.
 

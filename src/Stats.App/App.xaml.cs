@@ -6,6 +6,7 @@ using H.NotifyIcon;
 using Stats.App.Helpers;
 using Stats.App.Tray;
 using Stats.App.Views;
+using Stats.Core.Frames;
 using Stats.Core.Metrics;
 using Stats.Core.Sensors;
 using Stats.Core.Settings;
@@ -21,6 +22,7 @@ public partial class App : Application
     /// <summary>Loaded settings; read-only access for views that need raw prefs (e.g. context menus).</summary>
     public AppSettings? Settings => _settings;
     private ISensorReader? _reader;
+    private FrameRateReader? _frameReader;
     private MetricStore? _store;
     private SensorPoller? _poller;
     private DashboardWindow? _dashboard;
@@ -50,13 +52,13 @@ public partial class App : Application
         IReadOnlyList<MetricDefinition> definitions;
         try
         {
-            _reader = new LhmSensorReader();
+            (_reader, _frameReader) = BuildReader(() => new LhmSensorReader());
             definitions = _reader.Discover();
         }
         catch (Exception)
         {
             try { _reader?.Dispose(); } catch (Exception) { /* failed reader; fall through to fallback */ }
-            _reader = new PerfCounterSensorReader();
+            (_reader, _frameReader) = BuildReader(() => new PerfCounterSensorReader());
             definitions = _reader.Discover();
         }
         // LHM does not throw when its kernel driver fails to load — CPU temp/power sensors are simply absent.
@@ -79,6 +81,8 @@ public partial class App : Application
         {
             Interval = TimeSpan.FromSeconds(_settings.PollIntervalSeconds),
         };
+        if (_frameReader is not null) _frameReader.Window = TimeSpan.FromSeconds(_settings.PollIntervalSeconds);
+        ApplyFrameTracing();
 
         _dashboardVm = new DashboardViewModel(_store, _settings, SaveSettings)
         {
@@ -99,7 +103,7 @@ public partial class App : Application
             _settings.OverlayLeft = _overlay.Left;
             _settings.OverlayTop = _overlay.Top;
         };
-        _dashboardVm.OverlayMetricsChanged += () => _overlayVm.Rebuild();
+        _dashboardVm.OverlayMetricsChanged += () => { _overlayVm.Rebuild(); ApplyFrameTracing(); };
         _dashboardVm.OverlayToggleRequested += ToggleOverlay;
 
         _settingsVm = new SettingsViewModel(_settings, definitions, SaveSettings);
@@ -116,7 +120,7 @@ public partial class App : Application
         _store.ResizeAll(HistoryCapacity.Compute(_settings.HistoryWindowMinutes, _settings.PollIntervalSeconds));
 
         _dashboardVm.OpenPeaksRequested += ShowPeaks;
-        _dashboardVm.DashboardMetricsChanged += () => _peaksVm?.RebuildRows();
+        _dashboardVm.DashboardMetricsChanged += () => { _peaksVm?.RebuildRows(); ApplyFrameTracing(); };
 
         var cpuTemps = definitions.Where(d => d.Group == MetricGroup.Cpu && d.Unit == "°C").ToList();
         _trayCpuTempId = (cpuTemps.FirstOrDefault(d => d.DisplayName.Contains("tctl", StringComparison.OrdinalIgnoreCase))
@@ -164,6 +168,19 @@ public partial class App : Application
         if (_settings is null) return;
         try { _settingsService?.Save(_settings); }
         catch (Exception) { /* disk unavailable — keep running; next save retries */ }
+    }
+
+    /// <summary>Primary hardware reader + the PresentMon frame reader, merged. Discover() is the caller's.</summary>
+    private static (ISensorReader Reader, FrameRateReader Frames) BuildReader(Func<ISensorReader> primaryFactory)
+    {
+        var frames = FrameRateReader.CreateDefault();
+        return (new CompositeSensorReader(primaryFactory(), frames), frames);
+    }
+
+    private void ApplyFrameTracing()
+    {
+        if (_frameReader is null || _settings is null) return;
+        _frameReader.SetActive(FrameRateReader.ShouldBeActive(_settings.DashboardMetrics, _settings.OverlayMetrics));
     }
 
     private void RestoreWindowBounds()
@@ -313,6 +330,7 @@ public partial class App : Application
         {
             case SettingsChange.PollInterval:
                 if (_poller is not null) _poller.Interval = TimeSpan.FromSeconds(_settings.PollIntervalSeconds);
+                if (_frameReader is not null) _frameReader.Window = TimeSpan.FromSeconds(_settings.PollIntervalSeconds);
                 _store?.ResizeAll(HistoryCapacity.Compute(_settings.HistoryWindowMinutes, _settings.PollIntervalSeconds));
                 break;
             case SettingsChange.HistoryWindow:
