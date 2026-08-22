@@ -5,15 +5,33 @@ Ryzen Master, Task Manager, Core Temp, and Afterburner each show a slice of:
 CPU per-core clocks/temps/loads, package power, PPT, voltages; GPU clocks,
 temps, fan, power, VRAM; RAM; per-disk activity; per-adapter network throughput.
 
-## Run
+## Install
+
+Grab `Stats-Setup-<version>.exe` from the
+[latest release](https://github.com/sawyerkollman/statsapp/releases/latest) and run it.
+It is not code-signed, so SmartScreen will warn: **More info → Run anyway**. The installer
+needs administrator rights, puts Stats in `C:\Program Files\Stats` and the Start menu, and
+installs the **PawnIO** kernel driver (https://pawnio.eu) if it is not already present —
+LibreHardwareMonitor reads CPU temperature/clock/power through PawnIO only, same as Core Temp
+or Ryzen Master. Without it the app shows a degraded-mode banner (loads/usage only).
+Optional checkbox: start Stats at sign-in (a Scheduled Task, so no UAC prompt each login).
+Uninstall from Settings → Apps; PawnIO is left installed because other tools may use it.
+
+## Run from source
 
     dotnet build -c Release
     src\Stats.App\bin\Release\net8.0-windows\Stats.App.exe
 
-Requires administrator (UAC prompt) and the **PawnIO** kernel driver
-(`winget install namazso.PawnIO` or https://pawnio.eu) — LibreHardwareMonitor 0.9.6
-reads CPU temperature/clock/power through PawnIO only, same as Core Temp or Ryzen Master.
-Without it the app shows a degraded-mode banner (loads/usage only).
+Requires administrator (UAC prompt) and PawnIO (`winget install namazso.PawnIO`).
+
+## Build the installer
+
+    .\installer\build.ps1 -Version 1.2.3     # -> dist\Stats-Setup-1.2.3.exe
+
+Needs Inno Setup 6.3+ (`winget install -e --id JRSoftware.InnoSetup`). The script publishes a
+self-contained single-file build, downloads and SHA-256-verifies the pinned PawnIO setup, and
+compiles `installer/Stats.iss`. Releases: `git tag v1.2.3 && git push --tags` — CI builds and
+attaches the installer to a GitHub Release.
 
 ## Use
 
