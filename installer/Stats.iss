@@ -42,6 +42,7 @@ DisableProgramGroupPage=yes
 PrivilegesRequired=admin
 ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
+MinVersion=10.0.17763
 OutputDir={#OutputDir}
 OutputBaseFilename=Stats-Setup-{#AppVersion}
 SetupIconFile=..\src\Stats.App\Assets\app.ico
@@ -63,10 +64,11 @@ Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{
 Name: "autostart"; Description: "Start {#AppName} when I sign in"; GroupDescription: "Startup:"; Flags: unchecked
 
 [Files]
+; Driver installer is only extracted to {tmp} from [Code] when PawnIO is missing; it is never kept.
+; Must be first: with SolidCompression, ExtractTemporaryFile targets must be at the top of [Files].
+Source: "{#VendorDir}\PawnIO_setup.exe"; Flags: dontcopy noencryption
 Source: "{#PublishDir}\*"; DestDir: "{app}"; Excludes: "*.pdb"; Flags: ignoreversion recursesubdirs createallsubdirs
 Source: "THIRD-PARTY.txt"; DestDir: "{app}"; Flags: ignoreversion
-; Driver installer is only extracted to {tmp} from [Code] when PawnIO is missing; it is never kept.
-Source: "{#VendorDir}\PawnIO_setup.exe"; Flags: dontcopy
 
 [Icons]
 Name: "{group}\{#AppName}"; Filename: "{app}\{#AppExe}"
@@ -75,6 +77,7 @@ Name: "{autodesktop}\{#AppName}"; Filename: "{app}\{#AppExe}"; Tasks: desktopico
 [Run]
 ; Scheduled Task at highest run level starts the requireAdministrator app at logon without a UAC prompt.
 Filename: "{sys}\schtasks.exe"; Parameters: "/Create /F /TN ""{#AppName}"" /TR ""\""{app}\{#AppExe}\"""" /SC ONLOGON /RL HIGHEST /IT"; StatusMsg: "Registering startup task..."; Flags: runhidden waituntilterminated; Tasks: autostart
+Filename: "{sys}\schtasks.exe"; Parameters: "/Delete /F /TN ""{#AppName}"""; StatusMsg: "Removing startup task..."; Flags: runhidden waituntilterminated; Tasks: not autostart
 Filename: "{app}\{#AppExe}"; Description: "{cm:LaunchProgram,{#AppName}}"; Flags: nowait postinstall skipifsilent
 
 [UninstallRun]
@@ -87,7 +90,7 @@ const
 
 function PawnIoInstalled: Boolean;
 begin
-  Result := RegKeyExists(HKLM, PawnIoUninstallKey);
+  Result := RegKeyExists(HKLM64, PawnIoUninstallKey) or RegKeyExists(HKLM32, PawnIoUninstallKey);
 end;
 
 procedure InstallPawnIo;
@@ -99,18 +102,23 @@ begin
     Log('PawnIO already installed; skipping driver setup.');
     exit;
   end;
-  Log('PawnIO not found; running PawnIO_setup.exe -install -silent');
-  ExtractTemporaryFile('PawnIO_setup.exe');
-  if Exec(ExpandConstant('{tmp}\PawnIO_setup.exe'), '-install -silent', '', SW_HIDE, ewWaitUntilTerminated, ResultCode) then
-  begin
-    Log(Format('PawnIO_setup.exe exited with code %d', [ResultCode]));
-    if ResultCode <> 0 then
-      SuppressibleMsgBox(Format('The PawnIO driver installer returned code %d.', [ResultCode]) + #13#10#13#10 + PawnIoHint, mbError, MB_OK, IDOK);
-  end
-  else
-  begin
-    Log('Failed to launch PawnIO_setup.exe: ' + SysErrorMessage(ResultCode));
-    SuppressibleMsgBox('The PawnIO driver installer could not be started: ' + SysErrorMessage(ResultCode) + #13#10#13#10 + PawnIoHint, mbError, MB_OK, IDOK);
+  try
+    Log('PawnIO not found; running PawnIO_setup.exe -install -silent');
+    ExtractTemporaryFile('PawnIO_setup.exe');
+    if Exec(ExpandConstant('{tmp}\PawnIO_setup.exe'), '-install -silent', '', SW_HIDE, ewWaitUntilTerminated, ResultCode) then
+    begin
+      Log(Format('PawnIO_setup.exe exited with code %d', [ResultCode]));
+      if ResultCode <> 0 then
+        SuppressibleMsgBox(Format('The PawnIO driver installer returned code %d.', [ResultCode]) + #13#10#13#10 + PawnIoHint, mbError, MB_OK, IDOK);
+    end
+    else
+    begin
+      Log('Failed to launch PawnIO_setup.exe: ' + SysErrorMessage(ResultCode));
+      SuppressibleMsgBox('The PawnIO driver installer could not be started: ' + SysErrorMessage(ResultCode) + #13#10#13#10 + PawnIoHint, mbError, MB_OK, IDOK);
+    end;
+  except
+    Log('PawnIO install step failed: ' + GetExceptionMessage);
+    SuppressibleMsgBox('The PawnIO driver could not be installed: ' + GetExceptionMessage + #13#10#13#10 + PawnIoHint, mbError, MB_OK, IDOK);
   end;
 end;
 

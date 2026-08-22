@@ -10,7 +10,7 @@ temps, fan, power, VRAM; RAM; per-disk activity; per-adapter network throughput.
 Grab `Stats-Setup-<version>.exe` from the
 [latest release](https://github.com/sawyerkollman/statsapp/releases/latest) and run it.
 It is not code-signed, so SmartScreen will warn: **More info → Run anyway**. The installer
-needs administrator rights, puts Stats in `C:\Program Files\Stats` and the Start menu, and
+needs administrator rights and 64-bit Windows 10 1809 or later, puts Stats in `C:\Program Files\Stats` and the Start menu, and
 installs the **PawnIO** kernel driver (https://pawnio.eu) if it is not already present —
 LibreHardwareMonitor reads CPU temperature/clock/power through PawnIO only, same as Core Temp
 or Ryzen Master. Without it the app shows a degraded-mode banner (loads/usage only).
