@@ -96,11 +96,12 @@ public class CompositeSensorReaderTests
     }
 
     [Fact]
-    public void FanBackend_NoReaderHasChannels_EmptyAndWritesAreNoOps()
+    public void FanBackend_NoReaderHasChannels_SetPercentThrows_SetAutoIsANoOp()
     {
         var c = new CompositeSensorReader(new Fake("A", false));
         Assert.Empty(c.Channels);
-        c.SetPercent("nope", 50); // must not throw
-        c.SetAuto("nope");
+        // A write that cannot land must be visible, not silently dropped …
+        Assert.Throws<KeyNotFoundException>(() => c.SetPercent("nope", 50));
+        c.SetAuto("nope"); // … while a release is documented as a no-op for an unknown id
     }
 }

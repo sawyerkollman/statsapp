@@ -193,6 +193,19 @@ public class SettingsServiceTests : IDisposable
     }
 
     [Fact]
+    public void Load_NullFanChannels_BecomesEmpty()
+    {
+        Directory.CreateDirectory(_dir);
+        File.WriteAllText(Path.Combine(_dir, "settings.json"),
+            """{ "FanControlEnabled": true, "FanChannels": null, "ThresholdRules": null }""");
+        var loaded = new SettingsService(_dir).Load();
+        Assert.True(loaded.FanControlEnabled);
+        Assert.NotNull(loaded.FanChannels);
+        Assert.Empty(loaded.FanChannels);          // an explicit null must not blow up the fan loop
+        Assert.Equal(4, loaded.ThresholdRules.Count); // …and null rules still get the defaults
+    }
+
+    [Fact]
     public void Load_MalformedCurve_FallsBackToDefault_AndClampsManual()
     {
         var svc = new SettingsService(_dir);

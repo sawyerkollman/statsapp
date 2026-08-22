@@ -23,6 +23,7 @@ public sealed class FanController
         public float? LastSourceUsed;
         public DateTime? LastSourceSeen;
         public int Failures;
+        public bool FailedOver; // fail-safe flipped this channel to Auto: keep reporting WriteFailed until the user acts
         public FanChannelStatus Status = FanChannelStatus.Idle;
         public float? Rpm, Percent, Target, SourceTemp;
     }
@@ -75,6 +76,7 @@ public sealed class FanController
             var rt = Rt(id);
             rt.LastSourceUsed = null; // re-evaluate immediately on next tick
             rt.Failures = 0;          // the user acted on this channel: give it a fresh retry budget
+            rt.FailedOver = false;    // …and stop reporting the old fail-safe flip
         }
         _save();
     }
@@ -83,87 +85,111 @@ public sealed class FanController
 
     public void Tick(SensorSnapshot snapshot, DateTime nowUtc)
     {
-        bool needsSave;
         lock (_gate)
         {
             _firstTick ??= nowUtc;
             foreach (var ch in _backend.Channels)
             {
                 var rt = Rt(ch.Id);
-                rt.Rpm = Value(snapshot, ch.RpmMetricId);
-                float? reported = Value(snapshot, ch.PercentMetricId);
-
-                if (!_settings.FanControlEnabled)
+                // One misbehaving channel (a control that vanished, a driver that throws on read) must never
+                // abort the loop and leave the remaining channels un-serviced.
+                try
                 {
-                    ReleaseLocked(ch.Id, rt, FanChannelStatus.Idle);
-                    rt.Percent = reported; rt.Target = null; rt.SourceTemp = null;
-                    continue;
-                }
+                    rt.Rpm = Value(snapshot, ch.RpmMetricId);
+                    float? reported = Value(snapshot, ch.PercentMetricId);
 
-                _settings.FanChannels.TryGetValue(ch.Id, out var pref);
-                var mode = pref?.Mode ?? FanMode.Auto;
-                float? target = null;
-                rt.SourceTemp = null;
-
-                switch (mode)
-                {
-                    case FanMode.Auto:
+                    if (!_settings.FanControlEnabled)
+                    {
                         ReleaseLocked(ch.Id, rt, FanChannelStatus.Idle);
-                        break;
+                        rt.Percent = reported; rt.Target = null; rt.SourceTemp = null;
+                        continue;
+                    }
 
-                    case FanMode.Manual:
-                        target = pref!.ManualPercent;
-                        break;
+                    if (!(ch.MaxPercent > 0f))
+                    {
+                        // A control that reports no usable headroom can only be driven to 0 % — which would stop the
+                        // fan. Leave it to the device and surface the problem instead.
+                        ReleaseLocked(ch.Id, rt, FanChannelStatus.WriteFailed);
+                        rt.Percent = reported; rt.SourceTemp = null;
+                        continue;
+                    }
 
-                    case FanMode.Curve:
-                        float? src = Value(snapshot, pref!.SourceMetricId);
-                        rt.SourceTemp = src;
-                        if (src is float t)
-                        {
-                            rt.LastSourceSeen = nowUtc;
-                            if (rt.LastSourceUsed is not float used || MathF.Abs(t - used) >= HysteresisC)
-                                rt.LastSourceUsed = t;
-                        }
-                        var lastSeen = rt.LastSourceSeen ?? _firstTick.Value;
-                        if (src is null && nowUtc - lastSeen > SourceStaleAfter)
-                        {
-                            ReleaseLocked(ch.Id, rt, FanChannelStatus.SourceUnavailable);
-                            rt.LastSourceUsed = null;
+                    _settings.FanChannels.TryGetValue(ch.Id, out var pref);
+                    var mode = pref?.Mode ?? FanMode.Auto;
+                    float? target = null;
+                    rt.SourceTemp = null;
+
+                    switch (mode)
+                    {
+                        case FanMode.Auto:
+                            ReleaseLocked(ch.Id, rt, rt.FailedOver ? FanChannelStatus.WriteFailed : FanChannelStatus.Idle);
                             break;
-                        }
-                        if (rt.LastSourceUsed is not float useTemp)
-                        {
-                            if (rt.Status != FanChannelStatus.WriteFailed) rt.Status = FanChannelStatus.WaitingForSource;
-                            break; // no value yet (or holding through a short gap): keep current output
-                        }
-                        if (!FanCurve.TryCreate(pref.Points, out var curve)) curve = FanCurve.Default;
-                        target = curve!.Evaluate(useTemp);
-                        break;
-                }
 
-                if (target is float want)
-                {
-                    float min = ch.MinPercent;
-                    if (ch.Name.Contains("pump", StringComparison.OrdinalIgnoreCase)) min = MathF.Max(min, PumpFloorPercent);
-                    want = Math.Clamp(want, min, ch.MaxPercent);
-                    if (rt.LastWritten is float last)
-                        want = last + Math.Clamp(want - last, -MaxStepPerTick, MaxStepPerTick);
-                    want = MathF.Round(want);
-                    rt.Target = want;
-                    if (!rt.InSoftware || rt.LastWritten != want) WriteLocked(ch, rt, want, pref!);
-                    else if (rt.Status != FanChannelStatus.WriteFailed) rt.Status = FanChannelStatus.Active;
-                }
-                else if (mode != FanMode.Curve || rt.Status == FanChannelStatus.SourceUnavailable || rt.Status == FanChannelStatus.Idle)
-                {
-                    rt.Target = null;
-                }
+                        case FanMode.Manual:
+                            target = pref!.ManualPercent;
+                            break;
 
-                rt.Percent = reported ?? (rt.InSoftware ? rt.LastWritten : null);
+                        case FanMode.Curve:
+                            float? src = Value(snapshot, pref!.SourceMetricId);
+                            rt.SourceTemp = src;
+                            if (src is float t)
+                            {
+                                rt.LastSourceSeen = nowUtc;
+                                if (rt.LastSourceUsed is not float used || MathF.Abs(t - used) >= HysteresisC)
+                                    rt.LastSourceUsed = t;
+                            }
+                            var lastSeen = rt.LastSourceSeen ?? _firstTick.Value;
+                            if (src is null && nowUtc - lastSeen > SourceStaleAfter)
+                            {
+                                ReleaseLocked(ch.Id, rt, FanChannelStatus.SourceUnavailable);
+                                rt.LastSourceUsed = null;
+                                break;
+                            }
+                            if (rt.LastSourceUsed is not float useTemp)
+                            {
+                                if (rt.Status != FanChannelStatus.WriteFailed) rt.Status = FanChannelStatus.WaitingForSource;
+                                break; // no value yet (or holding through a short gap): keep current output
+                            }
+                            if (!FanCurve.TryCreate(pref.Points, out var curve)) curve = FanCurve.Default;
+                            target = curve!.Evaluate(useTemp);
+                            break;
+                    }
+
+                    if (target is float want)
+                    {
+                        float min = ch.MinPercent;
+                        if (ch.Name.Contains("pump", StringComparison.OrdinalIgnoreCase)) min = MathF.Max(min, PumpFloorPercent);
+                        min = MathF.Min(min, ch.MaxPercent); // a floor above the ceiling would make Math.Clamp throw
+                        want = Math.Clamp(want, min, ch.MaxPercent);
+                        if (rt.LastWritten is float last)
+                            want = last + Math.Clamp(want - last, -MaxStepPerTick, MaxStepPerTick);
+                        want = MathF.Round(want);
+                        rt.Target = want;
+                        if (!rt.InSoftware || rt.LastWritten != want) WriteLocked(ch, rt, want, pref!);
+                        else if (rt.Status != FanChannelStatus.WriteFailed) rt.Status = FanChannelStatus.Active;
+                    }
+                    else if (mode != FanMode.Curve || rt.Status == FanChannelStatus.SourceUnavailable || rt.Status == FanChannelStatus.Idle)
+                    {
+                        rt.Target = null;
+                    }
+
+                    rt.Percent = reported ?? (rt.InSoftware ? rt.LastWritten : null);
+                }
+                catch (Exception ex)
+                {
+                    Trace.WriteLine($"[Stats.FanController] tick for {ch.Id} failed: {ex}");
+                    rt.Status = FanChannelStatus.WriteFailed;
+                }
             }
-            needsSave = _pendingSave;
-            _pendingSave = false;
+
+            // Rare path (the fail-safe mode flip). Saving inside _gate keeps JsonSerializer from enumerating
+            // FanChannels while the UI thread's Mutate — which also takes _gate — modifies the dictionary.
+            if (_pendingSave)
+            {
+                _pendingSave = false;
+                _save();
+            }
         }
-        if (needsSave) _save();
     }
 
     private void WriteLocked(FanChannel ch, Runtime rt, float percent, FanChannelPref pref)
@@ -187,7 +213,8 @@ public sealed class FanController
             if (rt.Failures >= MaxWriteFailures)
             {
                 pref.Mode = FanMode.Auto;
-                _pendingSave = true; // persist the fail-safe mode flip; _save() must run outside _gate
+                rt.FailedOver = true; // keep the Auto branch reporting WriteFailed until the user changes something
+                _pendingSave = true;  // persist the fail-safe mode flip at the end of the tick, still under _gate
                 ReleaseLocked(ch.Id, rt, FanChannelStatus.WriteFailed);
                 Trace.WriteLine($"[Stats.FanController] {ch.Id} set to Auto after repeated write failures");
             }

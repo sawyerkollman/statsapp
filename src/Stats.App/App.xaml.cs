@@ -147,7 +147,13 @@ public partial class App : Application
         RestoreWindowBounds();
 
         var fanController = _fanController;
-        _poller.SnapshotAvailable += snapshot => fanController.Tick(snapshot, DateTime.UtcNow); // poll thread: same thread as LHM reads
+        // poll thread: same thread as LHM reads. A controller fault must never propagate out of the poller's
+        // subscriber list and starve the Dispatcher-refresh handler below.
+        _poller.SnapshotAvailable += snapshot =>
+        {
+            try { fanController.Tick(snapshot, DateTime.UtcNow); }
+            catch (Exception ex) { System.Diagnostics.Trace.WriteLine("[Stats] FanController.Tick failed: " + ex); }
+        };
         _poller.SnapshotAvailable += snapshot => Dispatcher.BeginInvoke(() =>
         {
             _store.Apply(snapshot);
@@ -169,9 +175,10 @@ public partial class App : Application
     protected override void OnExit(ExitEventArgs e)
     {
         _hotkey?.Dispose();
-        _poller?.Dispose();          // stop the poll thread first …
-        _fanController?.RestoreAll(); // … then hand every fan back to device control (no concurrent LHM access now)
-        _reader?.Dispose();
+        bool stopped = _poller?.Stop() ?? true;   // stop the poll thread first …
+        _fanController?.RestoreAll();             // … then hand every fan back to device control, always
+        if (stopped) _reader?.Dispose();
+        else System.Diagnostics.Trace.WriteLine("[Stats] poll loop did not stop in time; skipping reader dispose to avoid concurrent LHM access");
         SaveSettings();
         _trayRenderer?.Dispose();
         _appIcon?.Dispose();

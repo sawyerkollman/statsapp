@@ -189,6 +189,79 @@ public class FanControllerTests
     }
 
     [Fact]
+    public void WriteFailed_StatusStaysUntilUserChangesMode()
+    {
+        var h = new H();
+        h.B.FailWrite = id => id == Case;
+        h.C.SetMode(Case, FanMode.Manual); h.C.SetManualPercent(Case, 40);
+        h.Tick(50); h.Tick(50); h.Tick(50);                      // 3rd failure flips the channel to Auto
+        Assert.Equal(FanMode.Auto, h.S.FanChannels[Case].Mode);
+        h.Tick(50); h.Tick(50);                                  // Auto branch keeps reporting the failure
+        Assert.Equal(FanChannelStatus.WriteFailed, h.C.Views().Single(v => v.Id == Case).Status);
+
+        h.B.FailWrite = null;
+        h.C.SetMode(Case, FanMode.Manual);                       // the user acted: fresh start
+        h.Tick(50);
+        Assert.Equal(FanChannelStatus.Active, h.C.Views().Single(v => v.Id == Case).Status);
+    }
+
+    [Fact]
+    public void BadRange_MaxZero_NeverWritesZero_NoThrow()
+    {
+        var h = new H();
+        const string Dead = "/lpc/it8696e/0/control/9";
+        h.B.Chans.Add(new FanChannel(Dead, "Fan #9", "ITE IT8696E", null, null, 0, 0));
+        h.C.SetMode(Dead, FanMode.Manual); h.C.SetManualPercent(Dead, 40);
+        h.Tick(50);                                              // must not throw
+        Assert.Empty(h.WritesFor(Dead));                         // never driven to a hard 0 %
+        Assert.Equal(FanChannelStatus.WriteFailed, h.C.Views().Single(v => v.Id == Dead).Status);
+    }
+
+    [Fact]
+    public void PumpFloorAboveMax_DoesNotThrow_ClampsToMax()
+    {
+        var h = new H();
+        const string Capped = "/usbhid/0/fan/15";
+        h.B.Chans.Add(new FanChannel(Capped, "Pump", "MSI CoreLiquid S360", null, null, 0, 10));
+        h.C.SetMode(Capped, FanMode.Manual); h.C.SetManualPercent(Capped, 70);
+        h.Tick(50);                                              // 50 % pump floor > 10 % ceiling
+        Assert.Equal((Capped, 10f), h.WritesFor(Capped).Single());
+    }
+
+    [Fact]
+    public void MasterSwitch_OffThenOn_ReappliesImmediately_NoSlew()
+    {
+        var h = new H();
+        h.C.SetMode(Case, FanMode.Manual); h.C.SetManualPercent(Case, 80);
+        h.Tick(50);
+        Assert.Equal(new (string, float?)[] { (Case, 80f) }, h.WritesFor(Case));
+        h.C.Enabled = false;
+        h.Tick(50);                                              // released
+        Assert.Equal(new (string, float?)[] { (Case, 80f), (Case, null) }, h.WritesFor(Case));
+        h.C.Enabled = true;
+        h.Tick(50);                                              // straight back to 80, not slewed from 0
+        Assert.Equal(new (string, float?)[] { (Case, 80f), (Case, null), (Case, 80f) }, h.WritesFor(Case));
+    }
+
+    [Fact]
+    public void PumpFloor_MatchesNameVariants()
+    {
+        var h = new H();
+        var ids = new[] { "/c/0", "/c/1", "/c/2", "/c/3" };
+        var names = new[] { "Water Pump", "PUMP FAN", "pump", "Radiator Fan" };
+        for (int i = 0; i < ids.Length; i++)
+        {
+            h.B.Chans.Add(new FanChannel(ids[i], names[i], "AIO", null, null, 0, 100));
+            h.C.SetMode(ids[i], FanMode.Manual); h.C.SetManualPercent(ids[i], 10);
+        }
+        h.Tick(50);
+        Assert.Equal((ids[0], 50f), h.WritesFor(ids[0]).Single());
+        Assert.Equal((ids[1], 50f), h.WritesFor(ids[1]).Single());
+        Assert.Equal((ids[2], 50f), h.WritesFor(ids[2]).Single());
+        Assert.Equal((ids[3], 10f), h.WritesFor(ids[3]).Single());
+    }
+
+    [Fact]
     public void FailedSetAuto_KeepsChannelTracked_AndRetriesNextTick()
     {
         var h = new H();

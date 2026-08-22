@@ -40,6 +40,9 @@ public sealed class SettingsService
         settings.OverlayFontScale = Math.Clamp(settings.OverlayFontScale, 0.8, 1.6);
         settings.OverlayOpacity = Math.Clamp(settings.OverlayOpacity, 0.3, 1.0);
         settings.HistoryWindowMinutes = SnapHistoryMinutes(settings.HistoryWindowMinutes);
+        // An explicit JSON null deserializes over the property initializer, so re-establish the empty collections.
+        settings.ThresholdRules ??= new();
+        settings.FanChannels ??= new();
         if (settings.ThresholdRules.Count == 0)
             settings.ThresholdRules = ThresholdDefaults.Rules();
         settings.OverlayHotkey ??= "";

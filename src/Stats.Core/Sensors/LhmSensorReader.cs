@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using LibreHardwareMonitor.Hardware;
 using LibreHardwareMonitor.PawnIo;
 using Stats.Core.Fans;
@@ -38,6 +39,14 @@ public sealed class LhmSensorReader : ISensorReader, IFanControlBackend
 
     public IReadOnlyList<MetricDefinition> Discover()
     {
+        // Re-entry guard: rebuilding would clear _controls, and any channel currently in software mode would
+        // lose the IControl instance we must call SetDefault() on to hand it back to the device.
+        if (_channels.Count > 0)
+        {
+            Trace.WriteLine("[Stats.LhmSensorReader] Discover() called again after channels were found; returning the existing definitions");
+            return _definitions;
+        }
+
         UpdateAll();
 
         var sensors = new List<ISensor>();
@@ -80,19 +89,24 @@ public sealed class LhmSensorReader : ISensorReader, IFanControlBackend
             if (s.Control is not IControl ctl) continue;
             string id = s.Identifier.ToString();
             if (_controls.ContainsKey(id)) continue;
+            // AIO/USB coolers can expose several sensors (fan + control + pump) that all hand back the *same*
+            // IControl; two channels sharing one control would fight each other on every tick. Identity wins
+            // over the id check, which only catches sensors reporting the same identifier.
+            if (_controls.Values.Any(existing => ReferenceEquals(existing, ctl))) continue;
             ISensor? rpmSensor = s.SensorType == SensorType.Fan
                 ? s
                 : s.Hardware.Sensors.FirstOrDefault(o => o.SensorType == SensorType.Fan && o.Index == s.Index);
             ISensor? pctSensor = s.SensorType == SensorType.Control ? s : null;
             _controls[id] = ctl;
+            var (min, max) = FanRange.Sanitize(ctl.MinSoftwareValue, ctl.MaxSoftwareValue);
             channels.Add(new FanChannel(
                 Id: id,
                 Name: s.Name,
                 Device: s.Hardware.Name,
                 RpmMetricId: rpmSensor is not null && idOf.TryGetValue(rpmSensor, out var rid) ? rid : null,
                 PercentMetricId: pctSensor is not null && idOf.TryGetValue(pctSensor, out var pid) ? pid : null,
-                MinPercent: ctl.MinSoftwareValue,
-                MaxPercent: ctl.MaxSoftwareValue));
+                MinPercent: min,
+                MaxPercent: max));
         }
         _channels = channels;
     }
@@ -109,7 +123,9 @@ public sealed class LhmSensorReader : ISensorReader, IFanControlBackend
     public void SetPercent(string channelId, float percent)
     {
         var ctl = _controls[channelId];
-        ctl.SetSoftware(Math.Clamp(percent, ctl.MinSoftwareValue, ctl.MaxSoftwareValue));
+        // Same sanitizing as discovery: a control reporting NaN or an inverted pair would make Math.Clamp throw.
+        var (min, max) = FanRange.Sanitize(ctl.MinSoftwareValue, ctl.MaxSoftwareValue);
+        ctl.SetSoftware(Math.Clamp(percent, min, max));
     }
 
     public void SetAuto(string channelId)

@@ -53,6 +53,8 @@
                                                 </Grid>
                                                 <TextBlock Text="{Binding StatusText}" Foreground="{StaticResource TextSecondary}" FontSize="11" Margin="0,2,0,0"/>
                                                 <DockPanel Margin="0,6,0,0" Visibility="{Binding IsManual, Converter={StaticResource BoolToVis}}">
+                                                    <TextBlock DockPanel.Dock="Right" Text="{Binding TargetText, StringFormat='&#8594; {0}'}" Margin="8,0"
+                                                               Foreground="{StaticResource TextSecondary}" VerticalAlignment="Center"/>
                                                     <TextBlock DockPanel.Dock="Right" Text="{Binding ManualPercent, StringFormat={}{0:F0} %}" Width="48" TextAlignment="Right"
                                                                Foreground="{StaticResource TextPrimary}" VerticalAlignment="Center"/>
                                                     <Slider Minimum="{Binding MinPercent}" Maximum="{Binding MaxPercent}" Value="{Binding ManualPercent, Delay=250}"
