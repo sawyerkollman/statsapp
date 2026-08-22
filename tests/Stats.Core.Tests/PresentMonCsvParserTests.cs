@@ -82,8 +82,45 @@ public class PresentMonCsvParserTests
     }
 
     [Fact]
-    public void Header_WithoutProcessId_Throws() =>
-        Assert.Throws<PresentMonFormatException>(() => new PresentMonCsvParser().Parse("Application,FrameTime"));
+    public void Header_WithoutProcessId_IsPreamble_ThrowsOnlyWhenTheBudgetRunsOut()
+    {
+        // No ProcessID field → not a header candidate, so it is treated as preamble, not an immediate error.
+        var p = new PresentMonCsvParser();
+        for (int i = 0; i < PresentMonCsvParser.MaxPreambleLines; i++)
+            Assert.Null(p.Parse("Application,FrameTime"));
+        Assert.False(p.HeaderParsed);
+        Assert.Equal(PresentMonCsvParser.MaxPreambleLines, p.PreambleLinesSkipped);
+        Assert.Throws<PresentMonFormatException>(() => p.Parse("Application,FrameTime"));
+    }
+
+    [Fact]
+    public void PreambleLines_BeforeHeader_AreSkipped()
+    {
+        var p = new PresentMonCsvParser();
+        Assert.Null(p.Parse("PresentMon 2.5.1"));
+        Assert.Null(p.Parse("Capturing all processes..."));
+        Assert.False(p.HeaderParsed);
+        Assert.Null(p.Parse(V2Header));
+        Assert.True(p.HeaderParsed);
+        var s = p.Parse("game.exe,1234,0x000001,DXGI,1,0,0,Hardware: Independent Flip,12.345678,16.667,10.1,6.5,NA,NA,NA,NA,NA,NA,NA");
+        Assert.Equal(new FrameSample(1234, 16.667), s);
+        Assert.Equal(2, p.PreambleLinesSkipped);
+        Assert.Equal(0, p.SkippedLines);
+    }
+
+    [Fact]
+    public void PreambleBudgetExhausted_Throws()
+    {
+        var p = new PresentMonCsvParser();
+        for (int i = 0; i < 20; i++) Assert.Null(p.Parse($"junk line {i}"));
+        Assert.Equal(20, p.PreambleLinesSkipped);
+        var ex = Assert.Throws<PresentMonFormatException>(() => p.Parse("junk line 20"));
+        Assert.Contains("junk line 20", ex.Message);
+    }
+
+    [Fact]
+    public void HeaderLike_LineWithoutTimingColumn_StillThrows() =>
+        Assert.Throws<PresentMonFormatException>(() => new PresentMonCsvParser().Parse("Application,ProcessID,Runtime"));
 
     [Fact]
     public void Header_WithoutAnyTimingColumn_Throws() =>

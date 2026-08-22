@@ -22,7 +22,14 @@ public class FrameRateReaderTests
 
     private sealed class Harness
     {
-        public readonly FakeSource Source = new();
+        /// <summary>Every source the reader has asked for, oldest first — a restart makes a fresh one.</summary>
+        public readonly List<FakeSource> Sources = new();
+        /// <summary>The source the reader is currently using (the most recently created one).</summary>
+        public FakeSource Source => Sources[^1];
+        public int TotalStarts => Sources.Sum(s => s.Starts);
+        public int TotalStops => Sources.Sum(s => s.Stops);
+        /// <summary>Applied to every source the factory hands out.</summary>
+        public bool ThrowOnStart;
         public int? ForegroundPid = 1234;
         public DateTime Now = new(2026, 8, 22, 12, 0, 0, DateTimeKind.Utc);
         public readonly List<TimeSpan> Delays = new();
@@ -30,8 +37,14 @@ public class FrameRateReaderTests
         public FrameRateReader Reader;
         public Harness(string? exePath = @"C:\fake\PresentMon.exe")
         {
-            Reader = new FrameRateReader(exePath, () => Source, () => ForegroundPid, () => Now,
+            Reader = new FrameRateReader(exePath, NewSource, () => ForegroundPid, () => Now,
                 (d, _) => { Delays.Add(d); var tcs = new TaskCompletionSource(); Pending.Add(tcs); return tcs.Task; });
+        }
+        private IFrameSource NewSource()
+        {
+            var s = new FakeSource { ThrowOnStart = ThrowOnStart };
+            Sources.Add(s);
+            return s;
         }
         public void EmitFrames(int pid, int count, double ms)
         {
@@ -54,7 +67,7 @@ public class FrameRateReaderTests
     {
         var h = new Harness();
         Assert.Equal(3, h.Reader.Discover().Count);
-        Assert.Equal(0, h.Source.Starts);
+        Assert.Empty(h.Sources);
     }
 
     [Fact]
@@ -70,10 +83,10 @@ public class FrameRateReaderTests
     {
         var h = new Harness();
         h.Reader.SetActive(true); h.Reader.SetActive(true);
-        Assert.Equal(1, h.Source.Starts);
+        Assert.Equal(1, h.TotalStarts);
         Assert.True(h.Reader.IsActive);
         h.Reader.SetActive(false); h.Reader.SetActive(false);
-        Assert.Equal(1, h.Source.Stops);
+        Assert.Equal(1, h.TotalStops);
         Assert.False(h.Reader.IsActive);
     }
 
@@ -146,14 +159,14 @@ public class FrameRateReaderTests
         h.Source.Die(1, "boom");
         Assert.Equal(new[] { TimeSpan.FromSeconds(1) }, h.Delays);
         h.ElapseBackoff();
-        Assert.Equal(2, h.Source.Starts);
-        h.Source.Die(1, "boom");
+        Assert.Equal(2, h.TotalStarts);
+        h.Source.Die(1, "boom");                    // always the current source
         Assert.Equal(TimeSpan.FromSeconds(5), h.Delays[^1]);
         h.ElapseBackoff();
         h.Source.Die(1, "boom");
         Assert.Equal(TimeSpan.FromSeconds(30), h.Delays[^1]);
         h.ElapseBackoff();
-        Assert.Equal(4, h.Source.Starts);
+        Assert.Equal(4, h.TotalStarts);
         h.Source.Die(1, "boom");
         Assert.Equal(3, h.Delays.Count);           // no fourth delay
         Assert.False(h.Reader.IsAvailable);
@@ -203,7 +216,7 @@ public class FrameRateReaderTests
         h.Source.Die(6, "access denied");
         h.Reader.SetActive(false);
         h.Reader.SetActive(true);
-        Assert.Equal(2, h.Source.Starts);
+        Assert.Equal(2, h.TotalStarts);
         Assert.True(h.Reader.IsAvailable);
     }
 
@@ -212,8 +225,8 @@ public class FrameRateReaderTests
     {
         var h = new Harness();
         h.Reader.SetActive(true);
-        h.Source.Emit("Application,Nothing,Useful");
-        Assert.Equal(1, h.Source.Stops);
+        h.Source.Emit("Application,ProcessID,Runtime");   // header-like, but no timing column
+        Assert.Equal(1, h.TotalStops);
         Assert.False(h.Reader.IsAvailable);
         Assert.Contains("header", h.Reader.StatusMessage, StringComparison.OrdinalIgnoreCase);
     }
@@ -222,7 +235,7 @@ public class FrameRateReaderTests
     public void StartThrows_Unavailable_NoCrash()
     {
         var h = new Harness();
-        h.Source.ThrowOnStart = true;
+        h.ThrowOnStart = true;
         h.Reader.SetActive(true);
         Assert.False(h.Reader.IsAvailable);
         Assert.NotNull(h.Reader.StatusMessage);
@@ -235,7 +248,7 @@ public class FrameRateReaderTests
         var h = new Harness();
         h.Reader.SetActive(true);
         h.Reader.Dispose();
-        Assert.True(h.Source.Stops >= 1);
+        Assert.True(h.TotalStops >= 1);
     }
 
     [Fact]
@@ -246,6 +259,49 @@ public class FrameRateReaderTests
         h.Reader.SetActive(false);
         h.Source.Die(1, "late");
         Assert.Empty(h.Delays);
-        Assert.Equal(1, h.Source.Starts);
+        Assert.Equal(1, h.TotalStarts);
+    }
+
+    [Fact]
+    public void Restart_SupersededSource_LateEventsIgnored()
+    {
+        var h = new Harness();
+        h.Reader.SetActive(true);
+        var first = h.Source;
+        first.Die(1, "boom");                       // schedules the 1 s backoff
+        Assert.Single(h.Delays);
+        h.ElapseBackoff();
+        var second = h.Source;
+        Assert.NotSame(first, second);
+        Assert.Equal(2, h.TotalStarts);
+
+        int delaysBefore = h.Delays.Count;
+        first.Emit(Header);                         // the superseded source keeps talking
+        for (int i = 0; i < 60; i++) first.Emit("game.exe,1234,16.6");
+        first.Die(1, "late");
+
+        Assert.Equal(delaysBefore, h.Delays.Count);         // no restart scheduled for the dead source
+        Assert.Null(h.Reader.Read().Values["fps.avg"]);     // none of its frames reached the aggregator
+        Assert.True(second.IsRunning);
+        Assert.True(h.Reader.IsAvailable);
+    }
+
+    [Fact]
+    public void Read_WhilePendingRestart_StillServesBufferedFrames_NoThrow()
+    {
+        var h = new Harness();
+        h.Reader.SetActive(true);
+        h.Source.Emit(Header);
+        h.EmitFrames(1234, 60, 16.6);
+        h.Source.Die(1, "boom");                    // restart pending; no source running right now
+        Assert.Single(h.Delays);
+
+        var s = h.Reader.Read();
+        Assert.Equal(3, s.Values.Count);
+        Assert.Contains("fps.avg", s.Values.Keys);
+        Assert.Contains("fps.low1", s.Values.Keys);
+        Assert.Contains("fps.frametime", s.Values.Keys);
+        // The reader stays active/available across a restart, so frames still inside the window are served.
+        Assert.Equal(60f, s.Values["fps.avg"]);
     }
 }

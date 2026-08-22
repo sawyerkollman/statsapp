@@ -70,15 +70,17 @@ interval column exists. Data lines yield `FrameSample(int Pid, double FrameTimeM
 is surfaced as a log line and the reader reports `null` for all three metrics.
 
 **`FrameStatsAggregator`** — thread-safe store of recent frames per PID. `Add(FrameSample, DateTime
-nowUtc)` appends `(timestamp, frameTimeMs)` to a ring buffer capped at **1000 frames** per PID; PIDs
-with no frame for **10 s** are pruned on each `Snapshot`. `Snapshot(int pid, DateTime nowUtc, TimeSpan
-window)` returns:
+nowUtc)` appends `(timestamp, frameTimeMs)` to a ring buffer capped at **5000 frames** per PID (enough to
+cover the longest poll window, 5 s, even at 1000 fps); PIDs with no frame for **10 s** are pruned on each
+`Snapshot`.
+`Snapshot(int pid, DateTime nowUtc, TimeSpan window)` returns:
 
 - `Fps` — frames with timestamp in `(now − window, now]` ÷ `window.TotalSeconds`; `null` if < **10**
   frames in the window (not rendering / just started).
 - `FrameTimeMs` — mean frame time of the frames in the window; `null` under the same rule.
-- `OnePercentLowFps` — 1000 ÷ (99th-percentile frame time over the whole ring buffer); `null` until the
-  buffer holds ≥ **100** frames. Percentile: sort ascending, take element at `ceil(0.99·n) − 1`.
+- `OnePercentLowFps` — 1000 ÷ (99th-percentile frame time over the newest **1000** frames in the ring
+  buffer); `null` until the buffer holds ≥ **100** frames. Percentile: sort ascending, take element at
+  `ceil(0.99·n) − 1`.
 
 `window` is the poll interval (from settings). Timestamps are assigned on receipt; PresentMon's own
 CPUStartTime is not used for windowing so clock domains never matter.

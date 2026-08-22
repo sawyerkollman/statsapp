@@ -37,7 +37,11 @@ public sealed class FrameRateReader : ISensorReader
         _clock = clock ?? (() => DateTime.UtcNow);
         _delay = delay ?? Task.Delay;
         IsAvailable = exePath is not null;
-        if (exePath is null) StatusMessage = "PresentMon.exe not found; FPS metrics unavailable.";
+        if (exePath is null)
+        {
+            StatusMessage = "PresentMon.exe not found; FPS metrics unavailable.";
+            Trace.WriteLine("[Stats.FrameRateReader] " + StatusMessage);
+        }
     }
 
     /// <summary>Production wiring: bundled exe, real child process, real foreground window.</summary>
@@ -66,9 +70,10 @@ public sealed class FrameRateReader : ISensorReader
     public SensorSnapshot Read()
     {
         FrameStats stats = FrameStats.Empty;
+        int? foreground = _foregroundPid();          // outside the lock: caller-supplied, may P/Invoke
         lock (_gate)
         {
-            if (IsActive && IsAvailable && _foregroundPid() is int pid)
+            if (IsActive && IsAvailable && foreground is int pid)
                 stats = _aggregator.Snapshot(pid, _clock(), Window);
         }
         return new SensorSnapshot(new Dictionary<string, float?>
@@ -81,6 +86,7 @@ public sealed class FrameRateReader : ISensorReader
 
     public void SetActive(bool active)
     {
+        IFrameSource? detached = null;
         lock (_gate)
         {
             if (active == IsActive) return;
@@ -97,21 +103,24 @@ public sealed class FrameRateReader : ISensorReader
             }
             else
             {
-                StopSourceLocked();
+                detached = DetachSourceLocked();
                 _aggregator.Clear();
             }
         }
+        DisposeSource(detached);          // Stop() can block for seconds; never under _gate
     }
 
     public void Dispose()
     {
+        IFrameSource? detached;
         lock (_gate)
         {
             IsActive = false;
             _generation++;
             CancelPendingRestart();
-            StopSourceLocked();
+            detached = DetachSourceLocked();
         }
+        DisposeSource(detached);
     }
 
     // ---- internals (all called with _gate held unless noted) ----
@@ -137,10 +146,18 @@ public sealed class FrameRateReader : ISensorReader
         }
     }
 
-    private void StopSourceLocked()
+    /// <summary>Clears <c>_source</c> and hands the old one back so the caller can dispose it after
+    /// releasing <c>_gate</c> — <see cref="IFrameSource.Stop"/> can block for seconds.</summary>
+    private IFrameSource? DetachSourceLocked()
     {
         var src = _source;
         _source = null;
+        return src;
+    }
+
+    /// <summary>Disposes a detached source. Must be called with <c>_gate</c> released.</summary>
+    private static void DisposeSource(IFrameSource? src)
+    {
         if (src is null) return;
         try { src.Dispose(); } catch { /* best effort */ }
     }
@@ -161,7 +178,8 @@ public sealed class FrameRateReader : ISensorReader
 
     private void OnLine(IFrameSource src, int gen, string line)
     {
-        FrameSample? sample;
+        FrameSample? sample = null;
+        IFrameSource? detached = null;
         lock (_gate)
         {
             if (gen != _generation || !ReferenceEquals(src, _source)) return;
@@ -172,44 +190,50 @@ public sealed class FrameRateReader : ISensorReader
             catch (PresentMonFormatException ex)
             {
                 MarkUnavailable("PresentMon CSV header not understood: " + ex.Message);
-                StopSourceLocked();
-                return;
+                detached = DetachSourceLocked();
             }
-            if (sample is FrameSample s)
+            if (detached is null && sample is FrameSample s)
             {
                 _sawFrames = true;
                 _aggregator.Add(s, _clock());
             }
         }
+        // We are on the source's reader thread; disposing it here is safe now that _gate is released,
+        // and the gen/ReferenceEquals guards make any further events from it no-ops.
+        DisposeSource(detached);
     }
 
     private void OnExited(IFrameSource src, int gen, int exitCode, string stderrTail)
     {
-        lock (_gate)
+        IFrameSource? detached = null;
+        try
         {
-            if (gen != _generation || !ReferenceEquals(src, _source)) return;
-            _source = null;
-            try { src.Dispose(); } catch { }
-
-            bool denied = exitCode == 6 || stderrTail.Contains("access denied", StringComparison.OrdinalIgnoreCase);
-            if (denied)
+            lock (_gate)
             {
-                MarkUnavailable("PresentMon: access denied starting the ETW trace session (exit " + exitCode + "). " +
-                                "Launch Stats from the Start menu or a non-Store terminal; processes with MSIX package identity cannot trace. " +
-                                stderrTail);
-                return;
-            }
+                if (gen != _generation || !ReferenceEquals(src, _source)) return;
+                detached = DetachSourceLocked();
 
-            if (_sawFrames) _failures = 0;
-            if (_failures >= Backoff.Length)
-            {
-                MarkUnavailable($"PresentMon exited repeatedly (last exit {exitCode}); gave up until FPS metrics are re-selected. {stderrTail}");
-                return;
+                bool denied = exitCode == 6 || stderrTail.Contains("access denied", StringComparison.OrdinalIgnoreCase);
+                if (denied)
+                {
+                    MarkUnavailable("PresentMon: access denied starting the ETW trace session (exit " + exitCode + "). " +
+                                    "Launch Stats from the Start menu or a non-Store terminal; processes with MSIX package identity cannot trace. " +
+                                    stderrTail);
+                    return;
+                }
+
+                if (_sawFrames) _failures = 0;
+                if (_failures >= Backoff.Length)
+                {
+                    MarkUnavailable($"PresentMon exited repeatedly (last exit {exitCode}); gave up until FPS metrics are re-selected. {stderrTail}");
+                    return;
+                }
+                var wait = Backoff[_failures++];
+                Trace.WriteLine($"[Stats.FrameRateReader] PresentMon exited ({exitCode}); restarting in {wait.TotalSeconds:F0}s. {stderrTail}");
+                ScheduleRestartLocked(wait, gen);
             }
-            var wait = Backoff[_failures++];
-            Trace.WriteLine($"[Stats.FrameRateReader] PresentMon exited ({exitCode}); restarting in {wait.TotalSeconds:F0}s. {stderrTail}");
-            ScheduleRestartLocked(wait, gen);
         }
+        finally { DisposeSource(detached); }   // the exited source is already dead, but never dispose under _gate
     }
 
     private void ScheduleRestartLocked(TimeSpan wait, int gen)
@@ -223,8 +247,9 @@ public sealed class FrameRateReader : ISensorReader
             if (t.IsCanceled || token.IsCancellationRequested) return;
             lock (_gate)
             {
-                if (gen != _generation || !IsActive || !IsAvailable) return;
+                bool superseded = gen != _generation || !IsActive || !IsAvailable;
                 if (ReferenceEquals(_restartCts, cts)) { _restartCts = null; cts.Dispose(); }
+                if (superseded) return;
                 StartSourceLocked();
             }
         }, TaskContinuationOptions.ExecuteSynchronously);

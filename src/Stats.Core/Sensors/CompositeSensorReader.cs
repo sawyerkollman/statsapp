@@ -32,7 +32,12 @@ public sealed class CompositeSensorReader : ISensorReader
         {
             SensorSnapshot snap;
             try { snap = r.Read(); }
-            catch { continue; } // that reader's ids are absent this tick; others still report
+            catch (Exception ex)
+            {
+                // that reader's ids are absent this tick; others still report
+                System.Diagnostics.Trace.WriteLine($"[Stats.CompositeSensorReader] {r.Name} Read failed: {ex.Message}");
+                continue;
+            }
             foreach (var (id, v) in snap.Values) values[id] = v;
         }
         return new SensorSnapshot(values, DateTime.UtcNow);
@@ -42,7 +47,12 @@ public sealed class CompositeSensorReader : ISensorReader
     {
         foreach (var r in _readers)
         {
-            try { r.Dispose(); } catch { /* best effort */ }
+            try { r.Dispose(); }
+            catch (Exception ex)
+            {
+                // best effort
+                System.Diagnostics.Trace.WriteLine($"[Stats.CompositeSensorReader] {r.Name} Dispose failed: {ex.Message}");
+            }
         }
     }
 }

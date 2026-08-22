@@ -93,6 +93,26 @@ public class FrameStatsAggregatorTests
     }
 
     [Fact]
+    public void Fps_FiveSecondWindow_HighFrameRate_NotTruncated()
+    {
+        var a = new FrameStatsAggregator();                 // default capacity must cover 5 s at high fps
+        var window = TimeSpan.FromSeconds(5);
+        for (int i = 1500 - 1; i >= 0; i--)
+            a.Add(new FrameSample(1, 3.333), T0 - TimeSpan.FromMilliseconds(i * 5000.0 / 1500));
+        Assert.Equal(300f, a.Snapshot(1, T0, window).Fps);  // 1500 frames / 5 s
+    }
+
+    [Fact]
+    public void OnePercentLow_UsesNewestThousandFramesOnly()
+    {
+        var a = new FrameStatsAggregator();
+        for (int i = 0; i < 100; i++) a.Add(new FrameSample(1, 100), T0);    // old, slow
+        for (int i = 0; i < 1000; i++) a.Add(new FrameSample(1, 10), T0);    // newest 1000, fast
+        // the 100 slow frames fall outside the 1000-frame low window → p99 = 10 ms → 100 fps
+        Assert.Equal(100f, a.Snapshot(1, T0, OneSec).OnePercentLowFps);
+    }
+
+    [Fact]
     public void StalePid_PrunedAfterTenSeconds()
     {
         var a = new FrameStatsAggregator();
