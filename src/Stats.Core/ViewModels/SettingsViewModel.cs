@@ -103,7 +103,9 @@ public sealed partial class SettingsViewModel : ObservableObject
     partial void OnHistoryWindowMinutesChanged(int value)
     {
         if (!_loaded) return;
-        _s.HistoryWindowMinutes = SettingsService.SnapHistoryMinutes(value);
+        var snapped = SettingsService.SnapHistoryMinutes(value);
+        if (snapped != value) { HistoryWindowMinutes = snapped; return; } // re-enters with snapped
+        _s.HistoryWindowMinutes = snapped;
         Raise(SettingsChange.HistoryWindow);
     }
 

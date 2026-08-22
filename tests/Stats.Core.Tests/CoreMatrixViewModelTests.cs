@@ -63,4 +63,20 @@ public class CoreMatrixViewModelTests
         Assert.Equal(16, vm.Cells.Count);
         Assert.Equal(8, vm.Columns);
     }
+
+    [Fact]
+    public void Temp_PrefersExactCoreNameOverDistanceToTjMax()
+    {
+        var defs = new List<MetricDefinition>
+        {
+            new("d1", "CPU Core #1 Distance to TjMax", MetricGroup.Cpu, "CPU", "°C", "F1"),
+            new("t1", "CPU Core #1", MetricGroup.Cpu, "CPU", "°C", "F1"),
+            new("l1", "CPU Core #1", MetricGroup.Cpu, "CPU", "%"),
+        };
+        var store = new MetricStore(defs);
+        var vm = new CoreMatrixViewModel(store, new AppSettings());
+        store.Apply(new SensorSnapshot(new Dictionary<string, float?> { ["d1"] = 40f, ["t1"] = 60f, ["l1"] = 10f }, DateTime.UtcNow));
+        vm.Refresh();
+        Assert.Equal("60.0 °C", vm.Cells[0].TempText);
+    }
 }

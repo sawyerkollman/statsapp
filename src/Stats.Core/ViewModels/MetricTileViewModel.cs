@@ -69,6 +69,7 @@ public sealed partial class MetricTileViewModel : ObservableObject
     private TileKind ResolveKind(TileKind preferred, float? explicitMax)
     {
         if (preferred != TileKind.Auto) return preferred;
-        return Definition.Unit == "%" || explicitMax is not null ? TileKind.Gauge : TileKind.Sparkline;
+        bool loadPercent = Definition.Unit == "%" && Definition.Group is MetricGroup.Cpu or MetricGroup.Gpu;
+        return loadPercent || explicitMax is not null ? TileKind.Gauge : TileKind.Sparkline;
     }
 }

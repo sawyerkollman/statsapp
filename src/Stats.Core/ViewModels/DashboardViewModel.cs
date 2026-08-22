@@ -147,16 +147,17 @@ public sealed partial class DashboardViewModel : ObservableObject
         _saveSettings();
     }
 
-    public void SetTileKind(string id, TileKind kind) { _settings.PrefFor(id).Kind = kind; AfterPrefChange(id); }
-    public void SetTileSize(string id, TileSize size) { _settings.PrefFor(id).Size = size; AfterPrefChange(id); }
-    public void SetTileMax(string id, float? max) { _settings.PrefFor(id).Max = max is > 0 ? max : null; AfterPrefChange(id); }
+    public void SetTileKind(string id, TileKind kind) { _settings.PrefFor(id).Kind = kind; AfterPrefChange(); }
+    public void SetTileSize(string id, TileSize size) { _settings.PrefFor(id).Size = size; AfterPrefChange(); }
+    public void SetTileMax(string id, float? max) { _settings.PrefFor(id).Max = max is > 0 ? max : null; AfterPrefChange(); }
 
     public void RenameTile(string id, string? name)
     {
         _settings.PrefFor(id).Name = string.IsNullOrWhiteSpace(name) ? null : name.Trim();
         var picker = PickerItems.FirstOrDefault(p => p.Definition.Id == id);
         if (picker is not null) picker.DisplayName = FriendlyName(picker.Definition);
-        AfterPrefChange(id);
+        AfterPrefChange();
+        DashboardMetricsChanged?.Invoke();
     }
 
     public void RemoveTile(string id)
@@ -165,7 +166,18 @@ public sealed partial class DashboardViewModel : ObservableObject
         if (picker is not null) picker.IsChecked = false; // handler persists + rebuilds + saves
     }
 
-    private void AfterPrefChange(string id)
+    /// <summary>Per-metric threshold override. Both null = remove override (fall back to the group rule).</summary>
+    public void SetTileThresholds(string id, float? warn, float? crit)
+    {
+        if (warn is float w && crit is float c && w < c)
+            _settings.ThresholdOverrides[id] = new ThresholdRule { Warn = w, Crit = c };
+        else
+            _settings.ThresholdOverrides.Remove(id);
+        RefreshAll();
+        _saveSettings();
+    }
+
+    private void AfterPrefChange()
     {
         // Kind/Size changes need new containers (template selection happens once per container), so rebuild.
         RebuildSections();
@@ -173,12 +185,6 @@ public sealed partial class DashboardViewModel : ObservableObject
     }
 
     // ---- sections ----
-
-    public void ToggleGroup(string name)
-    {
-        var section = Sections.FirstOrDefault(s => s.Name == name);
-        if (section is not null) section.IsExpanded = !section.IsExpanded;
-    }
 
     public void RebuildSections()
     {

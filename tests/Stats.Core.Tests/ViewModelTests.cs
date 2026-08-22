@@ -101,6 +101,17 @@ public class ViewModelTests
     }
 
     [Fact]
+    public void Tile_Kind_PercentOutsideCpuGpu_StaysSparkline()
+    {
+        var fan = new MetricDefinition("disk.used", "Used Space", MetricGroup.Storage, "SSD", "%");
+        var store = new MetricStore(new[] { fan });
+        store.Apply(new SensorSnapshot(new Dictionary<string, float?> { ["disk.used"] = 40f }, DateTime.UtcNow));
+        var tile = new MetricTileViewModel(fan, store["disk.used"], new AppSettings());
+        tile.Refresh();
+        Assert.Equal(TileKind.Sparkline, tile.Kind);
+    }
+
+    [Fact]
     public void Tile_Kind_And_Size_PrefOverride()
     {
         var store = NewStore();

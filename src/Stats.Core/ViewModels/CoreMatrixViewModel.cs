@@ -21,6 +21,7 @@ public sealed partial class CoreCellViewModel : ObservableObject
 public sealed class CoreMatrixViewModel
 {
     private static readonly Regex CoreIndex = new(@"Core #(\d+)", RegexOptions.Compiled | RegexOptions.IgnoreCase);
+    private static readonly Regex ExactCoreName = new(@"^(?:CPU )?Core #\d+$", RegexOptions.Compiled | RegexOptions.IgnoreCase);
 
     private sealed class CoreSources
     {
@@ -49,7 +50,10 @@ public sealed class CoreMatrixViewModel
             {
                 case "%": src.Loads.Add(def); break;
                 case "MHz": src.Clock ??= def; break;
-                case "°C": src.Temp ??= def; break;
+                case "°C":
+                    if (src.Temp is null || (!ExactCoreName.IsMatch(src.Temp.DisplayName) && ExactCoreName.IsMatch(def.DisplayName)))
+                        src.Temp = def;
+                    break;
             }
         }
         foreach (var (idx, src) in byIndex)

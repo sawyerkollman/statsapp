@@ -196,4 +196,27 @@ public class DashboardViewModelTests
         vm.PickerItems.First().IsChecked = true;
         Assert.Equal(1, changed);
     }
+
+    [Fact]
+    public void SetTileThresholds_WritesOverride_RemovesWhenNullOrInvalid()
+    {
+        var (vm, s, _, saves) = Make("cpu.temp");
+        vm.SetTileThresholds("cpu.temp", 70f, 80f);
+        Assert.Equal(80f, s.ThresholdOverrides["cpu.temp"].Crit);
+        vm.SetTileThresholds("cpu.temp", 90f, 80f); // warn >= crit → remove
+        Assert.False(s.ThresholdOverrides.ContainsKey("cpu.temp"));
+        vm.SetTileThresholds("cpu.temp", null, null);
+        Assert.False(s.ThresholdOverrides.ContainsKey("cpu.temp"));
+        Assert.Equal(3, saves());
+    }
+
+    [Fact]
+    public void RenameTile_RaisesDashboardMetricsChanged()
+    {
+        var (vm, _, _, _) = Make("cpu.temp");
+        int n = 0;
+        vm.DashboardMetricsChanged += () => n++;
+        vm.RenameTile("cpu.temp", "X");
+        Assert.Equal(1, n);
+    }
 }

@@ -59,6 +59,15 @@ public class SettingsViewModelTests
     }
 
     [Fact]
+    public void HistoryWindow_SnapsBothSettingsAndViewModel()
+    {
+        var (vm, s, _, _) = Make();
+        vm.HistoryWindowMinutes = 7;
+        Assert.Equal(5, s.HistoryWindowMinutes);
+        Assert.Equal(5, vm.HistoryWindowMinutes);
+    }
+
+    [Fact]
     public void Thresholds_ValidPair_UpdatesRulesAndRaises()
     {
         var (vm, s, changes, _) = Make();
