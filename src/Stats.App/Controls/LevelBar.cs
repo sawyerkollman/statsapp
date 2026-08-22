@@ -1,0 +1,34 @@
+using System.Windows;
+using System.Windows.Media;
+
+namespace Stats.App.Controls;
+
+/// <summary>Horizontal level bar (Afterburner style). Fraction 0..1 of a known max.</summary>
+public sealed class LevelBar : FrameworkElement
+{
+    public static readonly DependencyProperty FractionProperty = DependencyProperty.Register(
+        nameof(Fraction), typeof(double), typeof(LevelBar),
+        new FrameworkPropertyMetadata(0.0, FrameworkPropertyMetadataOptions.AffectsRender));
+
+    public static readonly DependencyProperty FillProperty = DependencyProperty.Register(
+        nameof(Fill), typeof(Brush), typeof(LevelBar),
+        new FrameworkPropertyMetadata(Brushes.Orange, FrameworkPropertyMetadataOptions.AffectsRender));
+
+    public static readonly DependencyProperty TrackProperty = DependencyProperty.Register(
+        nameof(Track), typeof(Brush), typeof(LevelBar),
+        new FrameworkPropertyMetadata(new SolidColorBrush(Color.FromRgb(0x3A, 0x3A, 0x40)), FrameworkPropertyMetadataOptions.AffectsRender));
+
+    public double Fraction { get => (double)GetValue(FractionProperty); set => SetValue(FractionProperty, value); }
+    public Brush Fill { get => (Brush)GetValue(FillProperty); set => SetValue(FillProperty, value); }
+    public Brush Track { get => (Brush)GetValue(TrackProperty); set => SetValue(TrackProperty, value); }
+
+    protected override void OnRender(DrawingContext dc)
+    {
+        double w = ActualWidth, h = ActualHeight;
+        if (w <= 0 || h <= 0) return;
+        double radius = h / 2;
+        dc.DrawRoundedRectangle(Track, null, new Rect(0, 0, w, h), radius, radius);
+        double fw = w * Math.Clamp(Fraction, 0.0, 1.0);
+        if (fw > 0.5) dc.DrawRoundedRectangle(Fill, null, new Rect(0, 0, fw, h), radius, radius);
+    }
+}
