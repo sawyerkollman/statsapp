@@ -5,6 +5,7 @@ public sealed class AppSettings
     public double PollIntervalSeconds { get; set; } = 1.0;
     /// <summary>True once first-run defaults have been applied; lets "user unchecked everything" survive restarts.</summary>
     public bool DefaultsApplied { get; set; }
+    /// <summary>Selected dashboard metrics. ORDER = tile order within each group.</summary>
     public List<string> DashboardMetrics { get; set; } = new();
     public List<string> OverlayMetrics { get; set; } = new();
     /// <summary>Optional user-entered limits (e.g. PBO PPT watts) keyed by metric id; tile shows "% of limit" when set.</summary>
@@ -16,4 +17,32 @@ public sealed class AppSettings
     public double? WindowTop { get; set; }
     public double? WindowWidth { get; set; }
     public double? WindowHeight { get; set; }
+
+    // ---- v1.1 ----
+    public Dictionary<string, TilePref> TilePrefs { get; set; } = new();
+    public List<ThresholdRule> ThresholdRules { get; set; } = new();
+    public Dictionary<string, ThresholdRule> ThresholdOverrides { get; set; } = new();
+    public List<string> CollapsedGroups { get; set; } = new();
+    public bool ShowCoreMatrix { get; set; } = true;
+    public int HistoryWindowMinutes { get; set; } = 2;
+    public OverlayOrientation OverlayOrientation { get; set; } = OverlayOrientation.Horizontal;
+    public double OverlayFontScale { get; set; } = 1.0;
+    public bool OverlayClickThrough { get; set; }
+    /// <summary>Global hotkey text, e.g. "Ctrl+Shift+O". Empty = disabled.</summary>
+    public string OverlayHotkey { get; set; } = "Ctrl+Shift+O";
+    public double? PeaksLeft { get; set; }
+    public double? PeaksTop { get; set; }
+    public double? PeaksWidth { get; set; }
+    public double? PeaksHeight { get; set; }
+
+    /// <summary>Get-or-create the TilePref for a metric id.</summary>
+    public TilePref PrefFor(string metricId)
+    {
+        if (!TilePrefs.TryGetValue(metricId, out var pref))
+        {
+            pref = new TilePref();
+            TilePrefs[metricId] = pref;
+        }
+        return pref;
+    }
 }

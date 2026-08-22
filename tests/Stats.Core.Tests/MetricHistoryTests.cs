@@ -59,4 +59,51 @@ public class MetricHistoryTests
         Assert.True(float.IsNaN(h.SessionMin));
         Assert.Empty(h.ToArray());
     }
+
+    [Fact]
+    public void Resize_Smaller_KeepsNewestSamples()
+    {
+        var h = new MetricHistory(5);
+        for (int i = 1; i <= 5; i++) h.Add(i);
+        h.Resize(3);
+        Assert.Equal(3, h.Capacity);
+        Assert.Equal(new[] { 3f, 4f, 5f }, h.ToArray());
+        h.Add(6f);
+        Assert.Equal(new[] { 4f, 5f, 6f }, h.ToArray());
+        Assert.Equal(1f, h.SessionMin); // session stats untouched
+    }
+
+    [Fact]
+    public void Resize_Larger_KeepsAllAndContinues()
+    {
+        var h = new MetricHistory(2);
+        h.Add(1f); h.Add(2f); h.Add(3f);
+        h.Resize(4);
+        Assert.Equal(new[] { 2f, 3f }, h.ToArray());
+        h.Add(4f); h.Add(5f);
+        Assert.Equal(new[] { 2f, 3f, 4f, 5f }, h.ToArray());
+    }
+
+    [Fact]
+    public void ResetSession_ClearsBufferAndStats_KeepsCurrent()
+    {
+        var h = new MetricHistory(4);
+        h.Add(10f); h.Add(20f);
+        h.ResetSession();
+        Assert.Empty(h.ToArray());
+        Assert.True(float.IsNaN(h.SessionMin));
+        Assert.True(float.IsNaN(h.SessionAvg));
+        Assert.Equal(20f, h.Current);
+        h.Add(30f);
+        Assert.Equal(30f, h.SessionMin);
+    }
+
+    [Theory]
+    [InlineData(2, 1.0, 120)]
+    [InlineData(60, 1.0, 3600)]
+    [InlineData(60, 0.5, 3600)]   // capped
+    [InlineData(2, 5.0, 30)]      // floor
+    [InlineData(5, 0.5, 600)]
+    public void HistoryCapacity_Compute(int minutes, double poll, int expected) =>
+        Assert.Equal(expected, HistoryCapacity.Compute(minutes, poll));
 }

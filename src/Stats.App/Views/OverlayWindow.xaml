@@ -5,20 +5,23 @@
         Topmost="True" ShowInTaskbar="False" SizeToContent="WidthAndHeight"
         ResizeMode="NoResize">
     <Border Background="#E01B1B1C" CornerRadius="8" Padding="12,8">
+        <Border.LayoutTransform>
+            <ScaleTransform ScaleX="{Binding FontScale}" ScaleY="{Binding FontScale}"/>
+        </Border.LayoutTransform>
         <ItemsControl ItemsSource="{Binding Tiles}">
             <ItemsControl.ItemsPanel>
                 <ItemsPanelTemplate>
-                    <StackPanel Orientation="Horizontal"/>
+                    <StackPanel Orientation="{Binding DataContext.Orientation, RelativeSource={RelativeSource AncestorType=ItemsControl}, Converter={StaticResource OverlayOrientation}}"/>
                 </ItemsPanelTemplate>
             </ItemsControl.ItemsPanel>
             <ItemsControl.ItemTemplate>
                 <DataTemplate>
-                    <StackPanel Margin="10,0">
+                    <StackPanel Margin="10,2">
                         <TextBlock Text="{Binding DisplayName}" FontSize="10"
                                    Foreground="{StaticResource TextSecondary}"
-                                   TextTrimming="CharacterEllipsis" MaxWidth="120"/>
+                                   TextTrimming="CharacterEllipsis" MaxWidth="140"/>
                         <TextBlock Text="{Binding CurrentText}" FontSize="16" FontWeight="SemiBold"
-                                   Foreground="{StaticResource TextPrimary}"/>
+                                   Foreground="{Binding Severity, Converter={StaticResource SeverityToBrush}}"/>
                     </StackPanel>
                 </DataTemplate>
             </ItemsControl.ItemTemplate>

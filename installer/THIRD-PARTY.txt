@@ -1,0 +1,19 @@
+Stats bundles or depends on the following third-party components.
+
+PawnIO (kernel driver and module loader) — https://pawnio.eu
+  Copyright (c) namazso. Licensed under the GNU General Public License v2.0.
+  Source: https://github.com/namazso/PawnIO  Setup: https://github.com/namazso/PawnIO.Setup
+  This installer carries the official PawnIO 2.2.0 setup program and runs it only
+  if PawnIO is not already present on this computer. PawnIO is a shared component:
+  uninstalling Stats leaves it installed; remove it from Settings > Apps if you no
+  longer need it. Stats does not modify PawnIO and contains no PawnIO code.
+
+LibreHardwareMonitorLib — https://github.com/LibreHardwareMonitor/LibreHardwareMonitor
+  Licensed under the Mozilla Public License 2.0. Source for the library as used is
+  available at the URL above (NuGet package LibreHardwareMonitorLib 0.9.6).
+
+H.NotifyIcon.Wpf (MIT), CommunityToolkit.Mvvm (MIT), and the .NET 8 runtime (MIT)
+  are redistributed in binary form under their respective licenses.
+
+Stats is not signed. Windows SmartScreen may warn on first run; choose
+"More info" > "Run anyway" if you trust this download.

@@ -8,6 +8,6 @@ public partial class OverlayWindow : Window
     public OverlayWindow()
     {
         InitializeComponent();
-        MouseLeftButtonDown += (_, _) => DragMove();
+        MouseLeftButtonDown += (_, _) => { try { DragMove(); } catch (InvalidOperationException) { } };
     }
 }

@@ -1,0 +1,33 @@
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                    xmlns:conv="clr-namespace:Stats.App.Converters">
+
+    <!-- Shared primitives. Merged by BOTH App.xaml and TileTemplates.xaml:
+         a StaticResource inside a merged dictionary cannot see the dictionary
+         that merged it, so anything referenced from TileTemplates.xaml must
+         live here rather than in App.xaml. -->
+
+    <!-- Palette -->
+    <SolidColorBrush x:Key="WindowBg" Color="#FF1B1B1C"/>
+    <SolidColorBrush x:Key="TileBg" Color="#FF252528"/>
+    <SolidColorBrush x:Key="FlyoutBg" Color="#FF2B2B2F"/>
+    <SolidColorBrush x:Key="ControlBg" Color="#FF303035"/>
+    <SolidColorBrush x:Key="BorderDim" Color="#FF3A3A40"/>
+    <SolidColorBrush x:Key="TextPrimary" Color="#FFF0F0F0"/>
+    <SolidColorBrush x:Key="TextSecondary" Color="#FF9A9A9E"/>
+    <SolidColorBrush x:Key="AccentBrush" Color="#FFE68A2E"/>
+    <SolidColorBrush x:Key="WarnBrush" Color="#FFE6A23C"/>
+    <SolidColorBrush x:Key="CritBrush" Color="#FFE05A4F"/>
+    <SolidColorBrush x:Key="GaugeTrack" Color="#FF3A3A40"/>
+
+    <!-- Converters -->
+    <BooleanToVisibilityConverter x:Key="BoolToVis"/>
+    <conv:SeverityToBrushConverter x:Key="SeverityToBrush"/>
+    <conv:TileSizeToLengthConverter x:Key="TileSizeToLength"/>
+    <conv:HeatToBrushConverter x:Key="HeatToBrush"/>
+    <conv:NullToVisibilityConverter x:Key="NullToVis"/>
+    <conv:EqualsConverter x:Key="Equals"/>
+    <conv:InverseBoolConverter x:Key="InverseBool"/>
+    <conv:OverlayOrientationConverter x:Key="OverlayOrientation"/>
+
+</ResourceDictionary>
