@@ -1,5 +1,6 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using Stats.Core.Fans;
 using Stats.Core.Metrics;
 
 namespace Stats.Core.Settings;
@@ -39,9 +40,18 @@ public sealed class SettingsService
         settings.OverlayFontScale = Math.Clamp(settings.OverlayFontScale, 0.8, 1.6);
         settings.OverlayOpacity = Math.Clamp(settings.OverlayOpacity, 0.3, 1.0);
         settings.HistoryWindowMinutes = SnapHistoryMinutes(settings.HistoryWindowMinutes);
+        // An explicit JSON null deserializes over the property initializer, so re-establish the empty collections.
+        settings.ThresholdRules ??= new();
+        settings.FanChannels ??= new();
         if (settings.ThresholdRules.Count == 0)
             settings.ThresholdRules = ThresholdDefaults.Rules();
         settings.OverlayHotkey ??= "";
+        foreach (var pref in settings.FanChannels.Values)
+        {
+            pref.ManualPercent = Math.Clamp(pref.ManualPercent, 0f, 100f);
+            if (!FanCurve.TryCreate(pref.Points, out _))
+                pref.Points = FanCurve.DefaultPoints.ToList();
+        }
         return settings;
     }
 

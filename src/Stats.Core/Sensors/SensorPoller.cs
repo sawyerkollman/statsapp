@@ -1,3 +1,5 @@
+using System.Diagnostics;
+
 namespace Stats.Core.Sensors;
 
 /// <summary>Polls an ISensorReader on a background task. Event fires on the background thread — UI must marshal.</summary>
@@ -15,16 +17,26 @@ public sealed class SensorPoller : IDisposable
 
     public SensorSnapshot? PollOnce()
     {
+        SensorSnapshot snapshot;
         try
         {
-            var snapshot = _reader.Read();
-            SnapshotAvailable?.Invoke(snapshot);
-            return snapshot;
+            snapshot = _reader.Read();
         }
-        catch
+        catch (Exception ex)
         {
-            return null; // transient sensor hiccup; next tick retries
+            // transient sensor hiccup; next tick retries
+            Trace.WriteLine($"[Stats.SensorPoller] {_reader.Name} Read failed: {ex}");
+            return null;
         }
+
+        // Each subscriber gets its own try/catch: a throwing fan-control tick must not stop the UI refresh
+        // (or vice versa), and neither may abort the poll loop.
+        foreach (var d in SnapshotAvailable?.GetInvocationList() ?? Array.Empty<Delegate>())
+        {
+            try { ((Action<SensorSnapshot>)d)(snapshot); }
+            catch (Exception ex) { Trace.WriteLine($"[Stats.SensorPoller] snapshot subscriber threw: {ex}"); }
+        }
+        return snapshot;
     }
 
     public void Start()
@@ -43,13 +55,18 @@ public sealed class SensorPoller : IDisposable
         }, ct);
     }
 
-    public void Stop()
+    /// <summary>Cancels the loop and waits up to 2 s for it to finish.</summary>
+    /// <returns>true if the loop task actually completed (nothing is touching the reader any more);
+    /// false if it was still running when the wait expired — the caller must not dispose the reader then.</returns>
+    public bool Stop()
     {
         _cts?.Cancel();
-        try { _loop?.Wait(TimeSpan.FromSeconds(2)); } catch (AggregateException) { }
+        bool stopped = true;
+        try { stopped = _loop?.Wait(TimeSpan.FromSeconds(2)) ?? true; } catch (AggregateException) { }
         _cts?.Dispose();
         _cts = null;
         _loop = null;
+        return stopped;
     }
 
     public void Dispose() => Stop();

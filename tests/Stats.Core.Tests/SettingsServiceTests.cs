@@ -1,3 +1,4 @@
+using Stats.Core.Fans;
 using Stats.Core.Settings;
 
 namespace Stats.Core.Tests;
@@ -160,5 +161,62 @@ public class SettingsServiceTests : IDisposable
         a.Size = TileSize.S;
         Assert.Same(a, s.PrefFor("x"));
         Assert.Equal(TileSize.S, s.TilePrefs["x"].Size);
+    }
+
+    [Fact]
+    public void Load_FanControl_DefaultsOffAndEmpty()
+    {
+        var s = new SettingsService(_dir).Load();
+        Assert.False(s.FanControlEnabled);
+        Assert.Empty(s.FanChannels);
+    }
+
+    [Fact]
+    public void SaveThenLoad_FanChannels_RoundTrip()
+    {
+        var svc = new SettingsService(_dir);
+        var s = new AppSettings { FanControlEnabled = true };
+        s.FanChannels["/lpc/it8696e/0/control/0"] = new FanChannelPref
+        {
+            Mode = FanMode.Curve, ManualPercent = 35, SourceMetricId = "cpu.x.temperature.tctl", Name = "Front intake",
+            Points = new() { new(30, 20), new(60, 50), new(80, 100) },
+        };
+        svc.Save(s);
+        var loaded = new SettingsService(_dir).Load();
+        Assert.True(loaded.FanControlEnabled);
+        var p = loaded.FanChannels["/lpc/it8696e/0/control/0"];
+        Assert.Equal(FanMode.Curve, p.Mode);
+        Assert.Equal(35f, p.ManualPercent);
+        Assert.Equal("cpu.x.temperature.tctl", p.SourceMetricId);
+        Assert.Equal("Front intake", p.Name);
+        Assert.Equal(new[] { new FanPoint(30, 20), new FanPoint(60, 50), new FanPoint(80, 100) }, p.Points);
+    }
+
+    [Fact]
+    public void Load_NullFanChannels_BecomesEmpty()
+    {
+        Directory.CreateDirectory(_dir);
+        File.WriteAllText(Path.Combine(_dir, "settings.json"),
+            """{ "FanControlEnabled": true, "FanChannels": null, "ThresholdRules": null }""");
+        var loaded = new SettingsService(_dir).Load();
+        Assert.True(loaded.FanControlEnabled);
+        Assert.NotNull(loaded.FanChannels);
+        Assert.Empty(loaded.FanChannels);          // an explicit null must not blow up the fan loop
+        Assert.Equal(4, loaded.ThresholdRules.Count); // …and null rules still get the defaults
+    }
+
+    [Fact]
+    public void Load_MalformedCurve_FallsBackToDefault_AndClampsManual()
+    {
+        var svc = new SettingsService(_dir);
+        var s = new AppSettings();
+        s.FanChannels["a"] = new FanChannelPref { ManualPercent = 140, Points = new() { new(50, 50) } }; // 1 point = invalid
+        s.FanChannels["b"] = new FanChannelPref { ManualPercent = -5, Points = new() { new(50, 50), new(50.2f, 60) } }; // dup temps
+        svc.Save(s);
+        var loaded = new SettingsService(_dir).Load();
+        Assert.Equal(100f, loaded.FanChannels["a"].ManualPercent);
+        Assert.Equal(FanCurve.DefaultPoints, loaded.FanChannels["a"].Points);
+        Assert.Equal(0f, loaded.FanChannels["b"].ManualPercent);
+        Assert.Equal(FanCurve.DefaultPoints, loaded.FanChannels["b"].Points);
     }
 }

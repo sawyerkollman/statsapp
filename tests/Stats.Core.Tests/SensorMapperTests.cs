@@ -26,10 +26,29 @@ public class SensorMapperTests
         Assert.Contains("RTX 5070 Ti", def.DisplayName); // multi-instance group keeps hardware name visible
     }
 
-    [Fact]
-    public void Map_MotherboardSensor_ReturnsNull()
+    [Theory]
+    [InlineData("Motherboard", "Gigabyte B850 GAMING WIFI6", "Temperature", "System", MetricGroup.Motherboard, "°C")]
+    [InlineData("SuperIO", "ITE IT8696E", "Fan", "Fan #1", MetricGroup.Motherboard, "RPM")]
+    [InlineData("SuperIO", "ITE IT8696E", "Control", "Fan #1", MetricGroup.Motherboard, "%")]
+    [InlineData("Cooler", "MSI CoreLiquid S360", "Temperature", "Liquid Temperature", MetricGroup.Cooler, "°C")]
+    [InlineData("Cooler", "MSI CoreLiquid S360", "Fan", "Pump", MetricGroup.Cooler, "RPM")]
+    public void Map_MotherboardAndCooler_MapToNewGroups(string hwType, string hwName, string sType, string sName, MetricGroup group, string unit)
     {
-        Assert.Null(SensorMapper.Map(new RawSensor("Motherboard", "X870", "Temperature", "System")));
+        var def = SensorMapper.Map(new RawSensor(hwType, hwName, sType, sName));
+        Assert.NotNull(def);
+        Assert.Equal(group, def!.Group);
+        Assert.Equal(unit, def.Unit);
+        Assert.Equal(sName, def.DisplayName); // single-instance: no hardware prefix
+    }
+
+    [Fact]
+    public void Map_SuperIoFanAndControl_HaveDistinctIds()
+    {
+        var fan = SensorMapper.Map(new RawSensor("SuperIO", "ITE IT8696E", "Fan", "Fan #1"))!;
+        var ctl = SensorMapper.Map(new RawSensor("SuperIO", "ITE IT8696E", "Control", "Fan #1"))!;
+        Assert.NotEqual(fan.Id, ctl.Id);
+        Assert.Equal("motherboard.ite-it8696e.fan.fan-1", fan.Id);
+        Assert.Equal("motherboard.ite-it8696e.control.fan-1", ctl.Id);
     }
 
     [Fact]
@@ -73,7 +92,7 @@ public class SensorMapperTests
         var defs = SensorMapper.MapAll(new[]
         {
             new RawSensor("Cpu", "X", "Temperature", "A"),
-            new RawSensor("Motherboard", "X", "Temperature", "B"),
+            new RawSensor("Psu", "X", "Temperature", "B"),
         });
         Assert.NotNull(defs[0]);
         Assert.Null(defs[1]);

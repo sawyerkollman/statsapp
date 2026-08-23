@@ -18,6 +18,7 @@
                 <Button DockPanel.Dock="Right" Content="⚙  Settings" Command="{Binding OpenSettingsCommand}" Style="{StaticResource HeaderButton}"/>
                 <Button DockPanel.Dock="Right" Content="☰  Metrics" Command="{Binding TogglePickerCommand}" Style="{StaticResource HeaderButton}"/>
                 <Button DockPanel.Dock="Right" Content="▤  Peaks" Command="{Binding OpenPeaksCommand}" Style="{StaticResource HeaderButton}"/>
+                <Button DockPanel.Dock="Right" Content="✢  Fans" Command="{Binding OpenFansCommand}" Style="{StaticResource HeaderButton}"/>
                 <Button DockPanel.Dock="Right" Content="▣  Overlay" Command="{Binding ToggleOverlayCommand}" Style="{StaticResource HeaderButton}"/>
                 <Button DockPanel.Dock="Right" Content="Expand all" Command="{Binding ExpandAllCommand}" Style="{StaticResource HeaderButton}" FontSize="11"/>
                 <Button DockPanel.Dock="Right" Content="Collapse all" Command="{Binding CollapseAllCommand}" Style="{StaticResource HeaderButton}" FontSize="11"/>

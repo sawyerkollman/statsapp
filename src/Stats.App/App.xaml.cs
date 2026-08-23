@@ -6,6 +6,7 @@ using H.NotifyIcon;
 using Stats.App.Helpers;
 using Stats.App.Tray;
 using Stats.App.Views;
+using Stats.Core.Fans;
 using Stats.Core.Frames;
 using Stats.Core.Metrics;
 using Stats.Core.Sensors;
@@ -39,6 +40,11 @@ public partial class App : Application
     private TrayIconRenderer? _trayRenderer;
     private System.Drawing.Icon? _appIcon;
     private MetricDefinition? _trayCpuTempDef;
+    private FanController? _fanController;
+    private FansWindow? _fans;
+    private FansViewModel? _fansVm;
+    private IReadOnlyList<MetricDefinition> _definitions = Array.Empty<MetricDefinition>();
+    private CompositeSensorReader? _composite;
 
     protected override void OnStartup(StartupEventArgs e)
     {
@@ -52,18 +58,21 @@ public partial class App : Application
         IReadOnlyList<MetricDefinition> definitions;
         try
         {
-            (_reader, _frameReader) = BuildReader(() => new LhmSensorReader());
+            (_composite, _frameReader) = BuildReader(() => new LhmSensorReader());
+            _reader = _composite;
             definitions = _reader.Discover();
         }
         catch (Exception)
         {
             try { _reader?.Dispose(); } catch (Exception) { /* failed reader; fall through to fallback */ }
-            (_reader, _frameReader) = BuildReader(() => new PerfCounterSensorReader());
+            (_composite, _frameReader) = BuildReader(() => new PerfCounterSensorReader());
+            _reader = _composite;
             definitions = _reader.Discover();
         }
         // LHM does not throw when its kernel driver fails to load — CPU temp/power sensors are simply absent.
         bool cpuSensorsMissing = !definitions.Any(d => d.Group == MetricGroup.Cpu && d.Unit == "°C");
         bool degraded = _reader.IsDegraded || cpuSensorsMissing;
+        _definitions = definitions;
 
         if (!_settings.DefaultsApplied)
         {
@@ -83,6 +92,7 @@ public partial class App : Application
         };
         if (_frameReader is not null) _frameReader.Window = TimeSpan.FromSeconds(_settings.PollIntervalSeconds);
         ApplyFrameTracing();
+        _fanController = new FanController(_composite!, _settings, SaveSettings);
 
         _dashboardVm = new DashboardViewModel(_store, _settings, SaveSettings)
         {
@@ -120,6 +130,7 @@ public partial class App : Application
         _store.ResizeAll(HistoryCapacity.Compute(_settings.HistoryWindowMinutes, _settings.PollIntervalSeconds));
 
         _dashboardVm.OpenPeaksRequested += ShowPeaks;
+        _dashboardVm.OpenFansRequested += ShowFans;
         _dashboardVm.DashboardMetricsChanged += () => { _peaksVm?.RebuildRows(); ApplyFrameTracing(); };
 
         var cpuTemps = definitions.Where(d => d.Group == MetricGroup.Cpu && d.Unit == "°C").ToList();
@@ -135,6 +146,14 @@ public partial class App : Application
         _dashboard = new DashboardWindow { DataContext = _dashboardVm };
         RestoreWindowBounds();
 
+        var fanController = _fanController;
+        // poll thread: same thread as LHM reads. A controller fault must never propagate out of the poller's
+        // subscriber list and starve the Dispatcher-refresh handler below.
+        _poller.SnapshotAvailable += snapshot =>
+        {
+            try { fanController.Tick(snapshot, DateTime.UtcNow); }
+            catch (Exception ex) { System.Diagnostics.Trace.WriteLine("[Stats] FanController.Tick failed: " + ex); }
+        };
         _poller.SnapshotAvailable += snapshot => Dispatcher.BeginInvoke(() =>
         {
             _store.Apply(snapshot);
@@ -142,6 +161,7 @@ public partial class App : Application
             _overlayVm?.RefreshAll();
             UpdateTrayTooltip();
             if (_peaks is { IsVisible: true }) _peaksVm?.Refresh();
+            if (_fans is { IsVisible: true }) _fansVm?.Refresh();
         });
 
         _dashboard.AllowClose = false; // close button hides to tray; exit via tray menu
@@ -155,8 +175,10 @@ public partial class App : Application
     protected override void OnExit(ExitEventArgs e)
     {
         _hotkey?.Dispose();
-        _poller?.Dispose();
-        _reader?.Dispose();
+        bool stopped = _poller?.Stop() ?? true;   // stop the poll thread first …
+        _fanController?.RestoreAll();             // … then hand every fan back to device control, always
+        if (stopped) _reader?.Dispose();
+        else System.Diagnostics.Trace.WriteLine("[Stats] poll loop did not stop in time; skipping reader dispose to avoid concurrent LHM access");
         SaveSettings();
         _trayRenderer?.Dispose();
         _appIcon?.Dispose();
@@ -171,7 +193,7 @@ public partial class App : Application
     }
 
     /// <summary>Primary hardware reader + the PresentMon frame reader, merged. Discover() is the caller's.</summary>
-    private static (ISensorReader Reader, FrameRateReader Frames) BuildReader(Func<ISensorReader> primaryFactory)
+    private static (CompositeSensorReader Reader, FrameRateReader Frames) BuildReader(Func<ISensorReader> primaryFactory)
     {
         var frames = FrameRateReader.CreateDefault();
         return (new CompositeSensorReader(primaryFactory(), frames), frames);
@@ -227,6 +249,8 @@ public partial class App : Application
         overlay.Click += (_, _) => ToggleOverlay();
         var peaks = new MenuItem { Header = "Session peaks" };
         peaks.Click += (_, _) => ShowPeaks();
+        var fans = new MenuItem { Header = "Fans…" };
+        fans.Click += (_, _) => ShowFans();
         var settings = new MenuItem { Header = "Settings" };
         settings.Click += (_, _) => { ShowDashboard(); _dashboardVm?.OpenSettingsCommand.Execute(null); };
         var exit = new MenuItem { Header = "Exit" };
@@ -235,6 +259,7 @@ public partial class App : Application
         menu.Items.Add(open);
         menu.Items.Add(overlay);
         menu.Items.Add(peaks);
+        menu.Items.Add(fans);
         menu.Items.Add(settings);
         menu.Items.Add(new Separator());
         menu.Items.Add(exit);
@@ -323,6 +348,37 @@ public partial class App : Application
         _settings.PeaksHeight = _peaks.Height;
     }
 
+    private void ShowFans()
+    {
+        if (_fanController is null || _settings is null) return;
+        if (_fans is null)
+        {
+            _fansVm = new FansViewModel(_fanController, _definitions, _settings);
+            _fans = new FansWindow { DataContext = _fansVm };
+            if (_settings.FansWidth is double w) _fans.Width = w;
+            if (_settings.FansHeight is double h) _fans.Height = h;
+            if (_settings.FansLeft is double l) _fans.Left = ClampToVirtualScreenX(l, 200);
+            if (_settings.FansTop is double t) _fans.Top = ClampToVirtualScreenY(t, 100);
+            _fans.LocationChanged += (_, _) => SaveFansBounds();
+            _fans.SizeChanged += (_, _) => SaveFansBounds();
+        }
+        _fansVm!.Refresh();
+        _fans.Show();
+        _fans.WindowState = WindowState.Normal;
+        _fans.Activate();
+    }
+
+    private void SaveFansBounds()
+    {
+        if (_fans is null || _settings is null) return;
+        if (_fans.WindowState != WindowState.Normal) return;
+        if (double.IsNaN(_fans.Left) || double.IsNaN(_fans.Top)) return;
+        _settings.FansLeft = _fans.Left;
+        _settings.FansTop = _fans.Top;
+        _settings.FansWidth = _fans.Width;
+        _settings.FansHeight = _fans.Height;
+    }
+
     private void OnSettingsChanged(SettingsChange change)
     {
         if (_settings is null) return;
@@ -386,6 +442,7 @@ public partial class App : Application
     {
         if (_dashboard is not null) _dashboard.AllowClose = true;
         if (_peaks is not null) _peaks.AllowClose = true;
+        if (_fans is not null) _fans.AllowClose = true;
         _tray?.Dispose();
         SaveWindowBounds();
         Shutdown();

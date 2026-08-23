@@ -50,6 +50,32 @@ public class SensorPollerTests
     }
 
     [Fact]
+    public void OneSubscriberThrowing_OthersStillInvoked()
+    {
+        var reader = new FakeReader();
+        using var poller = new SensorPoller(reader);
+        bool before = false, after = false;
+        poller.SnapshotAvailable += _ => before = true;
+        poller.SnapshotAvailable += _ => throw new InvalidOperationException("bad subscriber");
+        poller.SnapshotAvailable += _ => after = true;
+        var snap = poller.PollOnce();
+        Assert.NotNull(snap);           // the read succeeded, so the snapshot is still returned
+        Assert.True(before);
+        Assert.True(after);             // the throwing subscriber did not starve the ones after it
+    }
+
+    [Fact]
+    public async Task Stop_ReturnsTrueWhenLoopJoined()
+    {
+        var reader = new FakeReader();
+        using var poller = new SensorPoller(reader) { Interval = TimeSpan.FromMilliseconds(20) };
+        Assert.True(poller.Stop());     // never started: nothing to join
+        poller.Start();
+        await Task.Delay(60);
+        Assert.True(poller.Stop());     // loop task actually completed within the wait
+    }
+
+    [Fact]
     public async Task ReaderThrow_DoesNotKillLoop()
     {
         var reader = new FakeReader { ThrowOnRead = true };

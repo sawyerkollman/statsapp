@@ -21,6 +21,16 @@ Uninstall from Settings → Apps; PawnIO is left installed because other tools m
   the Start menu or desktop shortcut: processes started from the Microsoft Store build of
   PowerShell/Terminal inherit an MSIX identity that Windows blocks from ETW tracing, so FPS
   stays blank there.
+- **Fan control** — *Fans* window (toolbar / tray): every LibreHardwareMonitor-controllable fan
+  (motherboard headers, GPU fans, supported USB coolers) can be Auto (device/BIOS), Manual %, or
+  follow a temperature curve driven by any temperature Stats monitors. Off until you enable it;
+  2 °C hysteresis, max 10 %/s change, falls back to device control if the source temperature
+  disappears for 10 s, pumps never below 50 %; fans return to device control when you exit Stats.
+  Close MSI Center / Fan Control / Afterburner fan curves first. If Stats *crashes* (not exits),
+  fans keep their last speed until Stats runs again or you reboot.
+  Stats now also reads the motherboard Super-I/O chip and USB fan/AIO controllers through
+  LibreHardwareMonitor (new *Motherboard* and *Cooler* metric groups); if another vendor tool owns
+  those devices you may see contention — close it or don't enable fan control.
 
 ## Run from source
 

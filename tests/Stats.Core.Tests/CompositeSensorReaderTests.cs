@@ -1,3 +1,4 @@
+using Stats.Core.Fans;
 using Stats.Core.Metrics;
 using Stats.Core.Sensors;
 
@@ -5,7 +6,7 @@ namespace Stats.Core.Tests;
 
 public class CompositeSensorReaderTests
 {
-    private sealed class Fake : ISensorReader
+    private sealed class Fake : ISensorReader, IFanControlBackend
     {
         public Fake(string name, bool degraded, params (string Id, float? Value)[] values)
         { Name = name; IsDegraded = degraded; _values = values; }
@@ -14,6 +15,11 @@ public class CompositeSensorReaderTests
         public int DiscoverCalls, Disposed;
         public string Name { get; }
         public bool IsDegraded { get; }
+        public List<FanChannel> FanChannels = new();
+        public List<(string Id, float? Pct)> FanWrites = new();   // Pct null = SetAuto
+        public IReadOnlyList<FanChannel> Channels => FanChannels;
+        public void SetPercent(string channelId, float percent) => FanWrites.Add((channelId, percent));
+        public void SetAuto(string channelId) => FanWrites.Add((channelId, null));
         public IReadOnlyList<MetricDefinition> Discover()
         {
             DiscoverCalls++;
@@ -74,5 +80,28 @@ public class CompositeSensorReaderTests
         new CompositeSensorReader(a, b).Dispose();
         Assert.Equal(1, a.Disposed);
         Assert.Equal(1, b.Disposed);
+    }
+
+    [Fact]
+    public void FanBackend_ForwardsToFirstReaderWithChannels()
+    {
+        var a = new Fake("A", false);
+        var b = new Fake("B", false) { FanChannels = { new FanChannel("/x/control/0", "Fan #1", "ITE", null, null, 0, 100) } };
+        var c = new CompositeSensorReader(a, b);
+        Assert.Single(c.Channels);
+        c.SetPercent("/x/control/0", 40);
+        c.SetAuto("/x/control/0");
+        Assert.Equal(new (string, float?)[] { ("/x/control/0", 40f), ("/x/control/0", null) }, b.FanWrites);
+        Assert.Empty(a.FanWrites);
+    }
+
+    [Fact]
+    public void FanBackend_NoReaderHasChannels_SetPercentThrows_SetAutoIsANoOp()
+    {
+        var c = new CompositeSensorReader(new Fake("A", false));
+        Assert.Empty(c.Channels);
+        // A write that cannot land must be visible, not silently dropped …
+        Assert.Throws<KeyNotFoundException>(() => c.SetPercent("nope", 50));
+        c.SetAuto("nope"); // … while a release is documented as a no-op for an unknown id
     }
 }

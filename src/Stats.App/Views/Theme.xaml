@@ -29,5 +29,6 @@
     <conv:EqualsConverter x:Key="Equals"/>
     <conv:InverseBoolConverter x:Key="InverseBool"/>
     <conv:OverlayOrientationConverter x:Key="OverlayOrientation"/>
+    <conv:InverseBoolToVisibilityConverter x:Key="InverseBoolToVis"/>
 
 </ResourceDictionary>

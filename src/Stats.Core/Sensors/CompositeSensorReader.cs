@@ -1,9 +1,10 @@
+using Stats.Core.Fans;
 using Stats.Core.Metrics;
 
 namespace Stats.Core.Sensors;
 
 /// <summary>Presents several readers as one. Identity (Name/IsDegraded) is the primary's; values are merged.</summary>
-public sealed class CompositeSensorReader : ISensorReader
+public sealed class CompositeSensorReader : ISensorReader, IFanControlBackend
 {
     private readonly ISensorReader[] _readers;
     private IReadOnlyList<MetricDefinition>? _definitions;
@@ -15,6 +16,20 @@ public sealed class CompositeSensorReader : ISensorReader
 
     public string Name => _readers[0].Name;
     public bool IsDegraded => _readers[0].IsDegraded;
+
+    private IFanControlBackend? FanBackend => _readers.OfType<IFanControlBackend>().FirstOrDefault(b => b.Channels.Count > 0);
+    public IReadOnlyList<FanChannel> Channels => FanBackend?.Channels ?? Array.Empty<FanChannel>();
+    /// <exception cref="KeyNotFoundException">No backend currently reports any channel, so the write cannot land —
+    /// silently dropping it would leave the caller believing the fan is being driven.</exception>
+    public void SetPercent(string channelId, float percent)
+    {
+        if (FanBackend is not { } b) throw new KeyNotFoundException(channelId);
+        b.SetPercent(channelId, percent);
+    }
+    // SetAuto is documented as a no-op for an unknown id, so when no reader currently reports channels
+    // (e.g. a driven channel vanished from discovery) it's safe to sweep every backend rather than silently
+    // dropping a pending release — each one no-ops harmlessly except the one that still owns the control.
+    public void SetAuto(string channelId) { if (FanBackend is { } b) b.SetAuto(channelId); else foreach (var f in _readers.OfType<IFanControlBackend>()) f.SetAuto(channelId); }
 
     public IReadOnlyList<MetricDefinition> Discover()
     {
