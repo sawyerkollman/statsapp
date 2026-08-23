@@ -617,7 +617,7 @@ public partial class App : Application
             // Both the installer and the helper script must live in a fresh, admin-only directory — %TEMP% is
             // writable by any same-user, non-elevated process, and we run cmd.exe (which re-reads its script
             // line-by-line) at high integrity. See CreateSecureStagingDirectory.
-            var stagingDir = CreateSecureStagingDirectory();
+            var stagingDir = await Task.Run(CreateSecureStagingDirectory).ConfigureAwait(true); // sweep + ACL work off the UI thread
             var versionPart = info.TagName.StartsWith("v", StringComparison.OrdinalIgnoreCase) ? info.TagName[1..] : info.TagName;
             destPath = Path.Combine(stagingDir, $"Stats-Setup-{versionPart}.exe");
             var progress = new Progress<double>(p => _dashboardVm.SetUpdateProgress(p)); // Progress<T> marshals to the captured (UI) SynchronizationContext
@@ -663,7 +663,7 @@ public partial class App : Application
     /// Administrators and CREATOR OWNER create anything, so no parent level can be pre-created, junctioned, or
     /// owned by a non-elevated attacker — which is why no existing-directory "repair" branch exists (a re-ACL
     /// path is both unreliable without SeTakeOwnershipPrivilege handling and TOCTOU-exploitable; see re-review).
-    /// The SD is applied atomically at creation and a pre-existing leaf makes Create throw (fail closed).</summary>
+    /// The SD is applied atomically at creation; a pre-existing leaf is refused explicitly (fail closed).</summary>
     private static string CreateSecureStagingDirectory()
     {
         var security = new DirectorySecurity();
@@ -689,7 +689,11 @@ public partial class App : Application
         catch { /* enumeration denied — never block an update on cleanup */ }
 
         var stagingDir = Path.Combine(baseDir, "Stats-update-" + Guid.NewGuid().ToString("N"));
-        new DirectoryInfo(stagingDir).Create(security); // SD applied atomically at creation; throws if it exists
+        // Create(DirectorySecurity) is a silent no-op (SD not applied!) on an existing directory, so refuse
+        // one explicitly. Unreachable for a fresh GUID under an admin-only base, but keep the invariant honest.
+        if (Directory.Exists(stagingDir))
+            throw new IOException($"Update staging directory '{stagingDir}' already exists.");
+        new DirectoryInfo(stagingDir).Create(security); // SD applied atomically at creation
         return stagingDir;
     }
 
