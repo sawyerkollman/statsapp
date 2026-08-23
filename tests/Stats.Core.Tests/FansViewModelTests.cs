@@ -25,7 +25,7 @@ public class FansViewModelTests
         new("cooler.liquid", "Liquid Temperature", MetricGroup.Cooler, "MSI CoreLiquid S360", "°C", "F1"),
     };
 
-    private static (FansViewModel Vm, FanController C, FakeBackend B, AppSettings S) Make()
+    private static (FansViewModel Vm, FanController C, FakeBackend B, AppSettings S) Make(Func<IEnumerable<string>>? procs = null, Func<DateTime>? clock = null)
     {
         var b = new FakeBackend();
         b.Chans.Add(new FanChannel("/ite/control/0", "Fan #1", "ITE IT8696E", "mb.fan1", null, 0, 100));
@@ -34,7 +34,7 @@ public class FansViewModelTests
         var s = new AppSettings();
         s.TilePrefs["cpu.tctl"] = new TilePref { Name = "CPU" };
         var c = new FanController(b, s, () => { });
-        return (new FansViewModel(c, Defs, s), c, b, s);
+        return (new FansViewModel(c, Defs, s, procs, clock), c, b, s);
     }
 
     [Fact]
@@ -171,5 +171,17 @@ public class FansViewModelTests
         vm.DismissRecoveryNoticeCommand.Execute(null);
         Assert.Equal("", vm.RecoveryNotice);
         Assert.False(vm.HasRecoveryNotice);
+    }
+
+    [Fact]
+    public void Conflicts_ThrottledToFiveSeconds_AndFormatted()
+    {
+        int calls = 0; var now = new DateTime(2026, 8, 23, 12, 0, 0, DateTimeKind.Utc);
+        var (vm, _, _, _) = Make(() => { calls++; return new[] { "FanControl", "MSI Center" }; }, () => now);
+        vm.Refresh(); Assert.Equal(1, calls);
+        Assert.True(vm.HasConflict);
+        Assert.StartsWith("Detected: Fan Control, MSI Center", vm.ConflictText);
+        now = now.AddSeconds(3); vm.Refresh(); Assert.Equal(1, calls);
+        now = now.AddSeconds(3); vm.Refresh(); Assert.Equal(2, calls);
     }
 }

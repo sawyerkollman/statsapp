@@ -159,12 +159,19 @@ public sealed partial class FansViewModel : ObservableObject
 {
     private readonly FanController _controller;
     private readonly AppSettings _settings;
+    private readonly Func<IEnumerable<string>> _processNames;
+    private readonly Func<DateTime> _clock;
     private readonly Dictionary<string, FanChannelViewModel> _byId = new();
+    private DateTime _lastConflictCheck = DateTime.MinValue;
+    public static readonly TimeSpan ConflictCheckEvery = TimeSpan.FromSeconds(5);
 
-    public FansViewModel(FanController controller, IReadOnlyList<MetricDefinition> definitions, AppSettings settings)
+    public FansViewModel(FanController controller, IReadOnlyList<MetricDefinition> definitions, AppSettings settings,
+        Func<IEnumerable<string>>? processNames = null, Func<DateTime>? clock = null)
     {
         _controller = controller;
         _settings = settings;
+        _processNames = processNames ?? ConflictingFanSoftware.RunningProcessNames;
+        _clock = clock ?? (() => DateTime.UtcNow);
         var options = definitions
             .Where(d => d.Unit == "°C")
             .Select(d => new FanSourceOption(d.Id,
@@ -194,6 +201,10 @@ public sealed partial class FansViewModel : ObservableObject
     public bool HasRecoveryNotice => RecoveryNotice.Length > 0;
     partial void OnRecoveryNoticeChanged(string value) => OnPropertyChanged(nameof(HasRecoveryNotice));
 
+    [ObservableProperty] private string _conflictText = "";
+    public bool HasConflict => ConflictText.Length > 0;
+    partial void OnConflictTextChanged(string value) => OnPropertyChanged(nameof(HasConflict));
+
     [RelayCommand]
     private void DismissRecoveryNotice() => RecoveryNotice = "";
 
@@ -205,6 +216,13 @@ public sealed partial class FansViewModel : ObservableObject
 
     public void Refresh()
     {
+        var now = _clock();
+        if (now - _lastConflictCheck >= ConflictCheckEvery)
+        {
+            _lastConflictCheck = now;
+            var found = ConflictingFanSoftware.Match(_processNames());
+            ConflictText = found.Count == 0 ? "" : $"Detected: {string.Join(", ", found)} — two controllers fighting the same fan is unsafe. Close them before enabling fan control.";
+        }
         foreach (var v in _controller.Views())
             if (_byId.TryGetValue(v.Id, out var ch)) ch.Apply(v);
         if (Enabled != _controller.Enabled) Enabled = _controller.Enabled;
