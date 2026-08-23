@@ -57,13 +57,28 @@ public static class UpdateChecker
                 if (!asset.TryGetProperty("browser_download_url", out var urlProp) || urlProp.ValueKind != JsonValueKind.String) continue;
                 if (!asset.TryGetProperty("size", out var sizeProp) || sizeProp.ValueKind != JsonValueKind.Number) continue;
 
-                return new UpdateInfo(latest, tag, urlProp.GetString()!, sizeProp.GetInt64(), releasePageUrl);
+                var assetUrl = urlProp.GetString();
+                if (string.IsNullOrEmpty(assetUrl) || !IsAllowedAssetHost(assetUrl)) continue;
+
+                return new UpdateInfo(latest, tag, assetUrl, sizeProp.GetInt64(), releasePageUrl);
             }
-            return null; // no asset with the expected exact name
+            return null; // no asset with the expected exact name (and an allowed host)
         }
     }
 
     /// <summary>First three fields only; an unset Minor/Build (-1, from parsing e.g. "1") normalizes to 0.</summary>
     private static Version NormalizeToThree(Version v) =>
         new(Math.Max(v.Major, 0), Math.Max(v.Minor, 0), Math.Max(v.Build, 0));
+
+    /// <summary>Guards against a compromised/malformed API response pointing the installer download at an
+    /// attacker-controlled host: only github.com, a github.com subdomain, or a githubusercontent.com subdomain
+    /// (where release assets are actually served from) are accepted.</summary>
+    private static bool IsAllowedAssetHost(string url)
+    {
+        if (!Uri.TryCreate(url, UriKind.Absolute, out var uri)) return false;
+        var host = uri.Host;
+        return string.Equals(host, "github.com", StringComparison.OrdinalIgnoreCase)
+            || host.EndsWith(".github.com", StringComparison.OrdinalIgnoreCase)
+            || host.EndsWith(".githubusercontent.com", StringComparison.OrdinalIgnoreCase);
+    }
 }

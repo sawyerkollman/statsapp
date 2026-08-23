@@ -1,6 +1,8 @@
 using System.Diagnostics;
 using System.IO;
 using System.Reflection;
+using System.Security.AccessControl;
+using System.Security.Principal;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Resources;
@@ -57,6 +59,9 @@ public partial class App : Application
     private CompositeSensorReader? _composite;
     private UpdateService? _updateService;
     private CancellationTokenSource? _updateCts;
+    /// <summary>Cancelled by ExitApp()/OnExit() so an in-flight install download bails out (and resets the busy
+    /// state) instead of racing app shutdown; a fresh instance per "Update now" click.</summary>
+    private CancellationTokenSource? _installCts;
 
     protected override void OnStartup(StartupEventArgs e)
     {
@@ -198,6 +203,10 @@ public partial class App : Application
     protected override void OnExit(ExitEventArgs e)
     {
         _updateCts?.Cancel();
+        _updateCts?.Dispose();
+        _installCts?.Cancel();
+        _installCts?.Dispose();
+        _updateService?.Dispose();
         _hotkey?.Dispose();
         _fansVisible = false;
         _processScan?.Dispose();
@@ -493,7 +502,7 @@ public partial class App : Application
                 break;
             case SettingsChange.Updates:
                 if (_settings.CheckForUpdatesAutomatically) StartUpdateChecks();
-                else _updateCts?.Cancel();
+                else { _updateCts?.Cancel(); _updateCts?.Dispose(); _updateCts = null; }
                 break;
         }
     }
@@ -558,25 +567,29 @@ public partial class App : Application
         try
         {
             await Task.Delay(TimeSpan.FromSeconds(15), ct).ConfigureAwait(false);
-            await CheckForUpdateAsync(current).ConfigureAwait(false);
+            await CheckForUpdateAsync(current, ct).ConfigureAwait(false);
 
             using var timer = new System.Threading.PeriodicTimer(TimeSpan.FromHours(24));
             while (await timer.WaitForNextTickAsync(ct).ConfigureAwait(false))
-                await CheckForUpdateAsync(current).ConfigureAwait(false);
+                await CheckForUpdateAsync(current, ct).ConfigureAwait(false);
         }
         catch (OperationCanceledException) { /* app exiting, or the setting was turned off */ }
         catch (Exception ex) { Trace.WriteLine("[Stats] update check loop failed: " + ex); }
     }
 
-    private async Task CheckForUpdateAsync(Version current)
+    /// <summary>Threads the loop's own cancellation token through to the HTTP call so app exit (or the setting
+    /// being turned off) aborts an in-flight check immediately instead of waiting out its 10 s timeout and then
+    /// BeginInvoke-ing onto a Dispatcher that may already be gone.</summary>
+    private async Task CheckForUpdateAsync(Version current, CancellationToken ct)
     {
         if (_updateService is null) return;
         try
         {
-            var info = await _updateService.CheckAsync(current).ConfigureAwait(false);
+            var info = await _updateService.CheckAsync(current, ct).ConfigureAwait(false);
             if (info is null) return;
             _ = Dispatcher.BeginInvoke(() => _dashboardVm?.OfferUpdate(info));
         }
+        catch (OperationCanceledException) { /* app exiting, or the setting was turned off */ }
         catch (Exception ex)
         {
             // CheckAsync already swallows its own failures and returns null; this is a last-resort net.
@@ -586,31 +599,91 @@ public partial class App : Application
 
     /// <summary>"Update now" was clicked. Downloads the installer, writes + launches the relaunch helper, then
     /// exits via the app's own clean shutdown path (fans released, settings saved) — the installer never has to
-    /// kill us.</summary>
+    /// kill us. Download and launch are two separate try/catch blocks so a throw *after* the helper is already
+    /// running can never leave the app half-exited while still showing "Download failed — retry" (a launched
+    /// helper is already waiting to kill/relaunch us — from that point on we must actually go through with
+    /// ExitApp(), never report an error over it). ExitApp() itself runs outside any catch.</summary>
     private async void OnInstallUpdateRequested(UpdateInfo info)
     {
         if (_updateService is null || _dashboardVm is null) return;
         _dashboardVm.SetUpdateProgress(0);
+
+        _installCts?.Dispose();
+        var cts = _installCts = new CancellationTokenSource();
+
+        string destPath;
         try
         {
+            // Both the installer and the helper script must live in a fresh, admin-only directory — %TEMP% is
+            // writable by any same-user, non-elevated process, and we run cmd.exe (which re-reads its script
+            // line-by-line) at high integrity. See CreateSecureStagingDirectory.
+            var stagingDir = CreateSecureStagingDirectory();
             var versionPart = info.TagName.StartsWith("v", StringComparison.OrdinalIgnoreCase) ? info.TagName[1..] : info.TagName;
-            var destPath = Path.Combine(Path.GetTempPath(), $"Stats-Setup-{versionPart}.exe");
+            destPath = Path.Combine(stagingDir, $"Stats-Setup-{versionPart}.exe");
             var progress = new Progress<double>(p => _dashboardVm.SetUpdateProgress(p)); // Progress<T> marshals to the captured (UI) SynchronizationContext
-            await _updateService.DownloadAsync(info, destPath, progress, CancellationToken.None).ConfigureAwait(true);
-
-            LaunchUpdateHelper(destPath);
-            ExitApp();
+            await _updateService.DownloadAsync(info, destPath, progress, cts.Token).ConfigureAwait(true);
         }
         catch (Exception ex)
         {
-            Trace.WriteLine("[Stats] update download failed: " + ex.Message);
+            if (cts.IsCancellationRequested)
+                Trace.WriteLine("[Stats] update download cancelled (app exiting)");
+            else
+                Trace.WriteLine("[Stats] update download failed: " + ex.Message);
             _dashboardVm.SetUpdateError("Download failed — retry");
+            return;
         }
+
+        if (cts.IsCancellationRequested)
+        {
+            // Exiting mid-download (tray Exit, setting toggled off, etc.) raced the download to completion —
+            // bail out rather than launching the helper against a shutdown already in progress.
+            _dashboardVm.SetUpdateError("Download failed — retry");
+            return;
+        }
+
+        try
+        {
+            LaunchUpdateHelper(destPath);
+        }
+        catch (Exception ex)
+        {
+            Trace.WriteLine("[Stats] update helper launch failed: " + ex.Message);
+            _dashboardVm.SetUpdateError("Download failed — retry");
+            return;
+        }
+
+        ExitApp();
     }
 
-    /// <summary>Writes %TEMP%\stats-update.cmd (waits for this process to exit, runs the installer silently,
-    /// then relaunches this exe) and starts it hidden and detached. The app must already be on its way out via
-    /// ExitApp() by the time the helper's wait loop can observe this PID gone.</summary>
+    /// <summary>Creates "%ProgramData%\Stats\update\{guid}" with an explicit, non-inherited DACL granting
+    /// FullControl only to BUILTIN\Administrators and NT AUTHORITY\SYSTEM — the installer and helper script both
+    /// live here instead of %TEMP% so a non-elevated same-user process cannot pre-plant or swap either file out
+    /// from under the elevated cmd.exe that runs the helper (local-EoP fix; see task-1 review finding B1). The
+    /// per-call GUID name also means a pre-plant attempt cannot even guess the path in advance.</summary>
+    private static string CreateSecureStagingDirectory()
+    {
+        var baseDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData), "Stats", "update");
+        Directory.CreateDirectory(baseDir); // parent chain only; the leaf below carries the real ACL
+
+        var security = new DirectorySecurity();
+        security.SetAccessRuleProtection(true, false); // protected: drop inherited rules entirely
+        var admins = new SecurityIdentifier(WellKnownSidType.BuiltinAdministratorsSid, null);
+        var system = new SecurityIdentifier(WellKnownSidType.LocalSystemSid, null);
+        var inherit = InheritanceFlags.ContainerInherit | InheritanceFlags.ObjectInherit;
+        security.AddAccessRule(new FileSystemAccessRule(admins, FileSystemRights.FullControl, inherit, PropagationFlags.None, AccessControlType.Allow));
+        security.AddAccessRule(new FileSystemAccessRule(system, FileSystemRights.FullControl, inherit, PropagationFlags.None, AccessControlType.Allow));
+
+        var stagingDir = Path.Combine(baseDir, Guid.NewGuid().ToString("N"));
+        var dirInfo = new DirectoryInfo(stagingDir);
+        dirInfo.Create(security);
+        return stagingDir;
+    }
+
+    /// <summary>Writes {stagingDir}\stats-update.cmd (waits for this process to exit, runs the installer
+    /// silently, then relaunches this exe) and starts it hidden and detached. The app must already be on its way
+    /// out via ExitApp() by the time the helper's wait loop can observe this PID gone. FileMode.CreateNew: this
+    /// directory is fresh per install (see CreateSecureStagingDirectory) — a file already there would mean
+    /// something pre-planted it, so fail loudly instead of silently overwriting it.</summary>
     private static void LaunchUpdateHelper(string installerPath)
     {
         var exePath = Environment.ProcessPath;
@@ -618,8 +691,10 @@ public partial class App : Application
             throw new InvalidOperationException("Could not resolve the running executable's path.");
 
         var pid = Environment.ProcessId;
-        var scriptPath = Path.Combine(Path.GetTempPath(), "stats-update.cmd");
-        File.WriteAllText(scriptPath, BuildUpdateScript(pid, installerPath, exePath));
+        var scriptPath = Path.Combine(Path.GetDirectoryName(installerPath)!, "stats-update.cmd");
+        var scriptBytes = System.Text.Encoding.ASCII.GetBytes(BuildUpdateScript(pid, installerPath, exePath));
+        using (var scriptStream = new FileStream(scriptPath, FileMode.CreateNew, FileAccess.Write, FileShare.None))
+            scriptStream.Write(scriptBytes, 0, scriptBytes.Length);
 
         var psi = new ProcessStartInfo("cmd.exe", $"/c \"{scriptPath}\"")
         {
@@ -630,12 +705,19 @@ public partial class App : Application
         Process.Start(psi);
     }
 
+    /// <summary>Waits up to 2 minutes (120 * ~1 s ping) for this PID to exit before giving up — bounds the loop
+    /// so a wedged app can't leave cmd.exe polling forever. `ping -n 2 127.0.0.1` is used instead of
+    /// `timeout /t 1` because timeout fails outright when its stdin is redirected (as it is here, launched
+    /// hidden/detached with UseShellExecute=false).</summary>
     private static string BuildUpdateScript(int pid, string installerPath, string exePath) =>
         "@echo off\r\n" +
+        "set n=0\r\n" +
         ":wait\r\n" +
         $"tasklist /FI \"PID eq {pid}\" | find \"{pid}\" >nul\r\n" +
         "if errorlevel 1 goto run\r\n" +
-        "timeout /t 1 >nul\r\n" +
+        "set /a n+=1\r\n" +
+        "if %n% gtr 120 exit /b\r\n" +
+        "ping -n 2 127.0.0.1 >nul\r\n" +
         "goto wait\r\n" +
         ":run\r\n" +
         $"\"{installerPath}\" /SILENT /NOCANCEL\r\n" +

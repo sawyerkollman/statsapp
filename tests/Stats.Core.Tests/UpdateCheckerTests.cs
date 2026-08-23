@@ -8,7 +8,7 @@ public class UpdateCheckerTests
 
     /// <summary>Shapes a minimal GitHub /releases/latest body: tag_name, html_url, and one asset entry (name,
     /// size, browser_download_url) — mirrors the real payload fields UpdateChecker.Parse reads.</summary>
-    private static string Release(string tag, string assetName, long assetSize, string assetUrl = "https://example.com/asset.exe", string htmlUrl = "https://github.com/sawyerkollman/statsapp/releases/tag/v1.4.2") => $$"""
+    private static string Release(string tag, string assetName, long assetSize, string assetUrl = "https://github.com/sawyerkollman/statsapp/releases/download/v1.4.2/asset.exe", string htmlUrl = "https://github.com/sawyerkollman/statsapp/releases/tag/v1.4.2") => $$"""
         {
           "tag_name": "{{tag}}",
           "html_url": "{{htmlUrl}}",
@@ -77,16 +77,16 @@ public class UpdateCheckerTests
               "tag_name": "v1.4.2",
               "html_url": "https://github.com/sawyerkollman/statsapp/releases/tag/v1.4.2",
               "assets": [
-                { "name": "Stats-Setup-1.4.2.exe.sha256", "size": 64, "browser_download_url": "https://example.com/wrong1" },
-                { "name": "NotStats-Setup-1.4.2.exe", "size": 99, "browser_download_url": "https://example.com/wrong2" },
-                { "name": "Stats-Setup-1.4.2.exe", "size": 5551212, "browser_download_url": "https://example.com/right" }
+                { "name": "Stats-Setup-1.4.2.exe.sha256", "size": 64, "browser_download_url": "https://github.com/wrong1" },
+                { "name": "NotStats-Setup-1.4.2.exe", "size": 99, "browser_download_url": "https://github.com/wrong2" },
+                { "name": "Stats-Setup-1.4.2.exe", "size": 5551212, "browser_download_url": "https://github.com/right" }
               ]
             }
             """;
         var info = UpdateChecker.Parse(json, Current141);
         Assert.NotNull(info);
         Assert.Equal(5551212L, info!.AssetSize);
-        Assert.Equal("https://example.com/right", info.AssetUrl);
+        Assert.Equal("https://github.com/right", info.AssetUrl);
     }
 
     [Fact]
@@ -131,5 +131,72 @@ public class UpdateCheckerTests
         var json = Release("v99.0.0", "Stats-Setup-99.0.0.exe", 1);
         Assert.Null(UpdateChecker.Parse(json, new Version(0, 0, 0)));
         Assert.Null(UpdateChecker.Parse(json, new Version(0, 0, 0, 0)));
+    }
+
+    // ---- malformed shapes ----
+
+    [Fact]
+    public void Parse_ArrayRoot_ReturnsNull()
+    {
+        Assert.Null(UpdateChecker.Parse("[]", Current141));
+    }
+
+    [Fact]
+    public void Parse_NullRoot_ReturnsNull()
+    {
+        Assert.Null(UpdateChecker.Parse("null", Current141));
+    }
+
+    [Fact]
+    public void Parse_MissingTagName_ReturnsNull()
+    {
+        const string json = """
+            {
+              "html_url": "https://github.com/sawyerkollman/statsapp/releases/tag/v1.4.2",
+              "assets": [
+                { "name": "Stats-Setup-1.4.2.exe", "size": 1, "browser_download_url": "https://example.com/asset.exe" }
+              ]
+            }
+            """;
+        Assert.Null(UpdateChecker.Parse(json, Current141));
+    }
+
+    [Fact]
+    public void Parse_MissingAssets_ReturnsNull()
+    {
+        const string json = """
+            {
+              "tag_name": "v1.4.2",
+              "html_url": "https://github.com/sawyerkollman/statsapp/releases/tag/v1.4.2"
+            }
+            """;
+        Assert.Null(UpdateChecker.Parse(json, Current141));
+    }
+
+    [Fact]
+    public void Parse_FourFieldTag_DoesNotThrow()
+    {
+        var json = Release("v1.4.2.3", "Stats-Setup-1.4.2.3.exe", 1);
+        var ex = Record.Exception(() => UpdateChecker.Parse(json, Current141));
+        Assert.Null(ex);
+    }
+
+    // ---- asset host allow-list ----
+
+    [Fact]
+    public void Parse_AssetUrlWrongHost_ReturnsNull()
+    {
+        var json = Release("v1.4.2", "Stats-Setup-1.4.2.exe", 12345, assetUrl: "https://evil.example.com/Stats-Setup-1.4.2.exe");
+        Assert.Null(UpdateChecker.Parse(json, Current141));
+    }
+
+    [Fact]
+    public void Parse_AssetUrlGithubusercontentSubdomain_IsAccepted()
+    {
+        var json = Release("v1.4.2", "Stats-Setup-1.4.2.exe", 12345,
+            assetUrl: "https://objects.githubusercontent.com/github-production-release-asset/Stats-Setup-1.4.2.exe");
+        var info = UpdateChecker.Parse(json, Current141);
+        Assert.NotNull(info);
+        Assert.Equal("https://objects.githubusercontent.com/github-production-release-asset/Stats-Setup-1.4.2.exe", info!.AssetUrl);
     }
 }

@@ -79,10 +79,18 @@ public sealed partial class DashboardViewModel : ObservableObject
     [RelayCommand]
     private void InstallUpdate()
     {
-        if (_pendingUpdate is UpdateInfo info) InstallUpdateRequested?.Invoke(info);
+        if (UpdateBusy) return; // already downloading — ignore a double-click/repeat invoke race
+        if (_pendingUpdate is not UpdateInfo info) return;
+        UpdateBusy = true; // set synchronously, before the composition root's async download even starts
+        InstallUpdateRequested?.Invoke(info);
     }
 
-    [RelayCommand] private void DismissUpdate() => UpdateAvailable = false; // dismisses for the session only
+    [RelayCommand]
+    private void DismissUpdate()
+    {
+        if (UpdateBusy) return; // a download is in flight — Later is a no-op (also disabled in the XAML)
+        UpdateAvailable = false; // dismisses for the session only
+    }
 
     /// <summary>Called by the composition root when a startup/24h check finds a newer release.</summary>
     public void OfferUpdate(UpdateInfo info)

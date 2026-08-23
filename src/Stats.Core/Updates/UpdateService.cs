@@ -7,7 +7,7 @@ namespace Stats.Core.Updates;
 /// No WPF, no process/file-system work beyond writing the downloaded bytes — that keeps it usable from a unit
 /// test with an injected <see cref="HttpClient"/> (a real network call is never exercised by
 /// <see cref="Updates.UpdateChecker"/>'s own tests, which cover <see cref="Updates.UpdateChecker.Parse"/> directly).</summary>
-public sealed class UpdateService
+public sealed class UpdateService : IDisposable
 {
     private const string LatestReleaseUrl = "https://api.github.com/repos/sawyerkollman/statsapp/releases/latest";
     private static readonly TimeSpan CheckTimeout = TimeSpan.FromSeconds(10);
@@ -54,7 +54,9 @@ public sealed class UpdateService
             var total = response.Content.Headers.ContentLength ?? info.AssetSize;
 
             await using var httpStream = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
-            await using (var fileStream = new FileStream(destPath, FileMode.Create, FileAccess.Write, FileShare.None))
+            // CreateNew: destPath lives in a fresh admin-only staging directory (see App.xaml.cs) — a file
+            // already there means something pre-planted it, so fail loudly instead of silently overwriting it.
+            await using (var fileStream = new FileStream(destPath, FileMode.CreateNew, FileAccess.Write, FileShare.None))
             {
                 var buffer = new byte[81920];
                 long readTotal = 0;
@@ -76,4 +78,6 @@ public sealed class UpdateService
         }
         progress?.Report(1.0);
     }
+
+    public void Dispose() => _http.Dispose();
 }
