@@ -53,6 +53,12 @@ public sealed class AppSettings
     /// <summary>Name of the profile that matches the live <see cref="FanChannels"/> state; null = "Custom"
     /// (edited since the last save/load of a profile).</summary>
     public string? ActiveFanProfile { get; set; }
+    /// <summary>Switch fan profiles automatically based on foreground frame rate (see <see cref="Fans.GameModeSwitcher"/>).</summary>
+    public bool GameModeEnabled { get; set; }
+    /// <summary>Profile name applied while a game is detected in the foreground.</summary>
+    public string? GameModeGamingProfile { get; set; }
+    /// <summary>Profile name applied when no game has been active for a while; null = leave state as-is.</summary>
+    public string? GameModeDesktopProfile { get; set; }
 
     /// <summary>Get-or-create the TilePref for a metric id.</summary>
     public TilePref PrefFor(string metricId)

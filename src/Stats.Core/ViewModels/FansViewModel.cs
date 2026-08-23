@@ -162,20 +162,27 @@ public sealed partial class FansViewModel : ObservableObject
     private readonly Action _saveSettings;
     private readonly Func<IEnumerable<string>> _processNames;
     private readonly Func<DateTime> _clock;
+    private readonly GameModeSwitcher? _switcher;
     private readonly Dictionary<string, FanChannelViewModel> _byId = new();
     private readonly IReadOnlyList<FanSourceOption> _celsiusOptions;
     private DateTime _lastConflictCheck = DateTime.MinValue;
     private bool _refreshingProfiles;
     public static readonly TimeSpan ConflictCheckEvery = TimeSpan.FromSeconds(5);
 
+    /// <summary>Raised after a Game mode setting changes (enable toggle or either profile pick) so the host
+    /// can re-apply frame tracing (game mode keeps the FPS reader running while enabled).</summary>
+    public event Action? GameModeChanged;
+
     public FansViewModel(FanController controller, IReadOnlyList<MetricDefinition> definitions, AppSettings settings,
-        Func<IEnumerable<string>>? processNames = null, Func<DateTime>? clock = null, Action? saveSettings = null)
+        Func<IEnumerable<string>>? processNames = null, Func<DateTime>? clock = null, Action? saveSettings = null,
+        GameModeSwitcher? switcher = null)
     {
         _controller = controller;
         _settings = settings;
         _saveSettings = saveSettings ?? (() => { });
         _processNames = processNames ?? ConflictingFanSoftware.RunningProcessNames;
         _clock = clock ?? (() => DateTime.UtcNow);
+        _switcher = switcher;
         _celsiusOptions = definitions
             .Where(d => d.Unit == "°C")
             .Select(d => new FanSourceOption(d.Id,
@@ -191,6 +198,10 @@ public sealed partial class FansViewModel : ObservableObject
         }
         _enabled = controller.Enabled;
         foreach (var p in settings.FanProfiles) ProfileNames.Add(p.Name);
+        _gameModeEnabled = settings.GameModeEnabled;
+        _gamingProfile = settings.GameModeGamingProfile;
+        _desktopProfile = settings.GameModeDesktopProfile;
+        _gameModeStatus = _switcher?.StatusText ?? "";
     }
 
     public ObservableCollection<FanDeviceGroupViewModel> Devices { get; } = new();
@@ -218,6 +229,37 @@ public sealed partial class FansViewModel : ObservableObject
     {
         foreach (var ch in _byId.Values) ch.Mode = FanMode.Auto;
     }
+
+    // ---- game mode ----
+
+    [ObservableProperty] private bool _gameModeEnabled;
+    partial void OnGameModeEnabledChanged(bool value)
+    {
+        _settings.GameModeEnabled = value;
+        _saveSettings();
+        GameModeChanged?.Invoke();
+        RefreshGameModeStatus();
+    }
+
+    [ObservableProperty] private string? _gamingProfile;
+    partial void OnGamingProfileChanged(string? value)
+    {
+        _settings.GameModeGamingProfile = value;
+        _saveSettings();
+        GameModeChanged?.Invoke();
+    }
+
+    [ObservableProperty] private string? _desktopProfile;
+    partial void OnDesktopProfileChanged(string? value)
+    {
+        _settings.GameModeDesktopProfile = value;
+        _saveSettings();
+        GameModeChanged?.Invoke();
+    }
+
+    [ObservableProperty] private string _gameModeStatus = "";
+
+    private void RefreshGameModeStatus() => GameModeStatus = _switcher?.StatusText ?? "";
 
     // ---- fan profiles ----
 
@@ -315,5 +357,6 @@ public sealed partial class FansViewModel : ObservableObject
             if (_byId.TryGetValue(v.Id, out var ch)) ch.Apply(v);
         if (Enabled != _controller.Enabled) Enabled = _controller.Enabled;
         SyncProfileState();
+        RefreshGameModeStatus();
     }
 }

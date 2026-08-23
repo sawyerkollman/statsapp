@@ -25,7 +25,9 @@ public class FansViewModelTests
         new("cooler.liquid", "Liquid Temperature", MetricGroup.Cooler, "MSI CoreLiquid S360", "°C", "F1"),
     };
 
-    private static (FansViewModel Vm, FanController C, FakeBackend B, AppSettings S) Make(Func<IEnumerable<string>>? procs = null, Func<DateTime>? clock = null)
+    private static (FansViewModel Vm, FanController C, FakeBackend B, AppSettings S) Make(
+        Func<IEnumerable<string>>? procs = null, Func<DateTime>? clock = null, Action? saveSettings = null,
+        Func<FanController, AppSettings, GameModeSwitcher>? switcher = null)
     {
         var b = new FakeBackend();
         b.Chans.Add(new FanChannel("/ite/control/0", "Fan #1", "ITE IT8696E", "mb.fan1", null, 0, 100));
@@ -34,7 +36,7 @@ public class FansViewModelTests
         var s = new AppSettings();
         s.TilePrefs["cpu.tctl"] = new TilePref { Name = "CPU" };
         var c = new FanController(b, s, () => { });
-        return (new FansViewModel(c, Defs, s, procs, clock), c, b, s);
+        return (new FansViewModel(c, Defs, s, procs, clock, saveSettings, switcher?.Invoke(c, s)), c, b, s);
     }
 
     [Fact]
@@ -205,5 +207,23 @@ public class FansViewModelTests
         vm.DeleteProfileCommand.Execute("Quiet");
         Assert.DoesNotContain("Quiet", vm.ProfileNames);
         Assert.Equal("Custom", vm.ActiveProfileName);
+    }
+
+    [Fact]
+    public void GameMode_SettingsRoundTrip_AndStatus()
+    {
+        int saves = 0;
+        var (vm, _, _, s) = Make(saveSettings: () => saves++, switcher: (c, st) => new GameModeSwitcher(c, st));
+        Assert.Equal("Game mode: off", vm.GameModeStatus);
+
+        vm.GameModeEnabled = true;
+        vm.GamingProfile = "Gaming";
+        vm.DesktopProfile = "Silent";
+
+        Assert.True(s.GameModeEnabled);
+        Assert.Equal("Gaming", s.GameModeGamingProfile);
+        Assert.Equal("Silent", s.GameModeDesktopProfile);
+        Assert.Equal(3, saves);
+        Assert.Equal("Game mode: desktop", vm.GameModeStatus);
     }
 }

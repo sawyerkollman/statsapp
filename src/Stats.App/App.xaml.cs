@@ -41,6 +41,7 @@ public partial class App : Application
     private System.Drawing.Icon? _appIcon;
     private MetricDefinition? _trayCpuTempDef;
     private FanController? _fanController;
+    private GameModeSwitcher? _gameMode;
     private bool _fanRecovered;
     private FansWindow? _fans;
     private FansViewModel? _fansVm;
@@ -95,6 +96,7 @@ public partial class App : Application
         ApplyFrameTracing();
         _fanController = new FanController(_composite!, _settings, SaveSettings, new FileFanArmedMarker(settingsDir));
         _fanRecovered = _fanController.RecoverFromUncleanShutdown(); // before _poller.Start(): single-threaded here
+        _gameMode = new GameModeSwitcher(_fanController, _settings);
 
         _dashboardVm = new DashboardViewModel(_store, _settings, SaveSettings)
         {
@@ -149,10 +151,14 @@ public partial class App : Application
         RestoreWindowBounds();
 
         var fanController = _fanController;
+        var gameMode = _gameMode;
         // poll thread: same thread as LHM reads. A controller fault must never propagate out of the poller's
-        // subscriber list and starve the Dispatcher-refresh handler below.
+        // subscriber list and starve the Dispatcher-refresh handler below. GameModeSwitcher runs first so a
+        // profile switch it applies (deferSave: true) is picked up by FanController.Tick in the same snapshot.
         _poller.SnapshotAvailable += snapshot =>
         {
+            try { gameMode.Tick(snapshot, DateTime.UtcNow); }
+            catch (Exception ex) { System.Diagnostics.Trace.WriteLine("[Stats] GameModeSwitcher.Tick failed: " + ex); }
             try { fanController.Tick(snapshot, DateTime.UtcNow); }
             catch (Exception ex) { System.Diagnostics.Trace.WriteLine("[Stats] FanController.Tick failed: " + ex); }
         };
@@ -205,7 +211,7 @@ public partial class App : Application
     private void ApplyFrameTracing()
     {
         if (_frameReader is null || _settings is null) return;
-        _frameReader.SetActive(FrameRateReader.ShouldBeActive(_settings.DashboardMetrics, _settings.OverlayMetrics));
+        _frameReader.SetActive(FrameRateReader.ShouldBeActive(_settings.DashboardMetrics, _settings.OverlayMetrics) || _settings.GameModeEnabled);
     }
 
     private string? FrameStatus()
@@ -364,7 +370,8 @@ public partial class App : Application
         if (_fanController is null || _settings is null) return;
         if (_fans is null)
         {
-            _fansVm = new FansViewModel(_fanController, _definitions, _settings, saveSettings: SaveSettings);
+            _fansVm = new FansViewModel(_fanController, _definitions, _settings, saveSettings: SaveSettings, switcher: _gameMode);
+            _fansVm.GameModeChanged += ApplyFrameTracing;
             if (_fanRecovered) _fansVm.RecoveryNotice = "Stats did not shut down cleanly last time — all fans were returned to device control.";
             _fans = new FansWindow { DataContext = _fansVm };
             if (_settings.FansWidth is double w) _fans.Width = w;
@@ -429,7 +436,7 @@ public partial class App : Application
             case SettingsChange.Hardware:
                 if (_settingsVm is not null) _settingsVm.HardwareStatus = "Restart Stats to apply";
                 break;
-            case SettingsChange.GameMode: // GameMode wiring lands in Task 8; ApplyFrameTracing() is harmless here
+            case SettingsChange.GameMode:
                 ApplyFrameTracing();
                 break;
         }
