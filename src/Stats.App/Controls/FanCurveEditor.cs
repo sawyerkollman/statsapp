@@ -4,6 +4,7 @@ using System.Globalization;
 using System.Windows;
 using System.Windows.Input;
 using System.Windows.Media;
+using Stats.App.Helpers;
 using Stats.Core.Fans;
 using Stats.Core.Settings;
 
@@ -61,6 +62,23 @@ public sealed class FanCurveEditor : FrameworkElement
         MinHeight = 120;
         MinWidth = 200;
         ToolTip = "Drag points · double-click to add · right-click to remove";
+        Loaded += (_, _) => { ThemeManager.Changed += OnThemeChanged; SyncFloorBrush(); };
+        Unloaded += (_, _) => ThemeManager.Changed -= OnThemeChanged;
+    }
+
+    // LineBrush/PointBrush/AxisBrush/TextBrush are already routed through shared theme brushes (bound via
+    // StaticResource in FansWindow.xaml), so WPF repaints them on its own. FloorBrush is palette-derived (a
+    // translucent tint of CritBrush, marking the channel's floor) but is never bound from XAML, so it needs an
+    // explicit resync here. MarkerBrush (the live-temperature indicator) is a fixed decorative blue unrelated to
+    // any of the 11 palette colours — it stays hardcoded on purpose so the "you are here" marker keeps reading
+    // distinctly from the accent-coloured curve line in every preset.
+    private void OnThemeChanged() { SyncFloorBrush(); InvalidateVisual(); }
+
+    private void SyncFloorBrush()
+    {
+        if (FloorBrush is not SolidColorBrush b) return;
+        var crit = ThemeManager.Get("CritBrush");
+        b.Color = Color.FromArgb(0x40, crit.R, crit.G, crit.B);
     }
 
     private static void OnPointsChanged(DependencyObject d, DependencyPropertyChangedEventArgs e)

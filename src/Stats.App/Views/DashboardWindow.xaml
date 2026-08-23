@@ -259,6 +259,42 @@
                                 <TextBlock Text="Dashboard" Style="{StaticResource SettingsHeader}"/>
                                 <CheckBox Content="Show CPU core matrix" IsChecked="{Binding ShowCoreMatrix}"/>
 
+                                <TextBlock Text="Theme" Style="{StaticResource SettingsHeader}"/>
+                                <ComboBox ItemsSource="{Binding ThemePresetNames}" SelectedItem="{Binding SelectedThemePreset}"
+                                          MinWidth="160" HorizontalAlignment="Left" Margin="0,0,0,8"/>
+                                <TextBlock Text="Accent colour" Style="{StaticResource SettingsLabel}" Margin="0,0,0,4"/>
+                                <ItemsControl ItemsSource="{Binding AccentSwatches}" Margin="0,0,0,6">
+                                    <ItemsControl.ItemsPanel>
+                                        <ItemsPanelTemplate><WrapPanel/></ItemsPanelTemplate>
+                                    </ItemsControl.ItemsPanel>
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate>
+                                            <Button Command="{Binding DataContext.SetAccentCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
+                                                    CommandParameter="{Binding}"
+                                                    Width="22" Height="22" Margin="0,0,6,6" Padding="0" BorderThickness="1"
+                                                    BorderBrush="{StaticResource BorderDim}"
+                                                    Background="{Binding Converter={StaticResource HexToBrush}}" Cursor="Hand"/>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                                <DockPanel Margin="0,0,0,4">
+                                    <Button DockPanel.Dock="Right" Content="Reset" Command="{Binding ResetAccentCommand}"
+                                            Style="{StaticResource HeaderButton}" FontSize="11"/>
+                                    <TextBox Text="{Binding AccentHex, UpdateSourceTrigger=PropertyChanged}" MaxLength="7"
+                                             Width="90" HorizontalAlignment="Left">
+                                        <TextBox.Style>
+                                            <Style TargetType="TextBox" BasedOn="{StaticResource {x:Type TextBox}}">
+                                                <Style.Triggers>
+                                                    <DataTrigger Binding="{Binding IsAccentInvalid}" Value="True">
+                                                        <Setter Property="BorderBrush" Value="{StaticResource CritBrush}"/>
+                                                    </DataTrigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </TextBox.Style>
+                                    </TextBox>
+                                </DockPanel>
+                                <TextBlock Text="Blank = use the preset's own accent colour." Foreground="{StaticResource TextSecondary}" FontSize="11"/>
+
                                 <TextBlock Text="Hardware" Style="{StaticResource SettingsHeader}"/>
                                 <CheckBox IsChecked="{Binding ReadMotherboardAndCoolers}">
                                     <TextBlock Text="Read motherboard fan headers and USB coolers (needed for fan control; restart to apply)"

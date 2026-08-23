@@ -3,6 +3,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
+using Stats.App.Helpers;
 
 namespace Stats.App.Controls;
 
@@ -34,7 +35,15 @@ public sealed class Sparkline : FrameworkElement
     {
         ToolTipService.SetInitialShowDelay(this, 0);
         ToolTipService.SetShowDuration(this, 30000);
+        Loaded += (_, _) => ThemeManager.Changed += OnThemeChanged;
+        Unloaded += (_, _) => ThemeManager.Changed -= OnThemeChanged;
     }
+
+    // Stroke/Fill are already routed through shared theme brushes via SeverityToBrushConverter, so WPF's own
+    // Freezable-change notification repaints them automatically; this keeps the guide/hover overlays (drawn
+    // fresh every OnRender) in step with a theme switch too, and matches the pattern used by the other three
+    // custom-drawn controls.
+    private void OnThemeChanged() => InvalidateVisual();
 
     public IReadOnlyList<float>? Values { get => (IReadOnlyList<float>?)GetValue(ValuesProperty); set => SetValue(ValuesProperty, value); }
     public Brush Stroke { get => (Brush)GetValue(StrokeProperty); set => SetValue(StrokeProperty, value); }

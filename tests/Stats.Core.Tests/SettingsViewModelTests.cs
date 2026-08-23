@@ -204,4 +204,98 @@ public class SettingsViewModelTests
         Assert.Equal(SettingsChange.Hardware, last);
         Assert.Equal(1, saves);
     }
+
+    [Fact]
+    public void Ctor_LoadsThemeFromSettings()
+    {
+        var s = new AppSettings { ThemePreset = "Dark Blue", ThemeAccent = "#123456" };
+        var vm = new SettingsViewModel(s, Array.Empty<MetricDefinition>(), () => { });
+        Assert.Equal("Dark Blue", vm.SelectedThemePreset);
+        Assert.Equal("#123456", vm.AccentHex);
+        Assert.False(vm.IsAccentInvalid);
+    }
+
+    [Fact]
+    public void Ctor_NoAccentOverride_AccentHexIsEmpty()
+    {
+        var (vm, _, _, _) = Make();
+        Assert.Equal("", vm.AccentHex);
+    }
+
+    [Fact]
+    public void SelectedThemePreset_WritesThroughAndRaisesTheme()
+    {
+        var (vm, s, changes, saves) = Make();
+        vm.SelectedThemePreset = "Dark Purple";
+        Assert.Equal("Dark Purple", s.ThemePreset);
+        Assert.Equal(new[] { SettingsChange.Theme }, changes);
+        Assert.Equal(1, saves());
+    }
+
+    [Fact]
+    public void SelectedThemePreset_UnknownValue_SanitizesToDefault()
+    {
+        var (vm, s, _, _) = Make();
+        vm.SelectedThemePreset = "Neon Pink";
+        Assert.Equal(ThemePresets.Default, vm.SelectedThemePreset);
+        Assert.Equal(ThemePresets.Default, s.ThemePreset);
+    }
+
+    [Fact]
+    public void AccentHex_Valid_WritesThroughAndRaisesTheme()
+    {
+        var (vm, s, changes, _) = Make();
+        vm.AccentHex = "#4a9ee0";
+        Assert.Equal("#4A9EE0", s.ThemeAccent);
+        Assert.False(vm.IsAccentInvalid);
+        Assert.Contains(SettingsChange.Theme, changes);
+    }
+
+    [Fact]
+    public void AccentHex_Invalid_FlagsInvalid_DoesNotWriteOrRaise()
+    {
+        var (vm, s, changes, _) = Make();
+        vm.AccentHex = "not-a-color";
+        Assert.True(vm.IsAccentInvalid);
+        Assert.Null(s.ThemeAccent);
+        Assert.DoesNotContain(SettingsChange.Theme, changes);
+    }
+
+    [Fact]
+    public void AccentHex_Empty_ClearsOverride()
+    {
+        var (vm, s, changes, _) = Make();
+        vm.AccentHex = "#4a9ee0";
+        vm.AccentHex = "";
+        Assert.Null(s.ThemeAccent);
+        Assert.False(vm.IsAccentInvalid);
+        Assert.Equal(2, changes.Count(c => c == SettingsChange.Theme));
+    }
+
+    [Fact]
+    public void ResetAccentCommand_ClearsAccentHex()
+    {
+        var (vm, s, _, _) = Make();
+        vm.AccentHex = "#4a9ee0";
+        vm.ResetAccentCommand.Execute(null);
+        Assert.Equal("", vm.AccentHex);
+        Assert.Null(s.ThemeAccent);
+    }
+
+    [Fact]
+    public void SetAccentCommand_SetsAccentHexFromSwatch()
+    {
+        var (vm, s, _, _) = Make();
+        vm.SetAccentCommand.Execute("#4FC06A");
+        Assert.Equal("#4FC06A", vm.AccentHex);
+        Assert.Equal("#4FC06A", s.ThemeAccent);
+    }
+
+    [Fact]
+    public void ThemePresetNamesAndAccentSwatches_ExposeCoreData()
+    {
+        var (vm, _, _, _) = Make();
+        Assert.Equal(ThemePresets.Names, vm.ThemePresetNames);
+        Assert.Equal(ThemePresets.AccentSwatches, vm.AccentSwatches);
+    }
 }

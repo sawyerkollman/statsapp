@@ -9,7 +9,7 @@ namespace Stats.Core.ViewModels;
 
 // No GameMode member: the game-mode controls live in the Fans window, which re-applies frame tracing through
 // FansViewModel.GameModeChanged. A member nothing raises only invites the next feature onto a dead channel.
-public enum SettingsChange { PollInterval, HistoryWindow, Thresholds, Limits, Overlay, Hotkey, CoreMatrix, Hardware, Updates }
+public enum SettingsChange { PollInterval, HistoryWindow, Thresholds, Limits, Overlay, Hotkey, CoreMatrix, Hardware, Updates, Theme }
 
 /// <summary>One editable metric limit (PPT/TDC/EDC/GPU power). Empty text = no limit.</summary>
 public sealed partial class LimitItemViewModel : ObservableObject
@@ -61,6 +61,8 @@ public sealed partial class SettingsViewModel : ObservableObject
         _showCoreMatrix = settings.ShowCoreMatrix;
         _readMotherboardAndCoolers = settings.ReadMotherboardAndCoolers;
         _checkForUpdatesAutomatically = settings.CheckForUpdatesAutomatically;
+        _selectedThemePreset = settings.ThemePreset;
+        _accentHex = settings.ThemeAccent ?? "";
 
         foreach (var def in definitions.Where(IsLimitCandidate))
         {
@@ -97,8 +99,18 @@ public sealed partial class SettingsViewModel : ObservableObject
     /// <summary>"" = ok; "Restart Stats to apply" after the setting above changes (set by App).</summary>
     [ObservableProperty] private string _hardwareStatus = "";
     [ObservableProperty] private bool _checkForUpdatesAutomatically;
+    [ObservableProperty] private string _selectedThemePreset;
+    /// <summary>"" = use the preset's own accent; otherwise a "#RRGGBB" override, two-way bound to the hex TextBox.</summary>
+    [ObservableProperty] private string _accentHex;
+    /// <summary>True while the AccentHex TextBox holds text that isn't "" and isn't valid #RRGGBB — red outline.</summary>
+    [ObservableProperty] private bool _isAccentInvalid;
+
+    public IReadOnlyList<string> ThemePresetNames => ThemePresets.Names;
+    public IReadOnlyList<string> AccentSwatches => ThemePresets.AccentSwatches;
 
     [RelayCommand] private void ResetOverlayPosition() => OverlayPositionResetRequested?.Invoke();
+    [RelayCommand] private void ResetAccent() => AccentHex = "";
+    [RelayCommand] private void SetAccent(string hex) => AccentHex = hex;
 
     // ---- write-through ----
 
@@ -211,6 +223,32 @@ public sealed partial class SettingsViewModel : ObservableObject
         if (!_loaded) return;
         _s.CheckForUpdatesAutomatically = value;
         Raise(SettingsChange.Updates);
+    }
+
+    partial void OnSelectedThemePresetChanged(string value)
+    {
+        if (!_loaded) return;
+        var sanitized = ThemePresets.SanitizePresetName(value);
+        if (sanitized != value) { SelectedThemePreset = sanitized; return; } // re-enters with the sanitized name
+        _s.ThemePreset = sanitized;
+        Raise(SettingsChange.Theme);
+    }
+
+    partial void OnAccentHexChanged(string value)
+    {
+        if (!_loaded) return;
+        if (value.Length == 0)
+        {
+            IsAccentInvalid = false;
+            _s.ThemeAccent = null;
+            Raise(SettingsChange.Theme);
+            return;
+        }
+        var sanitized = ThemePresets.SanitizeAccentHex(value);
+        if (sanitized is null) { IsAccentInvalid = true; return; } // leave the settings value alone until it's valid
+        IsAccentInvalid = false;
+        _s.ThemeAccent = sanitized;
+        Raise(SettingsChange.Theme);
     }
 
     private void ApplyLimit(LimitItemViewModel item)

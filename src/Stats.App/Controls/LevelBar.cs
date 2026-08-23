@@ -1,5 +1,6 @@
 using System.Windows;
 using System.Windows.Media;
+using Stats.App.Helpers;
 
 namespace Stats.App.Controls;
 
@@ -21,6 +22,16 @@ public sealed class LevelBar : FrameworkElement
     public double Fraction { get => (double)GetValue(FractionProperty); set => SetValue(FractionProperty, value); }
     public Brush Fill { get => (Brush)GetValue(FillProperty); set => SetValue(FillProperty, value); }
     public Brush Track { get => (Brush)GetValue(TrackProperty); set => SetValue(TrackProperty, value); }
+
+    public LevelBar()
+    {
+        Loaded += (_, _) => ThemeManager.Changed += OnThemeChanged;
+        Unloaded += (_, _) => ThemeManager.Changed -= OnThemeChanged;
+    }
+
+    // Fill/Track are already routed through shared theme brushes (bound via StaticResource), so WPF repaints
+    // them on its own; this just keeps the control in line with the other three custom-drawn controls.
+    private void OnThemeChanged() => InvalidateVisual();
 
     protected override void OnRender(DrawingContext dc)
     {

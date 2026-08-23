@@ -70,6 +70,11 @@ public sealed class AppSettings
     /// <summary>Check GitHub Releases for a newer Stats version on startup (after a delay) and every 24 h; dev
     /// builds (version 0.0.0.*) never check regardless of this setting. Checkbox in Settings.</summary>
     public bool CheckForUpdatesAutomatically { get; set; } = true;
+    /// <summary>Palette preset name (see <see cref="ThemePresets.Names"/>); unknown/legacy values sanitize to
+    /// <see cref="ThemePresets.Default"/> at load.</summary>
+    public string ThemePreset { get; set; } = ThemePresets.Default;
+    /// <summary>Custom accent override as "#RRGGBB", or null to use the preset's own accent colour.</summary>
+    public string? ThemeAccent { get; set; }
 
     /// <summary>Get-or-create the TilePref for a metric id.</summary>
     public TilePref PrefFor(string metricId)

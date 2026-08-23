@@ -25,6 +25,7 @@
     <conv:SeverityToBrushConverter x:Key="SeverityToBrush"/>
     <conv:TileSizeToLengthConverter x:Key="TileSizeToLength"/>
     <conv:HeatToBrushConverter x:Key="HeatToBrush"/>
+    <conv:HexToBrushConverter x:Key="HexToBrush"/>
     <conv:NullToVisibilityConverter x:Key="NullToVis"/>
     <conv:EqualsConverter x:Key="Equals"/>
     <conv:InverseBoolConverter x:Key="InverseBool"/>
