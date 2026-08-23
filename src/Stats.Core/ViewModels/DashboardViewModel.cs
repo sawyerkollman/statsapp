@@ -15,6 +15,7 @@ public sealed partial class DashboardViewModel : ObservableObject
     private readonly MetricStore _store;
     private readonly AppSettings _settings;
     private readonly Action _saveSettings;
+    private readonly Dictionary<MetricGroup, string> _groupStatus = new();
     private bool _suppressPickerEvents;
 
     public DashboardViewModel(MetricStore store, AppSettings settings, Action saveSettings)
@@ -191,6 +192,14 @@ public sealed partial class DashboardViewModel : ObservableObject
 
     // ---- sections ----
 
+    /// <summary>Per-group status line (e.g. why FPS metrics are blank). Null/empty clears.</summary>
+    public void SetGroupStatus(MetricGroup group, string? text)
+    {
+        if (string.IsNullOrEmpty(text)) _groupStatus.Remove(group); else _groupStatus[group] = text;
+        var section = Sections.FirstOrDefault(s => s.Group == group);
+        if (section is not null) section.StatusText = text ?? "";
+    }
+
     public void RebuildSections()
     {
         Tiles.Clear();
@@ -212,6 +221,7 @@ public sealed partial class DashboardViewModel : ObservableObject
             var section = new GroupSectionViewModel(group, !_settings.CollapsedGroups.Contains(group.ToString()), OnSectionExpandedChanged)
             {
                 CoreMatrix = matrix,
+                StatusText = _groupStatus.TryGetValue(group, out var st) ? st : "",
             };
             foreach (var id in ids)
             {

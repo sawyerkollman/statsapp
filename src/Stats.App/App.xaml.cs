@@ -158,6 +158,7 @@ public partial class App : Application
         {
             _store.Apply(snapshot);
             _dashboardVm.RefreshAll();
+            _dashboardVm.SetGroupStatus(MetricGroup.Game, FrameStatus());
             _overlayVm?.RefreshAll();
             UpdateTrayTooltip();
             if (_peaks is { IsVisible: true }) _peaksVm?.Refresh();
@@ -203,6 +204,14 @@ public partial class App : Application
     {
         if (_frameReader is null || _settings is null) return;
         _frameReader.SetActive(FrameRateReader.ShouldBeActive(_settings.DashboardMetrics, _settings.OverlayMetrics));
+    }
+
+    private string? FrameStatus()
+    {
+        if (_frameReader is null || !_frameReader.IsActive || _frameReader.IsAvailable) return null;
+        var msg = _frameReader.StatusMessage ?? "";
+        int cut = msg.IndexOf(". ", StringComparison.Ordinal);
+        return cut > 0 ? msg[..(cut + 1)] : msg;
     }
 
     private void RestoreWindowBounds()

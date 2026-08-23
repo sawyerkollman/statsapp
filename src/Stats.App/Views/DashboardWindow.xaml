@@ -40,6 +40,7 @@
                                     </StackPanel>
                                 </Expander.Header>
                                 <StackPanel>
+                                    <TextBlock Text="{Binding StatusText}" Foreground="{StaticResource WarnBrush}" FontSize="11" Margin="4,0,0,4" TextWrapping="Wrap" Visibility="{Binding HasStatus, Converter={StaticResource BoolToVis}}"/>
                                     <ContentControl Content="{Binding CoreMatrix}">
                                         <ContentControl.Resources>
                                             <DataTemplate DataType="{x:Type vm:CoreMatrixViewModel}">

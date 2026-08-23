@@ -219,4 +219,22 @@ public class DashboardViewModelTests
         vm.RenameTile("cpu.temp", "X");
         Assert.Equal(1, n);
     }
+
+    [Fact]
+    public void SetGroupStatus_SetsSectionText_AndSurvivesRebuild()
+    {
+        var defs = new List<MetricDefinition> { new("fps.avg", "FPS", MetricGroup.Game, "Foreground app", "fps"), new("cpu.l", "CPU", MetricGroup.Cpu, "CPU", "%") };
+        var store = new MetricStore(defs);
+        var vm = new DashboardViewModel(store, new AppSettings { DashboardMetrics = new() { "fps.avg", "cpu.l" } }, () => { });
+        vm.SetGroupStatus(MetricGroup.Game, "PresentMon: access denied");
+        var game = vm.Sections.Single(s => s.Group == MetricGroup.Game);
+        Assert.Equal("PresentMon: access denied", game.StatusText);
+        Assert.True(game.HasStatus);
+        Assert.False(vm.Sections.Single(s => s.Group == MetricGroup.Cpu).HasStatus);
+        vm.RebuildSections();
+        Assert.Equal("PresentMon: access denied", vm.Sections.Single(s => s.Group == MetricGroup.Game).StatusText);
+        vm.SetGroupStatus(MetricGroup.Game, null);
+        Assert.False(vm.Sections.Single(s => s.Group == MetricGroup.Game).HasStatus);
+        vm.SetGroupStatus(MetricGroup.Storage, "ignored"); // no section → no throw
+    }
 }
