@@ -30,7 +30,26 @@ Uninstall from Settings → Apps; PawnIO is left installed because other tools m
   fans keep their last speed until Stats runs again or you reboot.
   Stats now also reads the motherboard Super-I/O chip and USB fan/AIO controllers through
   LibreHardwareMonitor (new *Motherboard* and *Cooler* metric groups); if another vendor tool owns
-  those devices you may see contention — close it or don't enable fan control.
+  those devices you may see contention — close it or don't enable fan control. Game mode keeps the
+  FPS tracer (PresentMon) running while enabled.
+- **Fan profiles & game mode** — save the current per-channel fan setup as a named profile from the
+  *Fans* window (Save as… / Load / Delete), or generate **Silent**, **Balanced**, and **Gaming**
+  defaults in one click. Turn on **Game mode** and pick a Gaming/Desktop profile pair; Stats switches
+  to Gaming once a foreground game holds ≥10 fps for 5 s, and back to Desktop after 20 s below that —
+  no manual swapping between working and playing.
+- **Competing fan software warning** — the *Fans* window flags other tools that write to the same
+  fans (MSI Center, Fan Control, Argus Monitor, MSI Afterburner, Corsair iCUE, NZXT CAM, ASUS Armoury
+  Crate, SpeedFan, Gigabyte Control Center, EVGA Precision, Corsair Link) so you can close them first.
+  This is a warning, not a block — some of those tools sit idle unless you open their UI.
+- **Crash recovery** — if Stats didn't shut down cleanly last time while a fan was under software
+  control, every fan is returned to Auto on the next launch and the *Fans* window shows a dismissible
+  notice explaining why.
+- **Hardware setting** — Settings → Hardware has a checkbox to stop polling motherboard fan headers
+  and USB coolers (the same sensors fan control needs) if another tool needs exclusive access to
+  them; takes effect after restarting Stats.
+- **Inverted FPS thresholds** — FPS gets its own warn/crit pair in Settings where *lower* is worse
+  (defaults: warn 60 fps, crit 30 fps), instead of the "higher is worse" rule used for temperatures
+  and load.
 
 ## Run from source
 
