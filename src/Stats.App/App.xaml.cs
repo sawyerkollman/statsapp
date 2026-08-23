@@ -662,9 +662,13 @@ public partial class App : Application
     /// per-call GUID name also means a pre-plant attempt cannot even guess the path in advance.</summary>
     private static string CreateSecureStagingDirectory()
     {
-        var baseDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData), "Stats", "update");
-        Directory.CreateDirectory(baseDir); // parent chain only; the leaf below carries the real ACL
-
+        // Every level (Stats, update, {guid}) gets the same protected admin-only DACL *and* an
+        // Administrators owner. Owner matters: the OS default owner for admin-created objects is the
+        // creating *user's* SID, whose non-elevated processes would then hold implicit WRITE_DAC and
+        // could re-ACL the directory and swap the helper script mid-run (the original B1 attack).
+        // Parent levels matter too: %ProgramData% lets any user pre-create Stats\update and own it
+        // (CREATOR OWNER FullControl incl. FILE_DELETE_CHILD → rename-and-replace of the guid child,
+        // or plant a junction), so existing levels are re-owned and re-ACLed, and reparse points refused.
         var security = new DirectorySecurity();
         security.SetAccessRuleProtection(true, false); // protected: drop inherited rules entirely
         var admins = new SecurityIdentifier(WellKnownSidType.BuiltinAdministratorsSid, null);
@@ -672,11 +676,25 @@ public partial class App : Application
         var inherit = InheritanceFlags.ContainerInherit | InheritanceFlags.ObjectInherit;
         security.AddAccessRule(new FileSystemAccessRule(admins, FileSystemRights.FullControl, inherit, PropagationFlags.None, AccessControlType.Allow));
         security.AddAccessRule(new FileSystemAccessRule(system, FileSystemRights.FullControl, inherit, PropagationFlags.None, AccessControlType.Allow));
+        security.SetOwner(admins); // allowed: the elevated token contains the Administrators SID
 
-        var stagingDir = Path.Combine(baseDir, Guid.NewGuid().ToString("N"));
-        var dirInfo = new DirectoryInfo(stagingDir);
-        dirInfo.Create(security);
-        return stagingDir;
+        var level = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData), "Stats");
+        foreach (var name in new[] { "", "update", Guid.NewGuid().ToString("N") })
+        {
+            if (name.Length > 0) level = Path.Combine(level, name);
+            var dirInfo = new DirectoryInfo(level);
+            if (dirInfo.Exists)
+            {
+                if ((File.GetAttributes(level) & FileAttributes.ReparsePoint) != 0)
+                    throw new IOException($"Refusing update staging path: '{level}' is a reparse point.");
+                dirInfo.SetAccessControl(security); // repair: take ownership + protected DACL (elevated)
+            }
+            else
+            {
+                dirInfo.Create(security); // SD applied atomically at creation
+            }
+        }
+        return level;
     }
 
     /// <summary>Writes {stagingDir}\stats-update.cmd (waits for this process to exit, runs the installer
