@@ -20,7 +20,7 @@ public sealed class GameModeSwitcher
     public bool IsGaming { get; private set; }
 
     public string StatusText => !_settings.GameModeEnabled ? "Game mode: off"
-        : IsGaming ? $"Game mode: gaming ({_settings.GameModeGamingProfile ?? "no profile"} since {_gamingSince:HH:mm}){_note}"
+        : IsGaming ? $"Game mode: gaming ({_settings.GameModeGamingProfile ?? "no profile"} since {_gamingSince?.ToLocalTime():HH:mm}){_note}"
         : $"Game mode: desktop{_note}";
 
     public void Tick(SensorSnapshot snapshot, DateTime nowUtc)

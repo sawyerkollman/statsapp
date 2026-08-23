@@ -38,6 +38,17 @@ public class GameModeSwitcherTests
     }
 
     [Fact]
+    public void GamingStatusText_ShowsLocalTime_NotUtc()
+    {
+        var (sw, _, s) = Make();
+        var enterAtUtc = T0.AddSeconds(5);
+        for (int t = 0; t <= 5; t++) sw.Tick(Snap(120), T0.AddSeconds(t));
+        Assert.True(sw.IsGaming);
+        var expectedLocal = enterAtUtc.ToLocalTime();
+        Assert.Contains($"since {expectedLocal:HH:mm}", sw.StatusText);
+    }
+
+    [Fact]
     public void ExitsAfterTwentySeconds_FlappingIgnored()
     {
         var (sw, _, s) = Make();
