@@ -16,14 +16,15 @@ LibreHardwareMonitor reads CPU temperature/clock/power through PawnIO only, same
 or Ryzen Master. Without it the app shows a degraded-mode banner (loads/usage only).
 Optional checkbox: start Stats at sign-in (a Scheduled Task, so no UAC prompt each login).
 Uninstall from Settings → Apps; PawnIO is left installed because other tools may use it.
-- **FPS counter** — select FPS / 1% Low FPS / Frame Time from the *Game* group. Stats runs
-  the bundled Intel PresentMon helper only while one of them is selected. Launch Stats from
-  the Start menu or desktop shortcut: processes started from the Microsoft Store build of
+- **FPS counter** — select FPS / 1% Low FPS / Frame Time from the *Game* group. Stats runs the bundled
+  Intel PresentMon helper only while one of them is selected or Game mode is on (*Fans* window). Launch
+  Stats from the Start menu or desktop shortcut: processes started from the Microsoft Store build of
   PowerShell/Terminal inherit an MSIX identity that Windows blocks from ETW tracing, so FPS
   stays blank there.
 - **Fan control** — *Fans* window (toolbar / tray): every LibreHardwareMonitor-controllable fan
-  (motherboard headers, GPU fans, supported USB coolers) can be Auto (device/BIOS), Manual %, or
-  follow a temperature curve driven by any temperature Stats monitors. Off until you enable it;
+  (motherboard headers, GPU fans, supported USB coolers) can be Auto (device/BIOS), Manual %, or follow
+  a temperature curve driven by one or more temperatures Stats monitors (the curve follows the hottest
+  selected source). Off until you enable it;
   2 °C hysteresis, max 10 %/s change, falls back to device control if the source temperature
   disappears for 10 s, pumps never below 50 %; fans return to device control when you exit Stats.
   Close MSI Center / Fan Control / Afterburner fan curves first. If Stats *crashes* (not exits),
@@ -33,7 +34,8 @@ Uninstall from Settings → Apps; PawnIO is left installed because other tools m
   those devices you may see contention — close it or don't enable fan control. Game mode keeps the
   FPS tracer (PresentMon) running while enabled.
 - **Fan profiles & game mode** — save the current per-channel fan setup as a named profile from the
-  *Fans* window (Save as… / Load / Delete), or generate **Silent**, **Balanced**, and **Gaming**
+  *Fans* window (pick a profile from the dropdown to load it; Save as… / Delete / Create defaults), or
+  generate **Silent**, **Balanced**, and **Gaming**
   defaults in one click. Turn on **Game mode** and pick a Gaming/Desktop profile pair; Stats switches
   to Gaming once a foreground game holds ≥10 fps for 5 s, and back to Desktop after 20 s below that —
   no manual swapping between working and playing.
@@ -43,13 +45,15 @@ Uninstall from Settings → Apps; PawnIO is left installed because other tools m
   This is a warning, not a block — some of those tools sit idle unless you open their UI.
 - **Crash recovery** — if Stats didn't shut down cleanly last time while a fan was under software
   control, every fan is returned to Auto on the next launch and the *Fans* window shows a dismissible
-  notice explaining why.
-- **Hardware setting** — Settings → Hardware has a checkbox to stop polling motherboard fan headers
-  and USB coolers (the same sensors fan control needs) if another tool needs exclusive access to
-  them; takes effect after restarting Stats.
+  notice explaining why (and says so if a fan could *not* be handed back — usually other fan software
+  holding the device).
+- **Hardware setting** — Settings → Hardware has a **Read motherboard fan headers and USB coolers**
+  checkbox (on by default); **uncheck** it if another tool needs exclusive access to those devices —
+  fan control needs it on. Takes effect after restarting Stats.
 - **Inverted FPS thresholds** — FPS gets its own warn/crit pair in Settings where *lower* is worse
   (defaults: warn 60 fps, crit 30 fps), instead of the "higher is worse" rule used for temperatures
-  and load.
+  and load. *1% Low FPS* starts on its own lower scale (warn 30, crit 15) so it isn't permanently
+  amber; per-tile overrides for an inverted metric take the warn value first (e.g. `60/30`).
 
 ## Run from source
 
