@@ -45,6 +45,10 @@ public sealed class AppSettings
     public double? FansWidth { get; set; }
     public double? FansHeight { get; set; }
 
+    // ---- v1.4 ----
+    /// <summary>Poll motherboard Super-I/O and USB/HID fan controllers (needed for fan control); restart to apply.</summary>
+    public bool ReadMotherboardAndCoolers { get; set; } = true;
+
     /// <summary>Get-or-create the TilePref for a metric id.</summary>
     public TilePref PrefFor(string metricId)
     {

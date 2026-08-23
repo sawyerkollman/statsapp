@@ -7,7 +7,7 @@ using Stats.Core.Settings;
 
 namespace Stats.Core.ViewModels;
 
-public enum SettingsChange { PollInterval, HistoryWindow, Thresholds, Limits, Overlay, Hotkey, CoreMatrix }
+public enum SettingsChange { PollInterval, HistoryWindow, Thresholds, Limits, Overlay, Hotkey, CoreMatrix, Hardware, GameMode }
 
 /// <summary>One editable metric limit (PPT/TDC/EDC/GPU power). Empty text = no limit.</summary>
 public sealed partial class LimitItemViewModel : ObservableObject
@@ -57,6 +57,7 @@ public sealed partial class SettingsViewModel : ObservableObject
         _overlayClickThrough = settings.OverlayClickThrough;
         _overlayHotkey = settings.OverlayHotkey;
         _showCoreMatrix = settings.ShowCoreMatrix;
+        _readMotherboardAndCoolers = settings.ReadMotherboardAndCoolers;
 
         foreach (var def in definitions.Where(IsLimitCandidate))
         {
@@ -89,6 +90,9 @@ public sealed partial class SettingsViewModel : ObservableObject
     /// <summary>"" = ok; "Invalid hotkey"; "Hotkey disabled"; or "Hotkey unavailable — in use by another app" (set by App).</summary>
     [ObservableProperty] private string _hotkeyStatus = "";
     [ObservableProperty] private bool _showCoreMatrix;
+    [ObservableProperty] private bool _readMotherboardAndCoolers;
+    /// <summary>"" = ok; "Restart Stats to apply" after the setting above changes (set by App).</summary>
+    [ObservableProperty] private string _hardwareStatus = "";
 
     [RelayCommand] private void ResetOverlayPosition() => OverlayPositionResetRequested?.Invoke();
 
@@ -189,6 +193,13 @@ public sealed partial class SettingsViewModel : ObservableObject
         if (!_loaded) return;
         _s.ShowCoreMatrix = value;
         Raise(SettingsChange.CoreMatrix);
+    }
+
+    partial void OnReadMotherboardAndCoolersChanged(bool value)
+    {
+        if (!_loaded) return;
+        _s.ReadMotherboardAndCoolers = value;
+        Raise(SettingsChange.Hardware);
     }
 
     private void ApplyLimit(LimitItemViewModel item)

@@ -16,7 +16,7 @@
                        Text="Writes fan speeds to your hardware. Close other fan software (MSI Center, Fan Control, Afterburner fan curves) first — two controllers fighting over the same fan is unsafe. Speeds return to device control when you switch a fan to Auto, turn this off, or exit Stats. Changes apply on the next sensor poll (≈1 s)."/>
         </Border>
         <TextBlock DockPanel.Dock="Top" Foreground="{StaticResource TextSecondary}" Margin="0,0,0,8"
-                   Text="Fan control unavailable — the hardware reader is not active (degraded mode) or no controllable fans were found."
+                   Text="{Binding UnavailableText}"
                    Visibility="{Binding HasChannels, Converter={StaticResource InverseBoolToVis}}"/>
         <ScrollViewer VerticalScrollBarVisibility="Auto">
             <ItemsControl ItemsSource="{Binding Devices}">

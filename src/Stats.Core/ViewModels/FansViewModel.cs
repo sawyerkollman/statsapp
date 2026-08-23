@@ -128,11 +128,13 @@ public sealed partial class FanDeviceGroupViewModel : ObservableObject
 public sealed partial class FansViewModel : ObservableObject
 {
     private readonly FanController _controller;
+    private readonly AppSettings _settings;
     private readonly Dictionary<string, FanChannelViewModel> _byId = new();
 
     public FansViewModel(FanController controller, IReadOnlyList<MetricDefinition> definitions, AppSettings settings)
     {
         _controller = controller;
+        _settings = settings;
         var options = definitions
             .Where(d => d.Unit == "°C")
             .Select(d => new FanSourceOption(d.Id,
@@ -151,6 +153,9 @@ public sealed partial class FansViewModel : ObservableObject
 
     public ObservableCollection<FanDeviceGroupViewModel> Devices { get; } = new();
     public bool HasChannels => _byId.Count > 0;
+    public string UnavailableText => _settings.ReadMotherboardAndCoolers
+        ? "Fan control unavailable — the hardware reader is not active (degraded mode) or no controllable fans were found."
+        : "Fan control unavailable — enable “Read motherboard fan headers and USB coolers” in Settings and restart Stats.";
 
     [ObservableProperty] private bool _enabled;
     partial void OnEnabledChanged(bool value) => _controller.Enabled = value;

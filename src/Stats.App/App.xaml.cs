@@ -58,7 +58,7 @@ public partial class App : Application
         IReadOnlyList<MetricDefinition> definitions;
         try
         {
-            (_composite, _frameReader) = BuildReader(() => new LhmSensorReader());
+            (_composite, _frameReader) = BuildReader(() => new LhmSensorReader(_settings.ReadMotherboardAndCoolers));
             _reader = _composite;
             definitions = _reader.Discover();
         }
@@ -422,6 +422,12 @@ public partial class App : Application
                 break;
             case SettingsChange.CoreMatrix:
                 _dashboardVm?.RebuildSections();
+                break;
+            case SettingsChange.Hardware:
+                if (_settingsVm is not null) _settingsVm.HardwareStatus = "Restart Stats to apply";
+                break;
+            case SettingsChange.GameMode: // GameMode wiring lands in Task 8; ApplyFrameTracing() is harmless here
+                ApplyFrameTracing();
                 break;
         }
     }

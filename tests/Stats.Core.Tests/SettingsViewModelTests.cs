@@ -192,4 +192,16 @@ public class SettingsViewModelTests
         Assert.Equal(75f, s.ThresholdRules.Single(r => r.Group == MetricGroup.Game && r.Unit == "fps").Warn);
         Assert.True(s.ThresholdRules.Single(r => r.Group == MetricGroup.Game && r.Unit == "fps").LowerIsWorse);
     }
+
+    [Fact]
+    public void ReadMotherboardAndCoolers_RaisesHardware_AndPersists()
+    {
+        var s = new AppSettings(); int saves = 0; SettingsChange? last = null;
+        var vm = new SettingsViewModel(s, Array.Empty<MetricDefinition>(), () => saves++);
+        vm.Changed += c => last = c;
+        vm.ReadMotherboardAndCoolers = false;
+        Assert.False(s.ReadMotherboardAndCoolers);
+        Assert.Equal(SettingsChange.Hardware, last);
+        Assert.Equal(1, saves);
+    }
 }

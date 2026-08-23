@@ -241,4 +241,12 @@ public class SettingsServiceTests : IDisposable
         svc.Save(s);
         Assert.True(new SettingsService(_dir).Load().ThresholdOverrides["fps.avg"].LowerIsWorse);
     }
+
+    [Fact]
+    public void ReadMotherboardAndCoolers_DefaultsTrue_RoundTrips()
+    {
+        Assert.True(new SettingsService(_dir).Load().ReadMotherboardAndCoolers);
+        var svc = new SettingsService(_dir); svc.Save(new AppSettings { ReadMotherboardAndCoolers = false });
+        Assert.False(new SettingsService(_dir).Load().ReadMotherboardAndCoolers);
+    }
 }

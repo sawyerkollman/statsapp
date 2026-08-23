@@ -237,6 +237,10 @@
 
                                 <TextBlock Text="Dashboard" Style="{StaticResource SettingsHeader}"/>
                                 <CheckBox Content="Show CPU core matrix" IsChecked="{Binding ShowCoreMatrix}"/>
+
+                                <TextBlock Text="Hardware" Style="{StaticResource SettingsHeader}"/>
+                                <CheckBox Content="Read motherboard fan headers and USB coolers (needed for fan control; restart to apply)" IsChecked="{Binding ReadMotherboardAndCoolers}"/>
+                                <TextBlock Text="{Binding HardwareStatus}" Foreground="{StaticResource WarnBrush}" FontSize="11"/>
                             </StackPanel>
                         </ScrollViewer>
                     </TabItem>
