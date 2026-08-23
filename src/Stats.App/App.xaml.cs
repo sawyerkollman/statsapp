@@ -71,6 +71,7 @@ public partial class App : Application
             Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Stats");
         _settingsService = new SettingsService(settingsDir);
         _settings = _settingsService.Load();
+        ThemeManager.Apply(_settings.ThemePreset, _settings.ThemeAccent); // before any window is created
 
         IReadOnlyList<MetricDefinition> definitions;
         try
@@ -503,6 +504,15 @@ public partial class App : Application
             case SettingsChange.Updates:
                 if (_settings.CheckForUpdatesAutomatically) StartUpdateChecks();
                 else { _updateCts?.Cancel(); _updateCts?.Dispose(); _updateCts = null; }
+                break;
+            case SettingsChange.Theme:
+                ThemeManager.Apply(_settings.ThemePreset, _settings.ThemeAccent);
+                // ThemeManager.Apply replaces brush entries rather than mutating them, so already-bound
+                // SeverityToBrushConverter Foregrounds/Strokes/Fills won't repaint on their own — the Severity
+                // value they're bound to hasn't changed. Re-raise it on every live VM so those Bindings re-run.
+                _dashboardVm?.RaiseSeverityRefresh();
+                _overlayVm?.RaiseSeverityRefresh();
+                _peaksVm?.RaiseSeverityRefresh();
                 break;
         }
     }

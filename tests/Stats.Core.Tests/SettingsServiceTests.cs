@@ -378,6 +378,60 @@ public class SettingsServiceTests : IDisposable
         Assert.Equal(20f, new SettingsService(_dir).Load().ThresholdOverrides["fps.low1"].Warn);
     }
 
+    [Fact]
+    public void Load_MissingFile_DefaultsToDarkAmberTheme_NoAccentOverride()
+    {
+        var s = new SettingsService(_dir).Load();
+        Assert.Equal("Dark Amber", s.ThemePreset);
+        Assert.Null(s.ThemeAccent);
+    }
+
+    [Fact]
+    public void Load_UnknownThemePreset_FallsBackToDefault()
+    {
+        Write("""{ "ThemePreset": "Neon Pink" }""");
+        Assert.Equal("Dark Amber", new SettingsService(_dir).Load().ThemePreset);
+    }
+
+    [Fact]
+    public void Load_NullThemePreset_FallsBackToDefault()
+    {
+        Write("""{ "ThemePreset": null }""");
+        Assert.Equal("Dark Amber", new SettingsService(_dir).Load().ThemePreset);
+    }
+
+    [Theory]
+    [InlineData("Dark Blue")]
+    [InlineData("Dark Green")]
+    [InlineData("Dark Purple")]
+    [InlineData("Light")]
+    public void SaveThenLoad_KnownThemePreset_RoundTrips(string preset)
+    {
+        var svc = new SettingsService(_dir);
+        svc.Save(new AppSettings { ThemePreset = preset });
+        Assert.Equal(preset, new SettingsService(_dir).Load().ThemePreset);
+    }
+
+    [Theory]
+    [InlineData("not-a-hex")]
+    [InlineData("#GGGGGG")]
+    [InlineData("#12345")]
+    [InlineData("#1234567")]
+    [InlineData("123456")]
+    public void Load_InvalidAccentHex_SanitizesToNull(string bad)
+    {
+        Write($$"""{ "ThemeAccent": "{{bad}}" }""");
+        Assert.Null(new SettingsService(_dir).Load().ThemeAccent);
+    }
+
+    [Fact]
+    public void SaveThenLoad_ValidAccentHex_RoundTrips()
+    {
+        var svc = new SettingsService(_dir);
+        svc.Save(new AppSettings { ThemeAccent = "#4a9ee0" });
+        Assert.Equal("#4A9EE0", new SettingsService(_dir).Load().ThemeAccent); // sanitized to uppercase
+    }
+
     private void Write(string json)
     {
         Directory.CreateDirectory(_dir);

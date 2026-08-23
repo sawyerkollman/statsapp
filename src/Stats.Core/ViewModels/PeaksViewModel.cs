@@ -17,6 +17,10 @@ public sealed partial class PeakRowViewModel : ObservableObject
     [ObservableProperty] private string _avgText = "—";
     [ObservableProperty] private string _maxText = "—";
     [ObservableProperty] private Severity _severity;
+
+    /// <summary>Re-raises PropertyChanged(Severity) without changing the value — see
+    /// MetricTileViewModel.RaiseSeverityRefresh for why this is needed after a live theme switch.</summary>
+    public void RaiseSeverityRefresh() => OnPropertyChanged(nameof(Severity));
 }
 
 /// <summary>Session peaks table: Name | Now | Min | Avg | Max over dashboard-selected (or all) metrics.</summary>
@@ -70,5 +74,12 @@ public sealed partial class PeaksViewModel : ObservableObject
             row.MaxText = ValueFormatter.Format(row.Definition, float.IsNaN(h.SessionMax) ? null : h.SessionMax);
             row.Severity = ThresholdEvaluator.Evaluate(row.Definition, h.Current, _settings);
         }
+    }
+
+    /// <summary>Nudges every row's Severity-bound Foreground to re-evaluate after a live theme switch — see
+    /// MetricTileViewModel.RaiseSeverityRefresh.</summary>
+    public void RaiseSeverityRefresh()
+    {
+        foreach (var row in Rows) row.RaiseSeverityRefresh();
     }
 }

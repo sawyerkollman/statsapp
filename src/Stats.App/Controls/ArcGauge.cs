@@ -1,5 +1,6 @@
 using System.Windows;
 using System.Windows.Media;
+using Stats.App.Helpers;
 
 namespace Stats.App.Controls;
 
@@ -29,6 +30,22 @@ public sealed class ArcGauge : FrameworkElement
     public Brush Stroke { get => (Brush)GetValue(StrokeProperty); set => SetValue(StrokeProperty, value); }
     public Brush Track { get => (Brush)GetValue(TrackProperty); set => SetValue(TrackProperty, value); }
     public double Thickness { get => (double)GetValue(ThicknessProperty); set => SetValue(ThicknessProperty, value); }
+
+    public ArcGauge()
+    {
+        // Unloaded isn't raised on app shutdown, and Loaded can fire more than once for the same instance —
+        // unsubscribe first so the subscription stays idempotent.
+        Loaded += (_, _) => { ThemeManager.Changed -= OnThemeChanged; ThemeManager.Changed += OnThemeChanged; };
+        Unloaded += (_, _) => ThemeManager.Changed -= OnThemeChanged;
+    }
+
+    // Track is bound via {DynamicResource GaugeTrack} (TileTemplates.xaml) — a genuine DependencyProperty
+    // target, so WPF re-resolves it on its own the moment ThemeManager.Apply replaces the resource entry. Stroke
+    // is bound through SeverityToBrushConverter, which only re-runs when the composition root re-raises the
+    // bound tile's Severity property after ThemeManager.Apply (see MetricTileViewModel.RaiseSeverityRefresh);
+    // neither path needs code in this control — InvalidateVisual here just keeps it in line with the other three
+    // custom-drawn controls (guide lines etc.), none of which this control currently draws.
+    private void OnThemeChanged() => InvalidateVisual();
 
     protected override void OnRender(DrawingContext dc)
     {

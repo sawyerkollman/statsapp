@@ -62,6 +62,8 @@ public sealed class SettingsService
         settings.FanProfiles ??= new();
         ThresholdDefaults.EnsureDefaults(settings.ThresholdRules, settings.ThresholdOverrides);
         settings.OverlayHotkey ??= "";
+        settings.ThemePreset = ThemePresets.SanitizePresetName(settings.ThemePreset);
+        settings.ThemeAccent = ThemePresets.SanitizeAccentHex(settings.ThemeAccent);
         // Null *elements* deserialize just as happily as null collections ({"FanChannels":{"a":null}}), and the
         // sanitation below dereferences every one of them.
         settings.FanChannels = settings.FanChannels.Where(kv => kv.Value is not null).ToDictionary(kv => kv.Key, kv => kv.Value);

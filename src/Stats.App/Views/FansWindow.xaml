@@ -3,50 +3,54 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:ctl="clr-namespace:Stats.App.Controls"
         Title="Stats — Fans" Width="760" Height="640" MinWidth="560" MinHeight="360"
-        Background="{StaticResource WindowBg}">
+        Background="{DynamicResource WindowBg}">
     <DockPanel Margin="12">
         <DockPanel DockPanel.Dock="Top" Margin="0,0,0,6">
             <Button DockPanel.Dock="Right" Content="All to Auto" Command="{Binding SetAllAutoCommand}" Style="{StaticResource HeaderButton}"/>
             <CheckBox DockPanel.Dock="Right" Content="Enable fan control" IsChecked="{Binding Enabled}" VerticalAlignment="Center" Margin="0,0,12,0"
-                      Foreground="{StaticResource TextPrimary}"/>
-            <TextBlock Text="Fans" FontSize="18" FontWeight="Bold" Foreground="{StaticResource TextPrimary}"/>
+                      Foreground="{DynamicResource TextPrimary}"/>
+            <TextBlock Text="Fans" FontSize="18" FontWeight="Bold" Foreground="{DynamicResource TextPrimary}"/>
         </DockPanel>
         <DockPanel DockPanel.Dock="Top" Margin="0,0,0,10">
             <Button DockPanel.Dock="Right" Content="Create defaults" Command="{Binding CreateDefaultProfilesCommand}" Style="{StaticResource HeaderButton}" Margin="6,0,0,0"/>
             <Button DockPanel.Dock="Right" Content="Delete" Command="{Binding DeleteProfileCommand}" CommandParameter="{Binding SelectedProfileName}" Style="{StaticResource HeaderButton}" Margin="6,0,0,0"/>
             <Button DockPanel.Dock="Right" Content="Save as…" Click="SaveAs_Click" Style="{StaticResource HeaderButton}" Margin="6,0,0,0"/>
-            <TextBlock DockPanel.Dock="Right" Text="{Binding ActiveProfileName, StringFormat='profile: {0}'}" Foreground="{StaticResource TextSecondary}" VerticalAlignment="Center" Margin="10,0,0,0"/>
+            <TextBlock DockPanel.Dock="Right" Text="{Binding ActiveProfileName, StringFormat='profile: {0}'}" Foreground="{DynamicResource TextSecondary}" VerticalAlignment="Center" Margin="10,0,0,0"/>
             <ComboBox ItemsSource="{Binding ProfileNames}" SelectedItem="{Binding SelectedProfileName}" MinWidth="160" VerticalAlignment="Center" HorizontalAlignment="Left"/>
         </DockPanel>
+        <!-- These three banners keep a fixed, always-dark tinted background in every preset (including Light) —
+             semantic warning/error colour, not palette-derived — so their text is hardcoded White rather than
+             TextPrimary, which would go dark-on-dark under the Light preset. Matches DashboardWindow's degraded-
+             mode banner. -->
         <Border DockPanel.Dock="Top" Background="#4A3A1E" CornerRadius="4" Padding="10,6" Margin="0,0,0,10">
-            <TextBlock Foreground="{StaticResource TextPrimary}" TextWrapping="Wrap" FontSize="12"
+            <TextBlock Foreground="White" TextWrapping="Wrap" FontSize="12"
                        Text="Writes fan speeds to your hardware. Close other fan software (MSI Center, Fan Control, Afterburner fan curves) first — two controllers fighting over the same fan is unsafe. Speeds return to device control when you switch a fan to Auto, turn this off, or exit Stats. Changes apply on the next sensor poll (≈1 s)."/>
         </Border>
         <StackPanel DockPanel.Dock="Top" Margin="0,0,0,10">
             <CheckBox IsChecked="{Binding GameModeEnabled}" Margin="0,0,0,6">
                 <TextBlock Text="Game mode: switch profiles automatically when a game is in the foreground (keeps the FPS tracer running)"
-                           Foreground="{StaticResource TextPrimary}" TextWrapping="Wrap"/>
+                           Foreground="{DynamicResource TextPrimary}" TextWrapping="Wrap"/>
             </CheckBox>
             <!-- WrapPanel, not a DockPanel row: at MinWidth 560 the last element would otherwise be squeezed away. -->
             <WrapPanel>
-                <TextBlock Text="Gaming:" Foreground="{StaticResource TextSecondary}" VerticalAlignment="Center" Margin="0,0,6,4"/>
+                <TextBlock Text="Gaming:" Foreground="{DynamicResource TextSecondary}" VerticalAlignment="Center" Margin="0,0,6,4"/>
                 <ComboBox ItemsSource="{Binding ProfileNames}" SelectedItem="{Binding GamingProfile}" MinWidth="120" Margin="0,0,12,4"/>
-                <TextBlock Text="Desktop:" Foreground="{StaticResource TextSecondary}" VerticalAlignment="Center" Margin="0,0,6,4"/>
+                <TextBlock Text="Desktop:" Foreground="{DynamicResource TextSecondary}" VerticalAlignment="Center" Margin="0,0,6,4"/>
                 <ComboBox ItemsSource="{Binding ProfileNames}" SelectedItem="{Binding DesktopProfile}" MinWidth="120" Margin="0,0,12,4"/>
-                <TextBlock Text="{Binding GameModeStatus}" Foreground="{StaticResource TextSecondary}" FontSize="11"
+                <TextBlock Text="{Binding GameModeStatus}" Foreground="{DynamicResource TextSecondary}" FontSize="11"
                            VerticalAlignment="Center" Margin="0,0,0,4"/>
             </WrapPanel>
         </StackPanel>
         <Border DockPanel.Dock="Top" Background="#4A1E1E" CornerRadius="4" Padding="10,6" Margin="0,0,0,10" Visibility="{Binding HasRecoveryNotice, Converter={StaticResource BoolToVis}}">
             <DockPanel>
                 <Button DockPanel.Dock="Right" Content="Dismiss" Command="{Binding DismissRecoveryNoticeCommand}" Style="{StaticResource HeaderButton}" FontSize="11"/>
-                <TextBlock Text="{Binding RecoveryNotice}" Foreground="{StaticResource TextPrimary}" TextWrapping="Wrap" FontSize="12"/>
+                <TextBlock Text="{Binding RecoveryNotice}" Foreground="White" TextWrapping="Wrap" FontSize="12"/>
             </DockPanel>
         </Border>
         <Border DockPanel.Dock="Top" Background="#5A1E1E" CornerRadius="4" Padding="10,6" Margin="0,0,0,10" Visibility="{Binding HasConflict, Converter={StaticResource BoolToVis}}">
-            <TextBlock Text="{Binding ConflictText}" Foreground="{StaticResource TextPrimary}" TextWrapping="Wrap" FontSize="12"/>
+            <TextBlock Text="{Binding ConflictText}" Foreground="White" TextWrapping="Wrap" FontSize="12"/>
         </Border>
-        <TextBlock DockPanel.Dock="Top" Foreground="{StaticResource TextSecondary}" Margin="0,0,0,8"
+        <TextBlock DockPanel.Dock="Top" Foreground="{DynamicResource TextSecondary}" Margin="0,0,0,8"
                    Text="{Binding UnavailableText}"
                    Visibility="{Binding HasChannels, Converter={StaticResource InverseBoolToVis}}"/>
         <ScrollViewer VerticalScrollBarVisibility="Auto">
@@ -54,11 +58,11 @@
                 <ItemsControl.ItemTemplate>
                     <DataTemplate>
                         <StackPanel Margin="0,0,0,14">
-                            <TextBlock Text="{Binding Device}" FontSize="13" FontWeight="SemiBold" Foreground="{StaticResource TextSecondary}" Margin="0,0,0,4"/>
+                            <TextBlock Text="{Binding Device}" FontSize="13" FontWeight="SemiBold" Foreground="{DynamicResource TextSecondary}" Margin="0,0,0,4"/>
                             <ItemsControl ItemsSource="{Binding Channels}">
                                 <ItemsControl.ItemTemplate>
                                     <DataTemplate>
-                                        <Border Background="{StaticResource TileBg}" CornerRadius="4" Padding="10,8" Margin="0,3">
+                                        <Border Background="{DynamicResource TileBg}" CornerRadius="4" Padding="10,8" Margin="0,3">
                                             <StackPanel>
                                                 <Grid>
                                                     <Grid.ColumnDefinitions>
@@ -68,46 +72,46 @@
                                                         <ColumnDefinition Width="Auto"/>
                                                     </Grid.ColumnDefinitions>
                                                     <TextBox Text="{Binding Name, UpdateSourceTrigger=LostFocus}" Background="Transparent" BorderThickness="0"
-                                                             Foreground="{StaticResource TextPrimary}" FontSize="13" FontWeight="SemiBold" VerticalAlignment="Center"
+                                                             Foreground="{DynamicResource TextPrimary}" FontSize="13" FontWeight="SemiBold" VerticalAlignment="Center"
                                                              ToolTip="Click to rename"/>
-                                                    <TextBlock Grid.Column="1" Text="{Binding RpmText}" Foreground="{StaticResource TextPrimary}" FontSize="13" TextAlignment="Right" VerticalAlignment="Center"/>
-                                                    <TextBlock Grid.Column="2" Text="{Binding PercentText}" Foreground="{StaticResource TextSecondary}" FontSize="13" TextAlignment="Right" VerticalAlignment="Center"/>
+                                                    <TextBlock Grid.Column="1" Text="{Binding RpmText}" Foreground="{DynamicResource TextPrimary}" FontSize="13" TextAlignment="Right" VerticalAlignment="Center"/>
+                                                    <TextBlock Grid.Column="2" Text="{Binding PercentText}" Foreground="{DynamicResource TextSecondary}" FontSize="13" TextAlignment="Right" VerticalAlignment="Center"/>
                                                     <StackPanel Grid.Column="3" Orientation="Horizontal" Margin="16,0,0,0">
                                                         <!-- GroupName per channel: without it every RadioButton in the window shares one group. -->
-                                                        <RadioButton Content="Auto" Margin="0,0,10,0" Foreground="{StaticResource TextPrimary}" GroupName="{Binding Id}"
+                                                        <RadioButton Content="Auto" Margin="0,0,10,0" Foreground="{DynamicResource TextPrimary}" GroupName="{Binding Id}"
                                                                      IsChecked="{Binding Mode, Converter={StaticResource Equals}, ConverterParameter=Auto}"/>
-                                                        <RadioButton Content="Manual" Margin="0,0,10,0" Foreground="{StaticResource TextPrimary}" GroupName="{Binding Id}"
+                                                        <RadioButton Content="Manual" Margin="0,0,10,0" Foreground="{DynamicResource TextPrimary}" GroupName="{Binding Id}"
                                                                      IsChecked="{Binding Mode, Converter={StaticResource Equals}, ConverterParameter=Manual}"/>
-                                                        <RadioButton Content="Curve" Foreground="{StaticResource TextPrimary}" GroupName="{Binding Id}"
+                                                        <RadioButton Content="Curve" Foreground="{DynamicResource TextPrimary}" GroupName="{Binding Id}"
                                                                      IsChecked="{Binding Mode, Converter={StaticResource Equals}, ConverterParameter=Curve}"/>
                                                     </StackPanel>
                                                 </Grid>
-                                                <TextBlock Text="{Binding StatusText}" Foreground="{StaticResource TextSecondary}" FontSize="11" Margin="0,2,0,0"/>
+                                                <TextBlock Text="{Binding StatusText}" Foreground="{DynamicResource TextSecondary}" FontSize="11" Margin="0,2,0,0"/>
                                                 <DockPanel Margin="0,6,0,0" Visibility="{Binding IsManual, Converter={StaticResource BoolToVis}}">
                                                     <TextBlock DockPanel.Dock="Right" Text="{Binding TargetText, StringFormat='&#8594; {0}'}" Margin="8,0"
-                                                               Foreground="{StaticResource TextSecondary}" VerticalAlignment="Center"/>
+                                                               Foreground="{DynamicResource TextSecondary}" VerticalAlignment="Center"/>
                                                     <TextBlock DockPanel.Dock="Right" Text="{Binding ManualPercent, StringFormat={}{0:F0} %}" Width="48" TextAlignment="Right"
-                                                               Foreground="{StaticResource TextPrimary}" VerticalAlignment="Center"/>
+                                                               Foreground="{DynamicResource TextPrimary}" VerticalAlignment="Center"/>
                                                     <Slider Minimum="{Binding MinPercent}" Maximum="{Binding MaxPercent}" Value="{Binding ManualPercent, Delay=250}"
                                                             TickFrequency="5" IsSnapToTickEnabled="True" VerticalAlignment="Center"/>
                                                 </DockPanel>
                                                 <StackPanel Margin="0,6,0,0" Visibility="{Binding IsCurve, Converter={StaticResource BoolToVis}}">
                                                     <DockPanel Margin="0,0,0,6">
                                                         <Button DockPanel.Dock="Right" Content="Reset curve" Command="{Binding ResetCurveCommand}" Style="{StaticResource HeaderButton}" FontSize="11"/>
-                                                        <TextBlock DockPanel.Dock="Right" Text="{Binding TargetText, StringFormat='target {0}'}" Foreground="{StaticResource TextSecondary}" Margin="12,0" VerticalAlignment="Center"/>
-                                                        <TextBlock DockPanel.Dock="Right" Text="{Binding SourceTempText}" Foreground="{StaticResource TextPrimary}" VerticalAlignment="Center"/>
-                                                        <Expander Header="{Binding SourceSummary}" Foreground="{StaticResource TextPrimary}" MinWidth="220" HorizontalAlignment="Left">
+                                                        <TextBlock DockPanel.Dock="Right" Text="{Binding TargetText, StringFormat='target {0}'}" Foreground="{DynamicResource TextSecondary}" Margin="12,0" VerticalAlignment="Center"/>
+                                                        <TextBlock DockPanel.Dock="Right" Text="{Binding SourceTempText}" Foreground="{DynamicResource TextPrimary}" VerticalAlignment="Center"/>
+                                                        <Expander Header="{Binding SourceSummary}" Foreground="{DynamicResource TextPrimary}" MinWidth="220" HorizontalAlignment="Left">
                                                             <ItemsControl ItemsSource="{Binding SourceSelections}" Margin="8,4">
                                                                 <ItemsControl.ItemTemplate><DataTemplate>
-                                                                    <CheckBox Content="{Binding Label}" IsChecked="{Binding IsSelected}" Foreground="{StaticResource TextPrimary}" Margin="0,1"/>
+                                                                    <CheckBox Content="{Binding Label}" IsChecked="{Binding IsSelected}" Foreground="{DynamicResource TextPrimary}" Margin="0,1"/>
                                                                 </DataTemplate></ItemsControl.ItemTemplate>
                                                             </ItemsControl>
                                                         </Expander>
                                                     </DockPanel>
                                                     <ctl:FanCurveEditor Points="{Binding Points}" MinPercent="{Binding MinPercent}" MaxPercent="{Binding MaxPercent}"
                                                                         LiveTemp="{Binding LiveTemp}" LiveTarget="{Binding LiveTarget}" Height="150"
-                                                                        LineBrush="{StaticResource AccentBrush}" PointBrush="{StaticResource TextPrimary}"
-                                                                        AxisBrush="{StaticResource BorderDim}" TextBrush="{StaticResource TextSecondary}"/>
+                                                                        LineBrush="{DynamicResource AccentBrush}" PointBrush="{DynamicResource TextPrimary}"
+                                                                        AxisBrush="{DynamicResource BorderDim}" TextBrush="{DynamicResource TextSecondary}"/>
                                                 </StackPanel>
                                             </StackPanel>
                                         </Border>

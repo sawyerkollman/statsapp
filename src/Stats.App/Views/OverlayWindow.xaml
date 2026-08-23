@@ -18,10 +18,10 @@
                 <DataTemplate>
                     <StackPanel Margin="10,2">
                         <TextBlock Text="{Binding DisplayName}" FontSize="10"
-                                   Foreground="{StaticResource TextSecondary}"
+                                   Foreground="{StaticResource OverlayTextSecondary}"
                                    TextTrimming="CharacterEllipsis" MaxWidth="140"/>
                         <TextBlock Text="{Binding CurrentText}" FontSize="16" FontWeight="SemiBold"
-                                   Foreground="{Binding Severity, Converter={StaticResource SeverityToBrush}}"/>
+                                   Foreground="{Binding Severity, Converter={StaticResource SeverityToBrush}, ConverterParameter=Overlay}"/>
                     </StackPanel>
                 </DataTemplate>
             </ItemsControl.ItemTemplate>

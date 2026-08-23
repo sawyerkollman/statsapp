@@ -66,6 +66,12 @@ public sealed partial class MetricTileViewModel : ObservableObject
         HistoryWindowTag = $"{_settings.HistoryWindowMinutes}m";
     }
 
+    /// <summary>Re-raises PropertyChanged(Severity) without changing the value — used after a live theme switch
+    /// (Stats.App's ThemeManager.Apply replaces brush entries rather than mutating them) so the Foreground/Stroke/
+    /// Fill Bindings that route through SeverityToBrushConverter re-evaluate and pick up the new brush instance.
+    /// Called from the composition root (App), never from Core itself, which stays WPF-free.</summary>
+    public void RaiseSeverityRefresh() => OnPropertyChanged(nameof(Severity));
+
     private TileKind ResolveKind(TileKind preferred, float? explicitMax)
     {
         if (preferred != TileKind.Auto) return preferred;

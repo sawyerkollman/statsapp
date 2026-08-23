@@ -4,6 +4,7 @@ using System.Globalization;
 using System.Windows;
 using System.Windows.Input;
 using System.Windows.Media;
+using Stats.App.Helpers;
 using Stats.Core.Fans;
 using Stats.Core.Settings;
 
@@ -61,6 +62,28 @@ public sealed class FanCurveEditor : FrameworkElement
         MinHeight = 120;
         MinWidth = 200;
         ToolTip = "Drag points · double-click to add · right-click to remove";
+        // Unloaded isn't raised on app shutdown, and Loaded can fire more than once for the same instance (e.g.
+        // re-parenting without an intervening unload) — unsubscribe first so the subscription stays idempotent.
+        Loaded += (_, _) => { ThemeManager.Changed -= OnThemeChanged; ThemeManager.Changed += OnThemeChanged; SyncFloorBrush(); };
+        Unloaded += (_, _) => ThemeManager.Changed -= OnThemeChanged;
+    }
+
+    // LineBrush/PointBrush/AxisBrush/TextBrush are routed through shared theme brushes via {DynamicResource} in
+    // FansWindow.xaml — a genuine DependencyProperty target, so WPF re-resolves it on its own the moment
+    // ThemeManager.Apply replaces the resource entry; no code needed here. FloorBrush is palette-derived (a
+    // translucent tint of CritBrush, marking the channel's floor) but is never bound from XAML, so it needs an
+    // explicit resync here. MarkerBrush (the live-temperature indicator) is a fixed decorative blue unrelated to
+    // any of the 11 palette colours — it stays hardcoded on purpose so the "you are here" marker keeps reading
+    // distinctly from the accent-coloured curve line in every preset.
+    private void OnThemeChanged() { SyncFloorBrush(); InvalidateVisual(); }
+
+    private void SyncFloorBrush()
+    {
+        // Assign a new brush rather than mutating one in place: the DP's default value is frozen by WPF at
+        // registration, and FloorBrush is never bound from XAML, so on first use this getter would otherwise
+        // always be that frozen default — mutating it throws.
+        var crit = ThemeManager.Get("CritBrush");
+        FloorBrush = new SolidColorBrush(Color.FromArgb(0x40, crit.R, crit.G, crit.B));
     }
 
     private static void OnPointsChanged(DependencyObject d, DependencyPropertyChangedEventArgs e)

@@ -1,10 +1,10 @@
 <UserControl x:Class="Stats.App.Views.CoreMatrixView"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
-    <Border Background="{StaticResource TileBg}" CornerRadius="6" Margin="6" Padding="10" HorizontalAlignment="Left">
+    <Border Background="{DynamicResource TileBg}" CornerRadius="6" Margin="6" Padding="10" HorizontalAlignment="Left">
         <DockPanel>
             <TextBlock DockPanel.Dock="Top" Text="Cores — load · clock · temp"
-                       Foreground="{StaticResource TextSecondary}" FontSize="11"/>
+                       Foreground="{DynamicResource TextSecondary}" FontSize="11"/>
             <ItemsControl ItemsSource="{Binding Cells}" Margin="0,6,0,0">
                 <ItemsControl.ItemsPanel>
                     <ItemsPanelTemplate>
@@ -17,11 +17,11 @@
                                 Background="{Binding Load01, Converter={StaticResource HeatToBrush}}">
                             <StackPanel VerticalAlignment="Center">
                                 <TextBlock Text="{Binding Index, StringFormat='{}#{0}'}" FontSize="9"
-                                           Foreground="{StaticResource TextSecondary}" HorizontalAlignment="Center"/>
+                                           Foreground="{DynamicResource TextSecondary}" HorizontalAlignment="Center"/>
                                 <TextBlock Text="{Binding LoadText}" FontSize="13" FontWeight="SemiBold"
-                                           Foreground="{StaticResource TextPrimary}" HorizontalAlignment="Center"/>
+                                           Foreground="{Binding Load01, Converter={StaticResource HeatToForeground}}" HorizontalAlignment="Center"/>
                                 <TextBlock Text="{Binding ClockText}" FontSize="9"
-                                           Foreground="{StaticResource TextPrimary}" HorizontalAlignment="Center"/>
+                                           Foreground="{Binding Load01, Converter={StaticResource HeatToForeground}}" HorizontalAlignment="Center"/>
                                 <TextBlock Text="{Binding TempText}" FontSize="9"
                                            Foreground="{Binding Severity, Converter={StaticResource SeverityToBrush}}"
                                            HorizontalAlignment="Center"/>

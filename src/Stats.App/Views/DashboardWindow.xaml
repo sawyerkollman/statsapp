@@ -4,10 +4,10 @@
         xmlns:views="clr-namespace:Stats.App.Views"
         xmlns:vm="clr-namespace:Stats.Core.ViewModels;assembly=Stats.Core"
         Title="Stats" Width="1180" Height="720"
-        Background="{StaticResource WindowBg}">
+        Background="{DynamicResource WindowBg}">
 
     <DockPanel>
-        <Border DockPanel.Dock="Top" Background="{StaticResource ControlBg}" BorderBrush="{StaticResource AccentBrush}" BorderThickness="0,0,0,1" Padding="10,6"
+        <Border DockPanel.Dock="Top" Background="{DynamicResource ControlBg}" BorderBrush="{DynamicResource AccentBrush}" BorderThickness="0,0,0,1" Padding="10,6"
                 Visibility="{Binding UpdateAvailable, Converter={StaticResource BoolToVis}}">
             <DockPanel LastChildFill="False">
                 <!-- Right-docked children declared first so they claim their space before the (unbounded, wrapping)
@@ -18,7 +18,7 @@
                         Style="{StaticResource HeaderButton}" IsEnabled="{Binding UpdateBusy, Converter={StaticResource InverseBool}}"/>
                 <ProgressBar DockPanel.Dock="Right" Width="120" Height="14" Minimum="0" Maximum="1" Value="{Binding UpdateProgress, Mode=OneWay}"
                              Visibility="{Binding UpdateBusy, Converter={StaticResource BoolToVis}}" Margin="0,0,10,0" VerticalAlignment="Center"/>
-                <TextBlock DockPanel.Dock="Left" Text="{Binding UpdateNotice}" Foreground="{StaticResource TextPrimary}"
+                <TextBlock DockPanel.Dock="Left" Text="{Binding UpdateNotice}" Foreground="{DynamicResource TextPrimary}"
                            VerticalAlignment="Center" TextWrapping="Wrap" Margin="0,0,10,0"/>
             </DockPanel>
         </Border>
@@ -38,7 +38,7 @@
                 <Button DockPanel.Dock="Right" Content="▣  Overlay" Command="{Binding ToggleOverlayCommand}" Style="{StaticResource HeaderButton}"/>
                 <Button DockPanel.Dock="Right" Content="Expand all" Command="{Binding ExpandAllCommand}" Style="{StaticResource HeaderButton}" FontSize="11"/>
                 <Button DockPanel.Dock="Right" Content="Collapse all" Command="{Binding CollapseAllCommand}" Style="{StaticResource HeaderButton}" FontSize="11"/>
-                <TextBlock Text="Stats" FontSize="20" FontWeight="Bold" Foreground="{StaticResource TextPrimary}"/>
+                <TextBlock Text="Stats" FontSize="20" FontWeight="Bold" Foreground="{DynamicResource TextPrimary}"/>
             </DockPanel>
         </Border>
 
@@ -56,9 +56,9 @@
                                         <StackPanel Orientation="Horizontal">
                                             <TextBlock Text="{Binding Name}" Style="{StaticResource GroupHeader}" Margin="0"/>
                                             <TextBlock Text="{Binding Tiles.Count, StringFormat='{}  ({0})'}"
-                                                       Foreground="{StaticResource TextSecondary}" FontSize="12" VerticalAlignment="Center"/>
+                                                       Foreground="{DynamicResource TextSecondary}" FontSize="12" VerticalAlignment="Center"/>
                                         </StackPanel>
-                                        <TextBlock Text="{Binding StatusText}" Foreground="{StaticResource WarnBrush}" FontSize="11" Margin="0,0,0,2" TextWrapping="Wrap" Visibility="{Binding HasStatus, Converter={StaticResource BoolToVis}}"/>
+                                        <TextBlock Text="{Binding StatusText}" Foreground="{DynamicResource WarnBrush}" FontSize="11" Margin="0,0,0,2" TextWrapping="Wrap" Visibility="{Binding HasStatus, Converter={StaticResource BoolToVis}}"/>
                                     </StackPanel>
                                 </Expander.Header>
                                 <StackPanel>
@@ -96,7 +96,7 @@
             </ScrollViewer>
 
             <Border x:Name="PickerFlyout" HorizontalAlignment="Right" Width="440"
-                    Background="{StaticResource FlyoutBg}"
+                    Background="{DynamicResource FlyoutBg}"
                     Visibility="{Binding IsPickerOpen, Converter={StaticResource BoolToVis}}">
                 <TabControl SelectedIndex="{Binding FlyoutTabIndex, Mode=TwoWay}" Margin="12">
 
@@ -113,10 +113,10 @@
                                     <ColumnDefinition Width="46"/>
                                     <ColumnDefinition Width="52"/>
                                 </Grid.ColumnDefinitions>
-                                <TextBlock Text="Sensor" FontSize="11" Foreground="{StaticResource TextSecondary}"/>
-                                <TextBlock Grid.Column="1" Text="Now" FontSize="11" Foreground="{StaticResource TextSecondary}"/>
-                                <TextBlock Grid.Column="2" Text="Dash" FontSize="11" Foreground="{StaticResource TextSecondary}" HorizontalAlignment="Center"/>
-                                <TextBlock Grid.Column="3" Text="Overlay" FontSize="11" Foreground="{StaticResource TextSecondary}" HorizontalAlignment="Center"/>
+                                <TextBlock Text="Sensor" FontSize="11" Foreground="{DynamicResource TextSecondary}"/>
+                                <TextBlock Grid.Column="1" Text="Now" FontSize="11" Foreground="{DynamicResource TextSecondary}"/>
+                                <TextBlock Grid.Column="2" Text="Dash" FontSize="11" Foreground="{DynamicResource TextSecondary}" HorizontalAlignment="Center"/>
+                                <TextBlock Grid.Column="3" Text="Overlay" FontSize="11" Foreground="{DynamicResource TextSecondary}" HorizontalAlignment="Center"/>
                             </Grid>
                             <ScrollViewer VerticalScrollBarVisibility="Auto">
                                 <ItemsControl x:Name="PickerList">
@@ -144,9 +144,9 @@
                                                     <ColumnDefinition Width="46"/>
                                                     <ColumnDefinition Width="52"/>
                                                 </Grid.ColumnDefinitions>
-                                                <TextBlock Text="{Binding DisplayName}" FontSize="12" Foreground="{StaticResource TextPrimary}"
+                                                <TextBlock Text="{Binding DisplayName}" FontSize="12" Foreground="{DynamicResource TextPrimary}"
                                                            TextTrimming="CharacterEllipsis" ToolTip="{Binding Definition.DisplayName}" VerticalAlignment="Center"/>
-                                                <TextBlock Grid.Column="1" Text="{Binding CurrentText}" FontSize="11" Foreground="{StaticResource TextSecondary}" VerticalAlignment="Center"/>
+                                                <TextBlock Grid.Column="1" Text="{Binding CurrentText}" FontSize="11" Foreground="{DynamicResource TextSecondary}" VerticalAlignment="Center"/>
                                                 <CheckBox Grid.Column="2" IsChecked="{Binding IsChecked}" HorizontalAlignment="Center"/>
                                                 <CheckBox Grid.Column="3" IsChecked="{Binding IsOnOverlay}" HorizontalAlignment="Center"/>
                                             </Grid>
@@ -201,11 +201,11 @@
                                     <TextBox Grid.Row="3" Grid.Column="1" Margin="0,2,6,2" Text="{Binding FpsWarn, UpdateSourceTrigger=LostFocus}"/>
                                     <TextBox Grid.Row="3" Grid.Column="2" Margin="0,2,0,2" Text="{Binding FpsCrit, UpdateSourceTrigger=LostFocus}"/>
                                 </Grid>
-                                <TextBlock Text="{Binding ThresholdError}" Foreground="{StaticResource CritBrush}" FontSize="11"/>
+                                <TextBlock Text="{Binding ThresholdError}" Foreground="{DynamicResource CritBrush}" FontSize="11"/>
 
                                 <TextBlock Text="Limits (for % of limit / gauges)" Style="{StaticResource SettingsHeader}"/>
                                 <TextBlock Text="Enter your PBO PPT/TDC/EDC or GPU power limit. Blank = none."
-                                           Foreground="{StaticResource TextSecondary}" FontSize="11" TextWrapping="Wrap" Margin="0,0,0,4"/>
+                                           Foreground="{DynamicResource TextSecondary}" FontSize="11" TextWrapping="Wrap" Margin="0,0,0,4"/>
                                 <ItemsControl ItemsSource="{Binding LimitItems}">
                                     <ItemsControl.ItemTemplate>
                                         <DataTemplate>
@@ -215,7 +215,7 @@
                                                         <Style TargetType="TextBox" BasedOn="{StaticResource {x:Type TextBox}}">
                                                             <Style.Triggers>
                                                                 <DataTrigger Binding="{Binding IsInvalid}" Value="True">
-                                                                    <Setter Property="BorderBrush" Value="{StaticResource CritBrush}"/>
+                                                                    <Setter Property="BorderBrush" Value="{DynamicResource CritBrush}"/>
                                                                 </DataTrigger>
                                                             </Style.Triggers>
                                                         </Style>
@@ -252,19 +252,74 @@
                                     <TextBox x:Name="HotkeyBox" IsReadOnly="True" Text="{Binding OverlayHotkey, Mode=OneWay}"
                                              PreviewKeyDown="HotkeyBox_PreviewKeyDown" ToolTip="Click, then press the key combination"/>
                                 </DockPanel>
-                                <TextBlock Text="{Binding HotkeyStatus}" Foreground="{StaticResource WarnBrush}" FontSize="11"/>
+                                <TextBlock Text="{Binding HotkeyStatus}" Foreground="{DynamicResource WarnBrush}" FontSize="11"/>
                                 <Button Content="Reset overlay position" Command="{Binding ResetOverlayPositionCommand}"
                                         Style="{StaticResource HeaderButton}" HorizontalAlignment="Left" Margin="0,6,0,0" FontSize="11"/>
 
                                 <TextBlock Text="Dashboard" Style="{StaticResource SettingsHeader}"/>
                                 <CheckBox Content="Show CPU core matrix" IsChecked="{Binding ShowCoreMatrix}"/>
 
+                                <TextBlock Text="Theme" Style="{StaticResource SettingsHeader}"/>
+                                <ComboBox ItemsSource="{Binding ThemePresetNames}" SelectedItem="{Binding SelectedThemePreset}"
+                                          MinWidth="160" HorizontalAlignment="Left" Margin="0,0,0,8"/>
+                                <TextBlock Text="Accent colour" Style="{StaticResource SettingsLabel}" Margin="0,0,0,4"/>
+                                <ItemsControl ItemsSource="{Binding AccentSwatches}" Margin="0,0,0,6">
+                                    <ItemsControl.ItemsPanel>
+                                        <ItemsPanelTemplate><WrapPanel/></ItemsPanelTemplate>
+                                    </ItemsControl.ItemsPanel>
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate>
+                                            <Button Command="{Binding DataContext.SetAccentCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
+                                                    CommandParameter="{Binding}" ToolTip="{Binding}"
+                                                    Width="22" Height="22" Margin="0,0,6,6" Padding="0" BorderThickness="1"
+                                                    BorderBrush="{DynamicResource BorderDim}"
+                                                    Background="{Binding Converter={StaticResource HexToBrush}}" Cursor="Hand">
+                                                <!-- Border-only template: the system ControlTemplate repaints a hover-blue highlight
+                                                     over the swatch colour, defeating the point of a colour picker. A keyboard-focus
+                                                     trigger restores a visible focus ring (the default template's dotted rectangle is
+                                                     gone along with the rest of the chrome) so Tab-navigating the swatches stays usable. -->
+                                                <Button.Template>
+                                                    <ControlTemplate TargetType="Button">
+                                                        <Border x:Name="SwatchBorder"
+                                                                Background="{TemplateBinding Background}"
+                                                                BorderBrush="{TemplateBinding BorderBrush}"
+                                                                BorderThickness="{TemplateBinding BorderThickness}"/>
+                                                        <ControlTemplate.Triggers>
+                                                            <Trigger Property="IsKeyboardFocused" Value="True">
+                                                                <Setter TargetName="SwatchBorder" Property="BorderBrush" Value="{DynamicResource AccentBrush}"/>
+                                                                <Setter TargetName="SwatchBorder" Property="BorderThickness" Value="2"/>
+                                                            </Trigger>
+                                                        </ControlTemplate.Triggers>
+                                                    </ControlTemplate>
+                                                </Button.Template>
+                                            </Button>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                                <DockPanel Margin="0,0,0,4">
+                                    <Button DockPanel.Dock="Right" Content="Reset" Command="{Binding ResetAccentCommand}"
+                                            Style="{StaticResource HeaderButton}" FontSize="11"/>
+                                    <TextBox Text="{Binding AccentHex, UpdateSourceTrigger=PropertyChanged}" MaxLength="7"
+                                             Width="90" HorizontalAlignment="Left">
+                                        <TextBox.Style>
+                                            <Style TargetType="TextBox" BasedOn="{StaticResource {x:Type TextBox}}">
+                                                <Style.Triggers>
+                                                    <DataTrigger Binding="{Binding IsAccentInvalid}" Value="True">
+                                                        <Setter Property="BorderBrush" Value="{DynamicResource CritBrush}"/>
+                                                    </DataTrigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </TextBox.Style>
+                                    </TextBox>
+                                </DockPanel>
+                                <TextBlock Text="Blank = use the preset's own accent colour." Foreground="{DynamicResource TextSecondary}" FontSize="11"/>
+
                                 <TextBlock Text="Hardware" Style="{StaticResource SettingsHeader}"/>
                                 <CheckBox IsChecked="{Binding ReadMotherboardAndCoolers}">
                                     <TextBlock Text="Read motherboard fan headers and USB coolers (needed for fan control; restart to apply)"
-                                               Foreground="{StaticResource TextPrimary}" TextWrapping="Wrap"/>
+                                               Foreground="{DynamicResource TextPrimary}" TextWrapping="Wrap"/>
                                 </CheckBox>
-                                <TextBlock Text="{Binding HardwareStatus}" Foreground="{StaticResource WarnBrush}" FontSize="11"/>
+                                <TextBlock Text="{Binding HardwareStatus}" Foreground="{DynamicResource WarnBrush}" FontSize="11"/>
 
                                 <TextBlock Text="Updates" Style="{StaticResource SettingsHeader}"/>
                                 <CheckBox Content="Check for updates automatically" IsChecked="{Binding CheckForUpdatesAutomatically}"/>

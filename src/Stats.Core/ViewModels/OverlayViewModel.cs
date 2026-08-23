@@ -46,4 +46,11 @@ public sealed partial class OverlayViewModel : ObservableObject
     {
         foreach (var tile in Tiles) tile.Refresh();
     }
+
+    /// <summary>Nudges every overlay tile's Severity-bound Foreground to re-evaluate after a live theme switch —
+    /// see MetricTileViewModel.RaiseSeverityRefresh. Called by the composition root right after ThemeManager.Apply.</summary>
+    public void RaiseSeverityRefresh()
+    {
+        foreach (var tile in Tiles) tile.RaiseSeverityRefresh();
+    }
 }
