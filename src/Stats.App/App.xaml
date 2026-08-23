@@ -52,6 +52,18 @@
                 <Setter Property="Foreground" Value="{StaticResource TextPrimary}"/>
                 <Setter Property="VerticalContentAlignment" Value="Center"/>
             </Style>
+            <!-- Minimal dark treatment: without it the Fans window's ComboBoxes render as light Aero controls. -->
+            <Style TargetType="ComboBox">
+                <Setter Property="Background" Value="{StaticResource ControlBg}"/>
+                <Setter Property="Foreground" Value="{StaticResource TextPrimary}"/>
+                <Setter Property="BorderBrush" Value="{StaticResource BorderDim}"/>
+                <Setter Property="VerticalContentAlignment" Value="Center"/>
+            </Style>
+            <!-- The Aero2 dropdown popup keeps its white background, so items must not inherit the
+                 near-white ComboBox Foreground (final re-review minor: white-on-white popup text). -->
+            <Style TargetType="ComboBoxItem">
+                <Setter Property="Foreground" Value="#FF1E1E1E"/>
+            </Style>
             <Style TargetType="RadioButton">
                 <Setter Property="Foreground" Value="{StaticResource TextPrimary}"/>
                 <Setter Property="Margin" Value="0,0,12,0"/>

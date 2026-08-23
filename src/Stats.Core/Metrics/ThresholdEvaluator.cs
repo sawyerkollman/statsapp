@@ -12,6 +12,12 @@ public static class ThresholdEvaluator
             ? o
             : settings.ThresholdRules.FirstOrDefault(r => r.Group == def.Group && r.Unit == def.Unit);
         if (rule is null) return Severity.Normal;
+        if (rule.LowerIsWorse)
+        {
+            if (v <= rule.Crit) return Severity.Crit;
+            if (v <= rule.Warn) return Severity.Warn;
+            return Severity.Normal;
+        }
         if (v >= rule.Crit) return Severity.Crit;
         if (v >= rule.Warn) return Severity.Warn;
         return Severity.Normal;

@@ -22,6 +22,10 @@ public sealed partial class GroupSectionViewModel : ObservableObject
 
     [ObservableProperty] private bool _isExpanded;
     [ObservableProperty] private CoreMatrixViewModel? _coreMatrix;
+    [ObservableProperty] private string _statusText = "";
+
+    public bool HasStatus => !string.IsNullOrEmpty(StatusText);
 
     partial void OnIsExpandedChanged(bool value) => _onExpandedChanged(Name, value);
+    partial void OnStatusTextChanged(string value) => OnPropertyChanged(nameof(HasStatus));
 }

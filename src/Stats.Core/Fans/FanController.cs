@@ -31,19 +31,27 @@ public sealed class FanController
     private readonly IFanControlBackend _backend;
     private readonly AppSettings _settings;
     private readonly Action _save;
-    private readonly object _gate = new();
+    private readonly IFanArmedMarker _marker;
+    /// <summary>The settings graph's own lock (<see cref="AppSettings.SyncRoot"/>): whoever serializes the
+    /// settings holds it too, so a poll-thread channel/profile change can never race a save.</summary>
+    private readonly object _gate;
     private readonly Dictionary<string, Runtime> _rt = new();
     private DateTime? _firstTick;
     private bool _pendingSave;
+    private bool _armed;
 
-    public FanController(IFanControlBackend backend, AppSettings settings, Action saveSettings)
+    public FanController(IFanControlBackend backend, AppSettings settings, Action saveSettings, IFanArmedMarker? marker = null)
     {
         _backend = backend;
         _settings = settings;
+        _gate = settings.SyncRoot;
         _save = saveSettings;
+        _marker = marker ?? new NullFanArmedMarker();
     }
 
     public IReadOnlyList<FanChannel> Channels => _backend.Channels;
+
+    public string? ActiveProfile { get { lock (_gate) return _settings.ActiveFanProfile; } }
 
     public bool Enabled
     {
@@ -55,7 +63,12 @@ public sealed class FanController
 
     public void SetMode(string id, FanMode mode) => Mutate(id, p => p.Mode = mode);
     public void SetManualPercent(string id, float percent) => Mutate(id, p => p.ManualPercent = Math.Clamp(percent, 0f, 100f));
-    public void SetSource(string id, string? metricId) => Mutate(id, p => p.SourceMetricId = string.IsNullOrWhiteSpace(metricId) ? null : metricId);
+    public void SetSources(string id, IEnumerable<string> metricIds) => Mutate(id, p =>
+    {
+        p.SourceMetricIds = metricIds.Where(m => !string.IsNullOrWhiteSpace(m)).Select(m => m.Trim()).Distinct().ToList();
+        p.SourceMetricId = p.SourceMetricIds.FirstOrDefault();
+    });
+    public void SetSource(string id, string? metricId) => SetSources(id, metricId is null ? Array.Empty<string>() : new[] { metricId });
     public void SetName(string id, string? name) => Mutate(id, p => p.Name = string.IsNullOrWhiteSpace(name) ? null : name.Trim());
     public void ResetCurve(string id) => Mutate(id, p => p.Points = FanCurve.DefaultPoints.ToList());
 
@@ -77,8 +90,138 @@ public sealed class FanController
             rt.LastSourceUsed = null; // re-evaluate immediately on next tick
             rt.Failures = 0;          // the user acted on this channel: give it a fresh retry budget
             rt.FailedOver = false;    // …and stop reporting the old fail-safe flip
+            _settings.ActiveFanProfile = null;
         }
         _save();
+    }
+
+    private static FanChannelPref Clone(FanChannelPref p) => new()
+    {
+        Mode = p.Mode, ManualPercent = p.ManualPercent, SourceMetricId = p.SourceMetricId,
+        SourceMetricIds = p.SourceMetricIds.ToList(), Points = p.Points.ToList(), Name = p.Name,
+    };
+
+    public FanProfile SnapshotProfile(string name)
+    {
+        lock (_gate)
+        {
+            var prof = new FanProfile { Name = name };
+            foreach (var (id, p) in _settings.FanChannels) prof.Channels[id] = Clone(p);
+            return prof;
+        }
+    }
+
+    /// <summary>Replace every channel's desired state with the profile's (channels absent from the profile → Auto,
+    /// names preserved). deferSave: poll-thread callers — the save runs at the end of the next Tick under _gate.
+    /// resetFailures: only a user-initiated switch counts as "the user acted on this channel" and clears the
+    /// write fail-safe (CLAUDE.md rule 6). An automatic switch (game mode) passes false so a control that is
+    /// failing mid-write stays parked in Auto with its WriteFailed status, costing one probe write per
+    /// transition instead of three. LastSourceUsed is cleared either way — the curve must re-evaluate at once.</summary>
+    public void ApplyProfile(FanProfile profile, bool deferSave = false, bool resetFailures = true)
+    {
+        lock (_gate)
+        {
+            var names = _settings.FanChannels.ToDictionary(kv => kv.Key, kv => kv.Value.Name);
+            _settings.FanChannels.Clear();
+            foreach (var (id, p) in profile.Channels) _settings.FanChannels[id] = Clone(p);
+            foreach (var ch in _backend.Channels)
+                if (!_settings.FanChannels.ContainsKey(ch.Id)) _settings.FanChannels[ch.Id] = new FanChannelPref();
+            foreach (var (id, name) in names)
+                if (_settings.FanChannels.TryGetValue(id, out var p) && name is not null) p.Name = name;
+            foreach (var rt in _rt.Values)
+            {
+                rt.LastSourceUsed = null;
+                if (resetFailures) { rt.Failures = 0; rt.FailedOver = false; }
+            }
+            _settings.ActiveFanProfile = profile.Name;
+            if (deferSave) { _pendingSave = true; return; }
+        }
+        _save();
+    }
+
+    /// <summary>Set which saved profile name currently matches live state without touching any channel
+    /// (e.g. after the caller itself snapshotted/edited <c>settings.FanProfiles</c>). Pass null for "Custom".</summary>
+    public void SetActiveProfile(string? name)
+    {
+        lock (_gate) { _settings.ActiveFanProfile = name; }
+        _save();
+    }
+
+    // ---- saved profiles (the list itself lives in settings; every access takes _gate because the poll thread
+    // reads it inside GameModeSwitcher.Apply while the UI thread adds and removes entries) ----
+
+    public bool TryGetProfile(string name, out FanProfile? profile)
+    {
+        lock (_gate)
+        {
+            profile = _settings.FanProfiles.FirstOrDefault(p => p.Name == name);
+            return profile is not null;
+        }
+    }
+
+    public IReadOnlyList<string> ProfileNames()
+    {
+        lock (_gate) return _settings.FanProfiles.Select(p => p.Name).ToList();
+    }
+
+    /// <summary>Store <paramref name="profile"/> under its name, replacing any profile with the same name.</summary>
+    public void AddOrReplaceProfile(FanProfile profile)
+    {
+        lock (_gate)
+        {
+            int idx = _settings.FanProfiles.FindIndex(p => p.Name == profile.Name);
+            if (idx >= 0) _settings.FanProfiles[idx] = profile;
+            else _settings.FanProfiles.Add(profile);
+        }
+    }
+
+    /// <summary>Returns false when no profile of that name existed.</summary>
+    public bool RemoveProfile(string name)
+    {
+        lock (_gate) return _settings.FanProfiles.RemoveAll(p => p.Name == name) > 0;
+    }
+
+    /// <summary>Adds the profiles whose names are not taken yet; returns the ones actually added, in order.</summary>
+    public IReadOnlyList<FanProfile> AddProfilesIfMissing(IEnumerable<FanProfile> profiles)
+    {
+        var added = new List<FanProfile>();
+        lock (_gate)
+        {
+            foreach (var prof in profiles)
+            {
+                if (_settings.FanProfiles.Any(p => p.Name == prof.Name)) continue;
+                _settings.FanProfiles.Add(prof);
+                added.Add(prof);
+            }
+        }
+        return added;
+    }
+
+    public static IReadOnlyList<FanProfile> CreateDefaultProfiles(IReadOnlyList<FanChannel> channels, string? cpuTempId, string? gpuTempId)
+    {
+        var silent = new[] { new FanPoint(30, 20), new FanPoint(50, 30), new FanPoint(70, 55), new FanPoint(85, 100) };
+        var gaming = new[] { new FanPoint(30, 40), new FanPoint(50, 60), new FanPoint(70, 90), new FanPoint(85, 100) };
+        return new[]
+        {
+            Build("Silent", silent), Build("Balanced", FanCurve.DefaultPoints), Build("Gaming", gaming),
+        };
+
+        FanProfile Build(string name, IReadOnlyList<FanPoint> points)
+        {
+            var prof = new FanProfile { Name = name };
+            foreach (var ch in channels)
+            {
+                bool isPump = ch.Name.Contains("pump", StringComparison.OrdinalIgnoreCase);
+                bool isGpu = ch.Device.Contains("NVIDIA", StringComparison.OrdinalIgnoreCase) || ch.Device.Contains("GeForce", StringComparison.OrdinalIgnoreCase)
+                          || ch.Device.Contains("Radeon", StringComparison.OrdinalIgnoreCase) || ch.Device.Contains("RTX", StringComparison.OrdinalIgnoreCase)
+                          || ch.Device.Contains("RX ", StringComparison.OrdinalIgnoreCase);
+                string? src = isGpu ? gpuTempId : cpuTempId;
+                prof.Channels[ch.Id] = isPump || src is null
+                    ? new FanChannelPref()
+                    : new FanChannelPref { Mode = FanMode.Curve, SourceMetricIds = new() { src }, SourceMetricId = src, Points = points.ToList() };
+            }
+            return prof;
+        }
     }
 
     // ---- loop (poll thread) ----
@@ -130,7 +273,7 @@ public sealed class FanController
                             break;
 
                         case FanMode.Curve:
-                            float? src = Value(snapshot, pref!.SourceMetricId);
+                            float? src = MaxSource(snapshot, pref!);
                             rt.SourceTemp = src;
                             if (src is float t)
                             {
@@ -150,7 +293,7 @@ public sealed class FanController
                                 if (rt.Status != FanChannelStatus.WriteFailed) rt.Status = FanChannelStatus.WaitingForSource;
                                 break; // no value yet (or holding through a short gap): keep current output
                             }
-                            if (!FanCurve.TryCreate(pref.Points, out var curve)) curve = FanCurve.Default;
+                            if (!FanCurve.TryCreate(pref!.Points, out var curve)) curve = FanCurve.Default;
                             target = curve!.Evaluate(useTemp);
                             break;
                     }
@@ -182,8 +325,11 @@ public sealed class FanController
                 }
             }
 
-            // Rare path (the fail-safe mode flip). Saving inside _gate keeps JsonSerializer from enumerating
-            // FanChannels while the UI thread's Mutate — which also takes _gate — modifies the dictionary.
+            UpdateMarkerLocked();
+
+            // Poll-thread save: the write fail-safe mode flip, or a game-mode profile switch. Kept inside _gate
+            // (which IS AppSettings.SyncRoot) so even a save callback that serializes straight from this thread
+            // cannot enumerate FanChannels while the UI thread's Mutate modifies it.
             if (_pendingSave)
             {
                 _pendingSave = false;
@@ -192,12 +338,62 @@ public sealed class FanController
         }
     }
 
+    /// <summary>Clears the fans-armed marker once no runtime channel is still under software control.
+    /// A failed release keeps a channel InSoftware, which correctly keeps the marker around.</summary>
+    private void UpdateMarkerLocked()
+    {
+        if (_armed && !_rt.Values.Any(r => r.InSoftware)) { _marker.Clear(); _armed = false; }
+    }
+
+    /// <inheritdoc cref="RecoverFromUncleanShutdown(out bool)"/>
+    public bool RecoverFromUncleanShutdown() => RecoverFromUncleanShutdown(out _);
+
+    /// <summary>Call once at startup, before the poller starts. If the marker from a previous run exists, every
+    /// backend channel is handed back to device control (runtime state is gone). If the backend currently exposes
+    /// no channels (e.g. LHM failed to open and the app fell back to perf counters), the marker is left in place
+    /// so a later, healthy launch still performs the recovery — releasing nothing now but reporting success would
+    /// be a false "fans returned to device control" claim. A channel whose SetAuto throws is still pinned at the
+    /// PWM the crashed run left it at, so it is marked InSoftware (the next Tick/RestoreAll retries the release
+    /// through ReleaseLocked) and the marker is kept: <see cref="UpdateMarkerLocked"/> clears it only once every
+    /// channel is genuinely released. <paramref name="partial"/> reports that case so the caller can say so.</summary>
+    public bool RecoverFromUncleanShutdown(out bool partial)
+    {
+        partial = false;
+        if (!_marker.Exists()) return false;
+        lock (_gate)
+        {
+            if (_backend.Channels.Count == 0) return false;
+
+            bool allReleased = true;
+            foreach (var ch in _backend.Channels)
+            {
+                try { _backend.SetAuto(ch.Id); }
+                catch (Exception ex)
+                {
+                    allReleased = false;
+                    Rt(ch.Id).InSoftware = true; // still driven: keep it tracked so the release is retried
+                    Trace.WriteLine($"[Stats.FanController] recovery SetAuto {ch.Id} failed: {ex.Message}");
+                }
+            }
+            if (allReleased) { _marker.Clear(); _armed = false; }
+            else _armed = true;
+            partial = !allReleased;
+        }
+        Trace.WriteLine(partial
+            ? "[Stats.FanController] previous run did not shut down cleanly; some fans could not be returned to device control"
+            : "[Stats.FanController] previous run did not shut down cleanly; all fans returned to device control");
+        return true;
+    }
+
     private void WriteLocked(FanChannel ch, Runtime rt, float percent, FanChannelPref pref)
     {
         // LHM's SetSoftware may switch the control into software mode before the hardware write itself fails
         // (a "partial write"), so mark InSoftware before the call — otherwise a failed write would leave the
         // channel pinned at whatever PWM it landed on while we believe it's still under device control.
         rt.InSoftware = true;
+        // Only latch _armed once the marker is actually on disk — a transient failure (AV lock, disk full) must
+        // not disable crash recovery for the rest of the session; the next write retries the marker.
+        if (!_armed && _marker.Set()) _armed = true;
         try
         {
             _backend.SetPercent(ch.Id, percent);
@@ -259,6 +455,7 @@ public sealed class FanController
             {
                 if (rt.InSoftware) ReleaseLocked(id, rt, FanChannelStatus.Idle);
             }
+            UpdateMarkerLocked();
         }
     }
 
@@ -280,7 +477,8 @@ public sealed class FanController
                     ch.MinPercent, ch.MaxPercent,
                     pref?.SourceMetricId,
                     pref?.ManualPercent ?? 50f,
-                    pref?.Points ?? FanCurve.DefaultPoints));
+                    pref?.Points ?? FanCurve.DefaultPoints,
+                    (IReadOnlyList<string>?)pref?.SourceMetricIds ?? Array.Empty<string>()));
             }
             return list;
         }
@@ -294,4 +492,14 @@ public sealed class FanController
 
     private static float? Value(SensorSnapshot s, string? id) =>
         id is not null && s.Values.TryGetValue(id, out var v) && v is float f && !float.IsNaN(f) ? f : null;
+
+    /// <summary>Max over every configured source id that has a value in this snapshot; null if none do.</summary>
+    private static float? MaxSource(SensorSnapshot s, FanChannelPref pref)
+    {
+        float? best = null;
+        var ids = pref.SourceMetricIds.Count > 0 ? pref.SourceMetricIds : (pref.SourceMetricId is null ? new List<string>() : new List<string> { pref.SourceMetricId });
+        foreach (var id in ids)
+            if (Value(s, id) is float v && (best is null || v > best)) best = v;
+        return best;
+    }
 }

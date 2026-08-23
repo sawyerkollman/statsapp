@@ -41,8 +41,15 @@ public partial class App : Application
     private System.Drawing.Icon? _appIcon;
     private MetricDefinition? _trayCpuTempDef;
     private FanController? _fanController;
+    private GameModeSwitcher? _gameMode;
+    private bool _fanRecovered;
+    private bool _fanRecoveryPartial;
+    private bool _hardwareAtStartup = true;
     private FansWindow? _fans;
     private FansViewModel? _fansVm;
+    private System.Threading.Timer? _processScan;
+    private volatile string[] _processNames = Array.Empty<string>();
+    private volatile bool _fansVisible;
     private IReadOnlyList<MetricDefinition> _definitions = Array.Empty<MetricDefinition>();
     private CompositeSensorReader? _composite;
 
@@ -58,7 +65,8 @@ public partial class App : Application
         IReadOnlyList<MetricDefinition> definitions;
         try
         {
-            (_composite, _frameReader) = BuildReader(() => new LhmSensorReader());
+            _hardwareAtStartup = _settings.ReadMotherboardAndCoolers; // the reader keeps this until the next restart
+            (_composite, _frameReader) = BuildReader(() => new LhmSensorReader(_hardwareAtStartup));
             _reader = _composite;
             definitions = _reader.Discover();
         }
@@ -92,7 +100,9 @@ public partial class App : Application
         };
         if (_frameReader is not null) _frameReader.Window = TimeSpan.FromSeconds(_settings.PollIntervalSeconds);
         ApplyFrameTracing();
-        _fanController = new FanController(_composite!, _settings, SaveSettings);
+        _fanController = new FanController(_composite!, _settings, RequestSaveSettings, new FileFanArmedMarker(settingsDir));
+        _fanRecovered = _fanController.RecoverFromUncleanShutdown(out _fanRecoveryPartial); // before _poller.Start(): single-threaded here
+        _gameMode = new GameModeSwitcher(_fanController, _settings);
 
         _dashboardVm = new DashboardViewModel(_store, _settings, SaveSettings)
         {
@@ -147,10 +157,14 @@ public partial class App : Application
         RestoreWindowBounds();
 
         var fanController = _fanController;
+        var gameMode = _gameMode;
         // poll thread: same thread as LHM reads. A controller fault must never propagate out of the poller's
-        // subscriber list and starve the Dispatcher-refresh handler below.
+        // subscriber list and starve the Dispatcher-refresh handler below. GameModeSwitcher runs first so a
+        // profile switch it applies (deferSave: true) is picked up by FanController.Tick in the same snapshot.
         _poller.SnapshotAvailable += snapshot =>
         {
+            try { gameMode.Tick(snapshot, DateTime.UtcNow); }
+            catch (Exception ex) { System.Diagnostics.Trace.WriteLine("[Stats] GameModeSwitcher.Tick failed: " + ex); }
             try { fanController.Tick(snapshot, DateTime.UtcNow); }
             catch (Exception ex) { System.Diagnostics.Trace.WriteLine("[Stats] FanController.Tick failed: " + ex); }
         };
@@ -158,6 +172,7 @@ public partial class App : Application
         {
             _store.Apply(snapshot);
             _dashboardVm.RefreshAll();
+            _dashboardVm.SetGroupStatus(MetricGroup.Game, FrameStatus());
             _overlayVm?.RefreshAll();
             UpdateTrayTooltip();
             if (_peaks is { IsVisible: true }) _peaksVm?.Refresh();
@@ -175,6 +190,8 @@ public partial class App : Application
     protected override void OnExit(ExitEventArgs e)
     {
         _hotkey?.Dispose();
+        _fansVisible = false;
+        _processScan?.Dispose();
         bool stopped = _poller?.Stop() ?? true;   // stop the poll thread first …
         _fanController?.RestoreAll();             // … then hand every fan back to device control, always
         if (stopped) _reader?.Dispose();
@@ -185,11 +202,41 @@ public partial class App : Application
         base.OnExit(e);
     }
 
+    /// <summary>The UI thread owns every collection in the settings graph, so every save is serialized here, on
+    /// this thread, under AppSettings.SyncRoot — which is also the FanController's gate, so the poll thread cannot
+    /// be mutating FanChannels mid-serialize. Only the file write happens outside the lock.</summary>
     private void SaveSettings()
     {
-        if (_settings is null) return;
-        try { _settingsService?.Save(_settings); }
-        catch (Exception) { /* disk unavailable — keep running; next save retries */ }
+        if (_settings is null || _settingsService is null) return;
+        try
+        {
+            string json;
+            lock (_settings.SyncRoot) json = SettingsService.Serialize(_settings);
+            _settingsService.Save(json);
+        }
+        catch (Exception ex)
+        {
+            // Disk unavailable — keep running; the next save retries. Traced so a silently dropped write
+            // (a just-created profile, a game-mode switch) is diagnosable instead of showing up as a stale file.
+            System.Diagnostics.Trace.WriteLine("[Stats] settings save failed: " + ex.Message);
+        }
+    }
+
+    /// <summary>Save request from any thread (the fan controller's callback runs on the poll thread). Marshalled
+    /// so serialization only ever happens on the UI thread — see <see cref="SaveSettings"/>.</summary>
+    private void RequestSaveSettings()
+    {
+        if (Dispatcher.CheckAccess()) SaveSettings();
+        else Dispatcher.BeginInvoke(SaveSettings);
+    }
+
+    /// <summary>Background refresh of the running-process names the Fans window checks for competing fan tools.
+    /// Process.GetProcesses() walks the whole process table (tens of ms) — far too slow for the Dispatcher.</summary>
+    private void RefreshProcessNames()
+    {
+        if (!_fansVisible) return;
+        try { _processNames = ConflictingFanSoftware.RunningProcessNames().ToArray(); }
+        catch (Exception ex) { System.Diagnostics.Trace.WriteLine("[Stats] process scan failed: " + ex.Message); }
     }
 
     /// <summary>Primary hardware reader + the PresentMon frame reader, merged. Discover() is the caller's.</summary>
@@ -202,7 +249,15 @@ public partial class App : Application
     private void ApplyFrameTracing()
     {
         if (_frameReader is null || _settings is null) return;
-        _frameReader.SetActive(FrameRateReader.ShouldBeActive(_settings.DashboardMetrics, _settings.OverlayMetrics));
+        _frameReader.SetActive(FrameRateReader.ShouldBeActive(_settings.DashboardMetrics, _settings.OverlayMetrics) || _settings.GameModeEnabled);
+    }
+
+    private string? FrameStatus()
+    {
+        if (_frameReader is null || !_frameReader.IsActive || _frameReader.IsAvailable) return null;
+        var msg = _frameReader.StatusMessage ?? "";
+        int cut = msg.IndexOf(". ", StringComparison.Ordinal);
+        return cut > 0 ? msg[..(cut + 1)] : msg;
     }
 
     private void RestoreWindowBounds()
@@ -353,8 +408,15 @@ public partial class App : Application
         if (_fanController is null || _settings is null) return;
         if (_fans is null)
         {
-            _fansVm = new FansViewModel(_fanController, _definitions, _settings);
+            _fansVm = new FansViewModel(_fanController, _definitions, _settings, processNames: () => _processNames,
+                saveSettings: SaveSettings, switcher: _gameMode, hardwareEnabledAtStartup: _hardwareAtStartup);
+            _fansVm.GameModeChanged += ApplyFrameTracing;
+            if (_fanRecovered)
+                _fansVm.RecoveryNotice = _fanRecoveryPartial
+                    ? "Stats did not shut down cleanly last time — some fans could not be returned to device control; check for other fan software."
+                    : "Stats did not shut down cleanly last time — all fans were returned to device control.";
             _fans = new FansWindow { DataContext = _fansVm };
+            _fans.IsVisibleChanged += (_, e) => _fansVisible = e.NewValue is true;
             if (_settings.FansWidth is double w) _fans.Width = w;
             if (_settings.FansHeight is double h) _fans.Height = h;
             if (_settings.FansLeft is double l) _fans.Left = ClampToVirtualScreenX(l, 200);
@@ -362,6 +424,9 @@ public partial class App : Application
             _fans.LocationChanged += (_, _) => SaveFansBounds();
             _fans.SizeChanged += (_, _) => SaveFansBounds();
         }
+        _fansVisible = true;
+        // Started on first open, not at launch: nothing else needs the process table.
+        _processScan ??= new System.Threading.Timer(_ => RefreshProcessNames(), null, TimeSpan.Zero, TimeSpan.FromSeconds(5));
         _fansVm!.Refresh();
         _fans.Show();
         _fans.WindowState = WindowState.Normal;
@@ -413,6 +478,9 @@ public partial class App : Application
                 break;
             case SettingsChange.CoreMatrix:
                 _dashboardVm?.RebuildSections();
+                break;
+            case SettingsChange.Hardware:
+                if (_settingsVm is not null) _settingsVm.HardwareStatus = "Restart Stats to apply";
                 break;
         }
     }

@@ -12,8 +12,12 @@ public sealed class FanChannelPref
 {
     public FanMode Mode { get; set; } = FanMode.Auto;
     public float ManualPercent { get; set; } = 50f;
-    /// <summary>Metric id (unit °C) that drives the curve; null = no source chosen yet.</summary>
+    /// <summary>Metric id (unit °C) that drives the curve; null = no source chosen yet.
+    /// Kept in sync as the first entry of <see cref="SourceMetricIds"/> for older builds.</summary>
     public string? SourceMetricId { get; set; }
+    /// <summary>Metric ids (all unit °C) that drive the curve; the curve uses the max of the ones present
+    /// in the latest snapshot. Empty = no source chosen yet.</summary>
+    public List<string> SourceMetricIds { get; set; } = new();
     public List<FanPoint> Points { get; set; } = FanCurve.DefaultPoints.ToList();
     /// <summary>Friendly display-name override; null/blank = hardware name.</summary>
     public string? Name { get; set; }

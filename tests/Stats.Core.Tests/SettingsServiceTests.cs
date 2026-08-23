@@ -78,7 +78,7 @@ public class SettingsServiceTests : IDisposable
     public void Load_SeedsThresholdRulesWhenEmpty()
     {
         var s = new SettingsService(_dir).Load();
-        Assert.Equal(4, s.ThresholdRules.Count);
+        Assert.Equal(5, s.ThresholdRules.Count);
         var cpu = s.ThresholdRules.First(r => r.Group == Stats.Core.Metrics.MetricGroup.Cpu && r.Unit == "°C");
         Assert.Equal(85f, cpu.Warn);
         Assert.Equal(92f, cpu.Crit);
@@ -139,7 +139,7 @@ public class SettingsServiceTests : IDisposable
         Assert.Equal(2, l.HistoryWindowMinutes);
         Assert.True(l.ShowCoreMatrix);
         Assert.Equal("Ctrl+Shift+O", l.OverlayHotkey);
-        Assert.Equal(4, l.ThresholdRules.Count);
+        Assert.Equal(5, l.ThresholdRules.Count);
     }
 
     [Theory]
@@ -202,7 +202,7 @@ public class SettingsServiceTests : IDisposable
         Assert.True(loaded.FanControlEnabled);
         Assert.NotNull(loaded.FanChannels);
         Assert.Empty(loaded.FanChannels);          // an explicit null must not blow up the fan loop
-        Assert.Equal(4, loaded.ThresholdRules.Count); // …and null rules still get the defaults
+        Assert.Equal(5, loaded.ThresholdRules.Count); // …and null rules still get the defaults
     }
 
     [Fact]
@@ -218,5 +218,169 @@ public class SettingsServiceTests : IDisposable
         Assert.Equal(FanCurve.DefaultPoints, loaded.FanChannels["a"].Points);
         Assert.Equal(0f, loaded.FanChannels["b"].ManualPercent);
         Assert.Equal(FanCurve.DefaultPoints, loaded.FanChannels["b"].Points);
+    }
+
+    [Fact]
+    public void Load_OlderFile_GainsFpsDefaultRule_KeepsExisting()
+    {
+        var svc = new SettingsService(_dir);
+        var s = new AppSettings { ThresholdRules = new() { new() { Group = Stats.Core.Metrics.MetricGroup.Cpu, Unit = "°C", Warn = 70, Crit = 80 } } };
+        svc.Save(s);
+        var loaded = new SettingsService(_dir).Load();
+        Assert.Equal(70f, loaded.ThresholdRules.Single(r => r.Group == Stats.Core.Metrics.MetricGroup.Cpu && r.Unit == "°C").Warn);
+        var fps = loaded.ThresholdRules.Single(r => r.Group == Stats.Core.Metrics.MetricGroup.Game && r.Unit == "fps");
+        Assert.True(fps.LowerIsWorse);
+    }
+
+    [Fact]
+    public void SaveThenLoad_LowerIsWorse_RoundTrips()
+    {
+        var svc = new SettingsService(_dir);
+        var s = new AppSettings();
+        s.ThresholdOverrides["fps.avg"] = new ThresholdRule { Warn = 90, Crit = 45, LowerIsWorse = true };
+        svc.Save(s);
+        Assert.True(new SettingsService(_dir).Load().ThresholdOverrides["fps.avg"].LowerIsWorse);
+    }
+
+    [Fact]
+    public void ReadMotherboardAndCoolers_DefaultsTrue_RoundTrips()
+    {
+        Assert.True(new SettingsService(_dir).Load().ReadMotherboardAndCoolers);
+        var svc = new SettingsService(_dir); svc.Save(new AppSettings { ReadMotherboardAndCoolers = false });
+        Assert.False(new SettingsService(_dir).Load().ReadMotherboardAndCoolers);
+    }
+
+    [Fact]
+    public void Load_MigratesSingleSourceToList()
+    {
+        var svc = new SettingsService(_dir);
+        var s = new AppSettings();
+        s.FanChannels["a"] = new FanChannelPref { SourceMetricId = "cpu.t", SourceMetricIds = new() };
+        svc.Save(s);
+        var p = new SettingsService(_dir).Load().FanChannels["a"];
+        Assert.Equal(new[] { "cpu.t" }, p.SourceMetricIds);
+        Assert.Equal("cpu.t", p.SourceMetricId);
+    }
+
+    [Fact]
+    public void FanProfiles_RoundTrip_AndNullGuard()
+    {
+        var svc = new SettingsService(_dir);
+        var s = new AppSettings { ActiveFanProfile = "Silent" };
+        s.FanProfiles.Add(new FanProfile
+        {
+            Name = "Silent",
+            Channels = { ["/lpc/it8696e/0/control/0"] = new FanChannelPref { Mode = FanMode.Curve, ManualPercent = 140, Points = new() { new(50, 50) } } },
+        });
+        svc.Save(s);
+
+        var loaded = new SettingsService(_dir).Load();
+        Assert.Equal("Silent", loaded.ActiveFanProfile);
+        var prof = loaded.FanProfiles.Single();
+        Assert.Equal("Silent", prof.Name);
+        var p = prof.Channels["/lpc/it8696e/0/control/0"];
+        Assert.Equal(FanMode.Curve, p.Mode);
+        Assert.Equal(100f, p.ManualPercent);                 // profile channels get the same sanitation as live ones
+        Assert.Equal(FanCurve.DefaultPoints, p.Points);       // 1 point = invalid curve → default
+
+        Directory.CreateDirectory(_dir);
+        File.WriteAllText(Path.Combine(_dir, "settings.json"), """{ "FanProfiles": null }""");
+        var loaded2 = new SettingsService(_dir).Load();
+        Assert.NotNull(loaded2.FanProfiles);
+        Assert.Empty(loaded2.FanProfiles);
+    }
+
+    // System.Text.Json accepts a null element as happily as a null collection, and every one of these used to
+    // reach the sanitation block — which runs before any window exists and would kill Stats on every launch.
+    [Fact]
+    public void Load_NullProfileElement_IsDropped()
+    {
+        Write("""{ "FanProfiles": [null] }""");
+        Assert.Empty(new SettingsService(_dir).Load().FanProfiles);
+    }
+
+    [Fact]
+    public void Load_NullProfileName_BecomesEmptyString()
+    {
+        Write("""{ "FanProfiles": [ { "Name": null } ] }""");
+        Assert.Equal("", new SettingsService(_dir).Load().FanProfiles.Single().Name);
+    }
+
+    [Fact]
+    public void Load_NullFanChannelEntry_IsDropped()
+    {
+        Write("""{ "FanChannels": { "a": null }, "FanProfiles": [ { "Name": "P", "Channels": { "b": null } } ] }""");
+        var loaded = new SettingsService(_dir).Load();
+        Assert.Empty(loaded.FanChannels);
+        Assert.Empty(loaded.FanProfiles.Single().Channels);
+        Assert.Equal(1.0, loaded.PollIntervalSeconds); // and the rest of the file is still usable
+    }
+
+    [Fact]
+    public void Load_V13File_MigratesSourcesAndGainsV14Defaults_WithoutTouchingExistingRules()
+    {
+        Write("""
+        {
+          "PollIntervalSeconds": 1,
+          "DefaultsApplied": true,
+          "DashboardMetrics": [ "cpu.tctl" ],
+          "ThresholdRules": [
+            { "Group": "Cpu", "Unit": "°C", "Warn": 85, "Crit": 92 },
+            { "Group": "Gpu", "Unit": "°C", "Warn": 80, "Crit": 88 },
+            { "Group": "Cpu", "Unit": "%", "Warn": 90, "Crit": 98 },
+            { "Group": "Gpu", "Unit": "%", "Warn": 90, "Crit": 98 }
+          ],
+          "FanControlEnabled": true,
+          "FanChannels": {
+            "/lpc/it8696e/0/control/0": { "Mode": "Curve", "ManualPercent": 40, "SourceMetricId": "cpu.t" }
+          }
+        }
+        """);
+        var loaded = new SettingsService(_dir).Load();
+
+        var pref = loaded.FanChannels["/lpc/it8696e/0/control/0"];
+        Assert.Equal(new[] { "cpu.t" }, pref.SourceMetricIds);   // §8 migration
+        Assert.Equal("cpu.t", pref.SourceMetricId);
+        Assert.Equal(FanMode.Curve, pref.Mode);
+        Assert.True(loaded.ReadMotherboardAndCoolers);           // §4 default: on
+        Assert.Empty(loaded.FanProfiles);                        // §5
+        Assert.Null(loaded.ActiveFanProfile);
+        Assert.False(loaded.GameModeEnabled);                    // §6
+        Assert.Null(loaded.GameModeGamingProfile);
+        Assert.Null(loaded.GameModeDesktopProfile);
+        Assert.Equal(5, loaded.ThresholdRules.Count);            // §7: the fps rule was appended …
+        Assert.All(loaded.ThresholdRules.Take(4), r => Assert.False(r.LowerIsWorse)); // … the four kept as they were
+        Assert.Equal(85f, loaded.ThresholdRules[0].Warn);
+        var fps = loaded.ThresholdRules.Single(r => r.Group == Stats.Core.Metrics.MetricGroup.Game && r.Unit == "fps");
+        Assert.True(fps.LowerIsWorse);
+        Assert.Equal(30f, loaded.ThresholdOverrides["fps.low1"].Warn); // and the 1 % low gets its own scale
+        Assert.True(loaded.ThresholdOverrides["fps.low1"].LowerIsWorse);
+    }
+
+    [Fact]
+    public void SaveThenLoad_GameModeFields_RoundTrip()
+    {
+        var svc = new SettingsService(_dir);
+        svc.Save(new AppSettings { GameModeEnabled = true, GameModeGamingProfile = "Gaming", GameModeDesktopProfile = "Silent" });
+        var loaded = new SettingsService(_dir).Load();
+        Assert.True(loaded.GameModeEnabled);
+        Assert.Equal("Gaming", loaded.GameModeGamingProfile);
+        Assert.Equal("Silent", loaded.GameModeDesktopProfile);
+    }
+
+    [Fact]
+    public void Load_ExistingFpsLow1Override_IsNotOverwritten()
+    {
+        var svc = new SettingsService(_dir);
+        var s = new AppSettings();
+        s.ThresholdOverrides["fps.low1"] = new ThresholdRule { Warn = 20, Crit = 10, LowerIsWorse = true };
+        svc.Save(s);
+        Assert.Equal(20f, new SettingsService(_dir).Load().ThresholdOverrides["fps.low1"].Warn);
+    }
+
+    private void Write(string json)
+    {
+        Directory.CreateDirectory(_dir);
+        File.WriteAllText(Path.Combine(_dir, "settings.json"), json);
     }
 }

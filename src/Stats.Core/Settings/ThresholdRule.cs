@@ -9,6 +9,9 @@ public sealed class ThresholdRule
     public string Unit { get; set; } = "";
     public float Warn { get; set; }
     public float Crit { get; set; }
+
+    /// <summary>When true, values at or below Warn/Crit are worse (e.g. FPS).</summary>
+    public bool LowerIsWorse { get; set; }
 }
 
 public enum OverlayOrientation { Horizontal, Vertical }

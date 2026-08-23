@@ -175,4 +175,33 @@ public class SettingsViewModelTests
         vm.ResetOverlayPositionCommand.Execute(null);
         Assert.Equal(1, n);
     }
+
+    [Fact]
+    public void FpsThresholds_LoadFromRule_WarnMustExceedCrit()
+    {
+        var s = new AppSettings { ThresholdRules = ThresholdDefaults.Rules() };
+        int saves = 0;
+        var vm = new SettingsViewModel(s, Array.Empty<MetricDefinition>(), () => saves++);
+        Assert.Equal(60f, vm.FpsWarn);
+        Assert.Equal(30f, vm.FpsCrit);
+        vm.FpsWarn = 20; // below crit → invalid
+        Assert.Equal("FPS: warn must be above crit", vm.ThresholdError);
+        Assert.Equal(60f, s.ThresholdRules.Single(r => r.Group == MetricGroup.Game && r.Unit == "fps").Warn); // not applied
+        vm.FpsWarn = 75;
+        Assert.Equal("", vm.ThresholdError);
+        Assert.Equal(75f, s.ThresholdRules.Single(r => r.Group == MetricGroup.Game && r.Unit == "fps").Warn);
+        Assert.True(s.ThresholdRules.Single(r => r.Group == MetricGroup.Game && r.Unit == "fps").LowerIsWorse);
+    }
+
+    [Fact]
+    public void ReadMotherboardAndCoolers_RaisesHardware_AndPersists()
+    {
+        var s = new AppSettings(); int saves = 0; SettingsChange? last = null;
+        var vm = new SettingsViewModel(s, Array.Empty<MetricDefinition>(), () => saves++);
+        vm.Changed += c => last = c;
+        vm.ReadMotherboardAndCoolers = false;
+        Assert.False(s.ReadMotherboardAndCoolers);
+        Assert.Equal(SettingsChange.Hardware, last);
+        Assert.Equal(1, saves);
+    }
 }

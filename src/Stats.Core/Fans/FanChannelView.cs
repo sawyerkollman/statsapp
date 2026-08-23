@@ -9,4 +9,5 @@ public sealed record FanChannelView(
     string Id, string Name, string Device, FanMode Mode,
     float? Rpm, float? Percent, float? TargetPercent, float? SourceTemp,
     FanChannelStatus Status, float MinPercent, float MaxPercent,
-    string? SourceMetricId, float ManualPercent, IReadOnlyList<FanPoint> Points);
+    string? SourceMetricId, float ManualPercent, IReadOnlyList<FanPoint> Points,
+    IReadOnlyList<string> SourceMetricIds);

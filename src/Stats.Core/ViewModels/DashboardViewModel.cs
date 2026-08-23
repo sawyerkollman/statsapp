@@ -15,6 +15,7 @@ public sealed partial class DashboardViewModel : ObservableObject
     private readonly MetricStore _store;
     private readonly AppSettings _settings;
     private readonly Action _saveSettings;
+    private readonly Dictionary<MetricGroup, string> _groupStatus = new();
     private bool _suppressPickerEvents;
 
     public DashboardViewModel(MetricStore store, AppSettings settings, Action saveSettings)
@@ -171,8 +172,11 @@ public sealed partial class DashboardViewModel : ObservableObject
     /// <summary>Per-metric threshold override. Both null = remove override (fall back to the group rule).</summary>
     public void SetTileThresholds(string id, float? warn, float? crit)
     {
-        if (warn is float w && crit is float c && w < c)
-            _settings.ThresholdOverrides[id] = new ThresholdRule { Warn = w, Crit = c };
+        var def = _store.Definitions.FirstOrDefault(d => d.Id == id);
+        bool lowerIsWorse = def is not null && _settings.ThresholdRules.FirstOrDefault(r => r.Group == def.Group && r.Unit == def.Unit)?.LowerIsWorse == true;
+        bool ordered = warn is float w && crit is float c && (lowerIsWorse ? w > c : w < c);
+        if (ordered)
+            _settings.ThresholdOverrides[id] = new ThresholdRule { Warn = warn!.Value, Crit = crit!.Value, LowerIsWorse = lowerIsWorse };
         else
             _settings.ThresholdOverrides.Remove(id);
         RefreshAll();
@@ -187,6 +191,14 @@ public sealed partial class DashboardViewModel : ObservableObject
     }
 
     // ---- sections ----
+
+    /// <summary>Per-group status line (e.g. why FPS metrics are blank). Null/empty clears.</summary>
+    public void SetGroupStatus(MetricGroup group, string? text)
+    {
+        if (string.IsNullOrEmpty(text)) _groupStatus.Remove(group); else _groupStatus[group] = text;
+        var section = Sections.FirstOrDefault(s => s.Group == group);
+        if (section is not null) section.StatusText = text ?? "";
+    }
 
     public void RebuildSections()
     {
@@ -209,6 +221,7 @@ public sealed partial class DashboardViewModel : ObservableObject
             var section = new GroupSectionViewModel(group, !_settings.CollapsedGroups.Contains(group.ToString()), OnSectionExpandedChanged)
             {
                 CoreMatrix = matrix,
+                StatusText = _groupStatus.TryGetValue(group, out var st) ? st : "",
             };
             foreach (var id in ids)
             {

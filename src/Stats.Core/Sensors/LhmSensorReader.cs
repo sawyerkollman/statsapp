@@ -16,7 +16,9 @@ public sealed class LhmSensorReader : ISensorReader, IFanControlBackend
     private readonly Dictionary<string, IControl> _controls = new();
     private List<FanChannel> _channels = new();
 
-    public LhmSensorReader()
+    /// <param name="motherboardAndControllers">Gates Super-I/O + USB/HID controller polling (needed for fan control).
+    /// Off = degraded mode for fan control, still probes CPU/GPU/memory/storage/network.</param>
+    public LhmSensorReader(bool motherboardAndControllers = true)
     {
         _computer = new Computer
         {
@@ -25,8 +27,8 @@ public sealed class LhmSensorReader : ISensorReader, IFanControlBackend
             IsMemoryEnabled = true,
             IsStorageEnabled = true,
             IsNetworkEnabled = true,
-            IsMotherboardEnabled = true,   // Super-I/O: board temps, fan headers + their PWM controls
-            IsControllerEnabled = true,    // USB/HID fan & AIO controllers (e.g. MSI CoreLiquid)
+            IsMotherboardEnabled = motherboardAndControllers,   // Super-I/O: board temps, fan headers + their PWM controls
+            IsControllerEnabled = motherboardAndControllers,    // USB/HID fan & AIO controllers (e.g. MSI CoreLiquid)
         };
         _computer.Open();
     }

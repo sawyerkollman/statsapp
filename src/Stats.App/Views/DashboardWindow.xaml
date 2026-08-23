@@ -33,10 +33,16 @@
                         <DataTemplate>
                             <Expander IsExpanded="{Binding IsExpanded, Mode=TwoWay}" Margin="8,6,0,0">
                                 <Expander.Header>
-                                    <StackPanel Orientation="Horizontal">
-                                        <TextBlock Text="{Binding Name}" Style="{StaticResource GroupHeader}" Margin="0"/>
-                                        <TextBlock Text="{Binding Tiles.Count, StringFormat='{}  ({0})'}"
-                                                   Foreground="{StaticResource TextSecondary}" FontSize="12" VerticalAlignment="Center"/>
+                                    <!-- The status line lives in the HEADER, not the content: the user who collapses
+                                         the Game group because its tiles are blank is exactly the one who needs to
+                                         read why (e.g. "PresentMon: access denied"). -->
+                                    <StackPanel>
+                                        <StackPanel Orientation="Horizontal">
+                                            <TextBlock Text="{Binding Name}" Style="{StaticResource GroupHeader}" Margin="0"/>
+                                            <TextBlock Text="{Binding Tiles.Count, StringFormat='{}  ({0})'}"
+                                                       Foreground="{StaticResource TextSecondary}" FontSize="12" VerticalAlignment="Center"/>
+                                        </StackPanel>
+                                        <TextBlock Text="{Binding StatusText}" Foreground="{StaticResource WarnBrush}" FontSize="11" Margin="0,0,0,2" TextWrapping="Wrap" Visibility="{Binding HasStatus, Converter={StaticResource BoolToVis}}"/>
                                     </StackPanel>
                                 </Expander.Header>
                                 <StackPanel>
@@ -164,7 +170,7 @@
                                         <ColumnDefinition Width="70"/>
                                     </Grid.ColumnDefinitions>
                                     <Grid.RowDefinitions>
-                                        <RowDefinition/><RowDefinition/><RowDefinition/>
+                                        <RowDefinition/><RowDefinition/><RowDefinition/><RowDefinition/>
                                     </Grid.RowDefinitions>
                                     <TextBlock Text="CPU temp °C" Style="{StaticResource SettingsLabel}"/>
                                     <TextBox Grid.Column="1" Margin="0,2,6,2" Text="{Binding CpuTempWarn, UpdateSourceTrigger=LostFocus}"/>
@@ -175,6 +181,9 @@
                                     <TextBlock Grid.Row="2" Text="Load %" Style="{StaticResource SettingsLabel}"/>
                                     <TextBox Grid.Row="2" Grid.Column="1" Margin="0,2,6,2" Text="{Binding LoadWarn, UpdateSourceTrigger=LostFocus}"/>
                                     <TextBox Grid.Row="2" Grid.Column="2" Margin="0,2,0,2" Text="{Binding LoadCrit, UpdateSourceTrigger=LostFocus}"/>
+                                    <TextBlock Grid.Row="3" Text="FPS (lower is worse)" Style="{StaticResource SettingsLabel}"/>
+                                    <TextBox Grid.Row="3" Grid.Column="1" Margin="0,2,6,2" Text="{Binding FpsWarn, UpdateSourceTrigger=LostFocus}"/>
+                                    <TextBox Grid.Row="3" Grid.Column="2" Margin="0,2,0,2" Text="{Binding FpsCrit, UpdateSourceTrigger=LostFocus}"/>
                                 </Grid>
                                 <TextBlock Text="{Binding ThresholdError}" Foreground="{StaticResource CritBrush}" FontSize="11"/>
 
@@ -233,6 +242,13 @@
 
                                 <TextBlock Text="Dashboard" Style="{StaticResource SettingsHeader}"/>
                                 <CheckBox Content="Show CPU core matrix" IsChecked="{Binding ShowCoreMatrix}"/>
+
+                                <TextBlock Text="Hardware" Style="{StaticResource SettingsHeader}"/>
+                                <CheckBox IsChecked="{Binding ReadMotherboardAndCoolers}">
+                                    <TextBlock Text="Read motherboard fan headers and USB coolers (needed for fan control; restart to apply)"
+                                               Foreground="{StaticResource TextPrimary}" TextWrapping="Wrap"/>
+                                </CheckBox>
+                                <TextBlock Text="{Binding HardwareStatus}" Foreground="{StaticResource WarnBrush}" FontSize="11"/>
                             </StackPanel>
                         </ScrollViewer>
                     </TabItem>
