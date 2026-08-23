@@ -4,6 +4,7 @@ using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Stats.Core.Metrics;
 using Stats.Core.Settings;
+using Stats.Core.Updates;
 
 namespace Stats.Core.ViewModels;
 
@@ -48,6 +49,9 @@ public sealed partial class DashboardViewModel : ObservableObject
     public event Action? OpenFansRequested;
     /// <summary>Dashboard selection or order changed (picker, move, remove).</summary>
     public event Action? DashboardMetricsChanged;
+    /// <summary>Update now was clicked. All process/file/network work for the actual download + install happens
+    /// in the composition root (App.xaml.cs) — this VM only owns the banner's display state.</summary>
+    public event Action<UpdateInfo>? InstallUpdateRequested;
 
     [ObservableProperty] private bool _isDegraded;
     [ObservableProperty] private bool _isPickerOpen;
@@ -56,6 +60,14 @@ public sealed partial class DashboardViewModel : ObservableObject
     /// <summary>Set by the composition root once the SettingsViewModel exists; bound by the Settings tab.</summary>
     [ObservableProperty] private SettingsViewModel? _settingsPanel;
 
+    // ---- update banner ----
+    private UpdateInfo? _pendingUpdate;
+    [ObservableProperty] private bool _updateAvailable;
+    /// <summary>Banner text — either "Stats v1.4.2 is available" or, after a failed download, an error message.</summary>
+    [ObservableProperty] private string _updateNotice = "";
+    [ObservableProperty] private bool _updateBusy;
+    [ObservableProperty] private double _updateProgress;
+
     [RelayCommand] private void TogglePicker() => IsPickerOpen = !IsPickerOpen;
     [RelayCommand] private void ToggleOverlay() => OverlayToggleRequested?.Invoke();
     [RelayCommand] private void OpenPeaks() => OpenPeaksRequested?.Invoke();
@@ -63,6 +75,48 @@ public sealed partial class DashboardViewModel : ObservableObject
     [RelayCommand] private void OpenSettings() { FlyoutTabIndex = 1; IsPickerOpen = true; }
     [RelayCommand] private void CollapseAll() { foreach (var s in Sections) s.IsExpanded = false; }
     [RelayCommand] private void ExpandAll() { foreach (var s in Sections) s.IsExpanded = true; }
+
+    [RelayCommand]
+    private void InstallUpdate()
+    {
+        if (UpdateBusy) return; // already downloading — ignore a double-click/repeat invoke race
+        if (_pendingUpdate is not UpdateInfo info) return;
+        UpdateBusy = true; // set synchronously, before the composition root's async download even starts
+        InstallUpdateRequested?.Invoke(info);
+    }
+
+    [RelayCommand]
+    private void DismissUpdate()
+    {
+        if (UpdateBusy) return; // a download is in flight — Later is a no-op (also disabled in the XAML)
+        UpdateAvailable = false; // dismisses for the session only
+    }
+
+    /// <summary>Called by the composition root when a startup/24h check finds a newer release.</summary>
+    public void OfferUpdate(UpdateInfo info)
+    {
+        _pendingUpdate = info;
+        UpdateNotice = $"Stats {info.TagName} is available";
+        UpdateBusy = false;
+        UpdateProgress = 0;
+        UpdateAvailable = true;
+    }
+
+    /// <summary>Called by the composition root while the download is in progress (0..1).</summary>
+    public void SetUpdateProgress(double progress)
+    {
+        UpdateBusy = true;
+        UpdateProgress = progress;
+    }
+
+    /// <summary>Called by the composition root when the download fails; keeps the banner (with the pending
+    /// update still set) so "Update now" retries.</summary>
+    public void SetUpdateError(string message)
+    {
+        UpdateBusy = false;
+        UpdateProgress = 0;
+        UpdateNotice = message;
+    }
 
     // ---- refresh ----
 

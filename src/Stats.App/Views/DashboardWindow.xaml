@@ -7,6 +7,22 @@
         Background="{StaticResource WindowBg}">
 
     <DockPanel>
+        <Border DockPanel.Dock="Top" Background="{StaticResource ControlBg}" BorderBrush="{StaticResource AccentBrush}" BorderThickness="0,0,0,1" Padding="10,6"
+                Visibility="{Binding UpdateAvailable, Converter={StaticResource BoolToVis}}">
+            <DockPanel LastChildFill="False">
+                <!-- Right-docked children declared first so they claim their space before the (unbounded, wrapping)
+                     notice text — otherwise a long notice can push the buttons off-screen. -->
+                <Button DockPanel.Dock="Right" Content="Update now" Command="{Binding InstallUpdateCommand}"
+                        Style="{StaticResource HeaderButton}" IsEnabled="{Binding UpdateBusy, Converter={StaticResource InverseBool}}" Margin="6,0,0,0"/>
+                <Button DockPanel.Dock="Right" Content="Later" Command="{Binding DismissUpdateCommand}"
+                        Style="{StaticResource HeaderButton}" IsEnabled="{Binding UpdateBusy, Converter={StaticResource InverseBool}}"/>
+                <ProgressBar DockPanel.Dock="Right" Width="120" Height="14" Minimum="0" Maximum="1" Value="{Binding UpdateProgress, Mode=OneWay}"
+                             Visibility="{Binding UpdateBusy, Converter={StaticResource BoolToVis}}" Margin="0,0,10,0" VerticalAlignment="Center"/>
+                <TextBlock DockPanel.Dock="Left" Text="{Binding UpdateNotice}" Foreground="{StaticResource TextPrimary}"
+                           VerticalAlignment="Center" TextWrapping="Wrap" Margin="0,0,10,0"/>
+            </DockPanel>
+        </Border>
+
         <Border DockPanel.Dock="Top" Background="#7A2D2D" Padding="10,6"
                 Visibility="{Binding IsDegraded, Converter={StaticResource BoolToVis}}">
             <TextBlock Foreground="White" TextWrapping="Wrap"
@@ -249,6 +265,9 @@
                                                Foreground="{StaticResource TextPrimary}" TextWrapping="Wrap"/>
                                 </CheckBox>
                                 <TextBlock Text="{Binding HardwareStatus}" Foreground="{StaticResource WarnBrush}" FontSize="11"/>
+
+                                <TextBlock Text="Updates" Style="{StaticResource SettingsHeader}"/>
+                                <CheckBox Content="Check for updates automatically" IsChecked="{Binding CheckForUpdatesAutomatically}"/>
                             </StackPanel>
                         </ScrollViewer>
                     </TabItem>
