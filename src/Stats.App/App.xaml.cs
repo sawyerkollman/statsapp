@@ -1,4 +1,6 @@
+using System.Diagnostics;
 using System.IO;
+using System.Reflection;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Resources;
@@ -11,6 +13,7 @@ using Stats.Core.Frames;
 using Stats.Core.Metrics;
 using Stats.Core.Sensors;
 using Stats.Core.Settings;
+using Stats.Core.Updates;
 using Stats.Core.ViewModels;
 
 namespace Stats.App;
@@ -52,6 +55,8 @@ public partial class App : Application
     private volatile bool _fansVisible;
     private IReadOnlyList<MetricDefinition> _definitions = Array.Empty<MetricDefinition>();
     private CompositeSensorReader? _composite;
+    private UpdateService? _updateService;
+    private CancellationTokenSource? _updateCts;
 
     protected override void OnStartup(StartupEventArgs e)
     {
@@ -142,6 +147,8 @@ public partial class App : Application
         _dashboardVm.OpenPeaksRequested += ShowPeaks;
         _dashboardVm.OpenFansRequested += ShowFans;
         _dashboardVm.DashboardMetricsChanged += () => { _peaksVm?.RebuildRows(); ApplyFrameTracing(); };
+        _dashboardVm.InstallUpdateRequested += OnInstallUpdateRequested;
+        _updateService = new UpdateService();
 
         var cpuTemps = definitions.Where(d => d.Group == MetricGroup.Cpu && d.Unit == "°C").ToList();
         _trayCpuTempId = (cpuTemps.FirstOrDefault(d => d.DisplayName.Contains("tctl", StringComparison.OrdinalIgnoreCase))
@@ -185,10 +192,12 @@ public partial class App : Application
         SessionEnding += (_, _) => ExitApp();
         _dashboard.Show();
         _poller.Start();
+        StartUpdateChecks();
     }
 
     protected override void OnExit(ExitEventArgs e)
     {
+        _updateCts?.Cancel();
         _hotkey?.Dispose();
         _fansVisible = false;
         _processScan?.Dispose();
@@ -482,6 +491,10 @@ public partial class App : Application
             case SettingsChange.Hardware:
                 if (_settingsVm is not null) _settingsVm.HardwareStatus = "Restart Stats to apply";
                 break;
+            case SettingsChange.Updates:
+                if (_settings.CheckForUpdatesAutomatically) StartUpdateChecks();
+                else _updateCts?.Cancel();
+                break;
         }
     }
 
@@ -515,4 +528,116 @@ public partial class App : Application
         SaveWindowBounds();
         Shutdown();
     }
+
+    // ---- updater ----
+
+    /// <summary>Starts (or, after a live settings toggle, restarts) the background update-check loop: a 15 s
+    /// delay off the UI thread, then an initial check, then one every 24 h via PeriodicTimer, until
+    /// <see cref="_updateCts"/> is cancelled (app exit or the setting being turned off). Never touches the
+    /// SensorPoller or the fan thread. A no-op for a dev build (version 0.0.0.*) or while the loop is already
+    /// running or the setting is off.</summary>
+    private void StartUpdateChecks()
+    {
+        if (_settings is null || _updateService is null) return;
+        if (!_settings.CheckForUpdatesAutomatically) return;
+        if (_updateCts is { IsCancellationRequested: false }) return; // already running
+
+        var current = Assembly.GetEntryAssembly()?.GetName().Version ?? new Version(0, 0, 0, 0);
+        if (IsDevBuild(current)) return;
+
+        _updateCts = new CancellationTokenSource();
+        _ = RunUpdateLoopAsync(current, _updateCts.Token);
+    }
+
+    private static bool IsDevBuild(Version v) => v.Major == 0 && v.Minor == 0 && v.Build <= 0;
+
+    /// <summary>Runs entirely off the UI thread (Task.Delay/PeriodicTimer continuations); every step is wrapped
+    /// so an updater failure can never take the app down.</summary>
+    private async Task RunUpdateLoopAsync(Version current, CancellationToken ct)
+    {
+        try
+        {
+            await Task.Delay(TimeSpan.FromSeconds(15), ct).ConfigureAwait(false);
+            await CheckForUpdateAsync(current).ConfigureAwait(false);
+
+            using var timer = new System.Threading.PeriodicTimer(TimeSpan.FromHours(24));
+            while (await timer.WaitForNextTickAsync(ct).ConfigureAwait(false))
+                await CheckForUpdateAsync(current).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) { /* app exiting, or the setting was turned off */ }
+        catch (Exception ex) { Trace.WriteLine("[Stats] update check loop failed: " + ex); }
+    }
+
+    private async Task CheckForUpdateAsync(Version current)
+    {
+        if (_updateService is null) return;
+        try
+        {
+            var info = await _updateService.CheckAsync(current).ConfigureAwait(false);
+            if (info is null) return;
+            _ = Dispatcher.BeginInvoke(() => _dashboardVm?.OfferUpdate(info));
+        }
+        catch (Exception ex)
+        {
+            // CheckAsync already swallows its own failures and returns null; this is a last-resort net.
+            Trace.WriteLine("[Stats] update check failed: " + ex.Message);
+        }
+    }
+
+    /// <summary>"Update now" was clicked. Downloads the installer, writes + launches the relaunch helper, then
+    /// exits via the app's own clean shutdown path (fans released, settings saved) — the installer never has to
+    /// kill us.</summary>
+    private async void OnInstallUpdateRequested(UpdateInfo info)
+    {
+        if (_updateService is null || _dashboardVm is null) return;
+        _dashboardVm.SetUpdateProgress(0);
+        try
+        {
+            var versionPart = info.TagName.StartsWith("v", StringComparison.OrdinalIgnoreCase) ? info.TagName[1..] : info.TagName;
+            var destPath = Path.Combine(Path.GetTempPath(), $"Stats-Setup-{versionPart}.exe");
+            var progress = new Progress<double>(p => _dashboardVm.SetUpdateProgress(p)); // Progress<T> marshals to the captured (UI) SynchronizationContext
+            await _updateService.DownloadAsync(info, destPath, progress, CancellationToken.None).ConfigureAwait(true);
+
+            LaunchUpdateHelper(destPath);
+            ExitApp();
+        }
+        catch (Exception ex)
+        {
+            Trace.WriteLine("[Stats] update download failed: " + ex.Message);
+            _dashboardVm.SetUpdateError("Download failed — retry");
+        }
+    }
+
+    /// <summary>Writes %TEMP%\stats-update.cmd (waits for this process to exit, runs the installer silently,
+    /// then relaunches this exe) and starts it hidden and detached. The app must already be on its way out via
+    /// ExitApp() by the time the helper's wait loop can observe this PID gone.</summary>
+    private static void LaunchUpdateHelper(string installerPath)
+    {
+        var exePath = Environment.ProcessPath;
+        if (string.IsNullOrEmpty(exePath))
+            throw new InvalidOperationException("Could not resolve the running executable's path.");
+
+        var pid = Environment.ProcessId;
+        var scriptPath = Path.Combine(Path.GetTempPath(), "stats-update.cmd");
+        File.WriteAllText(scriptPath, BuildUpdateScript(pid, installerPath, exePath));
+
+        var psi = new ProcessStartInfo("cmd.exe", $"/c \"{scriptPath}\"")
+        {
+            CreateNoWindow = true,
+            UseShellExecute = false,
+            WindowStyle = ProcessWindowStyle.Hidden,
+        };
+        Process.Start(psi);
+    }
+
+    private static string BuildUpdateScript(int pid, string installerPath, string exePath) =>
+        "@echo off\r\n" +
+        ":wait\r\n" +
+        $"tasklist /FI \"PID eq {pid}\" | find \"{pid}\" >nul\r\n" +
+        "if errorlevel 1 goto run\r\n" +
+        "timeout /t 1 >nul\r\n" +
+        "goto wait\r\n" +
+        ":run\r\n" +
+        $"\"{installerPath}\" /SILENT /NOCANCEL\r\n" +
+        $"start \"\" \"{exePath}\"\r\n";
 }

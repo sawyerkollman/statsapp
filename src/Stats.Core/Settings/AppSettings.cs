@@ -67,6 +67,9 @@ public sealed class AppSettings
     public string? GameModeGamingProfile { get; set; }
     /// <summary>Profile name applied when no game has been active for a while; null = leave state as-is.</summary>
     public string? GameModeDesktopProfile { get; set; }
+    /// <summary>Check GitHub Releases for a newer Stats version on startup (after a delay) and every 24 h; dev
+    /// builds (version 0.0.0.*) never check regardless of this setting. Checkbox in Settings.</summary>
+    public bool CheckForUpdatesAutomatically { get; set; } = true;
 
     /// <summary>Get-or-create the TilePref for a metric id.</summary>
     public TilePref PrefFor(string metricId)
