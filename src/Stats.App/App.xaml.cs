@@ -507,6 +507,12 @@ public partial class App : Application
                 break;
             case SettingsChange.Theme:
                 ThemeManager.Apply(_settings.ThemePreset, _settings.ThemeAccent);
+                // ThemeManager.Apply replaces brush entries rather than mutating them, so already-bound
+                // SeverityToBrushConverter Foregrounds/Strokes/Fills won't repaint on their own — the Severity
+                // value they're bound to hasn't changed. Re-raise it on every live VM so those Bindings re-run.
+                _dashboardVm?.RaiseSeverityRefresh();
+                _overlayVm?.RaiseSeverityRefresh();
+                _peaksVm?.RaiseSeverityRefresh();
                 break;
         }
     }

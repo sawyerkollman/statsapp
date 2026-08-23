@@ -11,7 +11,7 @@
     <Style x:Key="TileBorder" TargetType="Border">
         <Setter Property="Width" Value="{Binding Size, Converter={StaticResource TileSizeToLength}, ConverterParameter=W}"/>
         <Setter Property="Height" Value="{Binding Size, Converter={StaticResource TileSizeToLength}, ConverterParameter=H}"/>
-        <Setter Property="Background" Value="{StaticResource TileBg}"/>
+        <Setter Property="Background" Value="{DynamicResource TileBg}"/>
         <Setter Property="CornerRadius" Value="6"/>
         <Setter Property="Margin" Value="6"/>
         <Setter Property="Padding" Value="10"/>
@@ -19,7 +19,7 @@
     </Style>
 
     <Style x:Key="TileName" TargetType="TextBlock">
-        <Setter Property="Foreground" Value="{StaticResource TextSecondary}"/>
+        <Setter Property="Foreground" Value="{DynamicResource TextSecondary}"/>
         <Setter Property="FontSize" Value="11"/>
         <Setter Property="TextTrimming" Value="CharacterEllipsis"/>
     </Style>
@@ -29,7 +29,7 @@
         <Setter Property="FontWeight" Value="SemiBold"/>
     </Style>
     <Style x:Key="TileFoot" TargetType="TextBlock">
-        <Setter Property="Foreground" Value="{StaticResource TextSecondary}"/>
+        <Setter Property="Foreground" Value="{DynamicResource TextSecondary}"/>
         <Setter Property="FontSize" Value="10"/>
     </Style>
 
@@ -52,7 +52,7 @@
                     <TextBlock Text="{Binding DisplayName}" Style="{StaticResource TileName}" ToolTip="{Binding DisplayName}"/>
                 </DockPanel>
                 <TextBlock DockPanel.Dock="Top" Text="{Binding CurrentText}" Style="{StaticResource TileValue}" Margin="0,2,0,0"/>
-                <TextBlock DockPanel.Dock="Top" Text="{Binding LimitText}" Foreground="{StaticResource AccentBrush}" FontSize="11"/>
+                <TextBlock DockPanel.Dock="Top" Text="{Binding LimitText}" Foreground="{DynamicResource AccentBrush}" FontSize="11"/>
                 <TextBlock DockPanel.Dock="Bottom" Text="{Binding MinMaxText}" Style="{StaticResource TileFoot}"/>
                 <controls:Sparkline Values="{Binding HistoryValues}" Unit="{Binding Unit}"
                                     Stroke="{Binding Severity, Converter={StaticResource SeverityToBrush}, ConverterParameter=accent}"
@@ -75,12 +75,12 @@
                     <Grid Width="78" Height="78" VerticalAlignment="Center">
                         <controls:ArcGauge Fraction="{Binding Fraction01}" Thickness="8"
                                            Stroke="{Binding Severity, Converter={StaticResource SeverityToBrush}, ConverterParameter=accent}"
-                                           Track="{StaticResource GaugeTrack}"/>
+                                           Track="{DynamicResource GaugeTrack}"/>
                         <TextBlock Text="{Binding CurrentText}" Style="{StaticResource TileValue}" FontSize="13"
                                    HorizontalAlignment="Center" VerticalAlignment="Center" TextAlignment="Center" TextWrapping="Wrap" MaxWidth="62"/>
                     </Grid>
                     <StackPanel Grid.Column="1" VerticalAlignment="Center" Margin="8,0,0,0">
-                        <TextBlock Text="{Binding LimitText}" Foreground="{StaticResource AccentBrush}" FontSize="11" TextWrapping="Wrap"/>
+                        <TextBlock Text="{Binding LimitText}" Foreground="{DynamicResource AccentBrush}" FontSize="11" TextWrapping="Wrap"/>
                         <TextBlock Text="{Binding MaxText, StringFormat='{}max {0}'}" Style="{StaticResource TileFoot}"/>
                     </StackPanel>
                 </Grid>
@@ -101,7 +101,7 @@
                 </DockPanel>
                 <controls:LevelBar Height="10" VerticalAlignment="Bottom" Fraction="{Binding Fraction01}"
                                    Fill="{Binding Severity, Converter={StaticResource SeverityToBrush}, ConverterParameter=accent}"
-                                   Track="{StaticResource GaugeTrack}"/>
+                                   Track="{DynamicResource GaugeTrack}"/>
             </DockPanel>
         </Border>
     </DataTemplate>
@@ -112,7 +112,7 @@
             <DockPanel>
                 <TextBlock DockPanel.Dock="Top" Text="{Binding DisplayName}" Style="{StaticResource TileName}" ToolTip="{Binding DisplayName}"/>
                 <TextBlock DockPanel.Dock="Bottom" Text="{Binding MinMaxText}" Style="{StaticResource TileFoot}"/>
-                <TextBlock DockPanel.Dock="Bottom" Text="{Binding LimitText}" Foreground="{StaticResource AccentBrush}" FontSize="11"/>
+                <TextBlock DockPanel.Dock="Bottom" Text="{Binding LimitText}" Foreground="{DynamicResource AccentBrush}" FontSize="11"/>
                 <TextBlock Text="{Binding CurrentText}" Style="{StaticResource TileValue}" FontSize="32" VerticalAlignment="Center"/>
             </DockPanel>
         </Border>

@@ -31,8 +31,12 @@ public sealed class LevelBar : FrameworkElement
         Unloaded += (_, _) => ThemeManager.Changed -= OnThemeChanged;
     }
 
-    // Fill/Track are already routed through shared theme brushes (bound via StaticResource), so WPF repaints
-    // them on its own; this just keeps the control in line with the other three custom-drawn controls.
+    // Track is bound via {DynamicResource GaugeTrack} (TileTemplates.xaml) — a genuine DependencyProperty
+    // target, so WPF re-resolves it on its own the moment ThemeManager.Apply replaces the resource entry. Fill
+    // is bound through SeverityToBrushConverter, which only re-runs when the composition root re-raises the
+    // bound tile's Severity property after ThemeManager.Apply (see MetricTileViewModel.RaiseSeverityRefresh);
+    // neither path needs code in this control — InvalidateVisual here just keeps it in line with the other three
+    // custom-drawn controls.
     private void OnThemeChanged() => InvalidateVisual();
 
     protected override void OnRender(DrawingContext dc)

@@ -54,10 +54,17 @@ public sealed class HeatToForegroundConverter : IValueConverter
     private const double HotForegroundThreshold = 0.82;
     private static readonly SolidColorBrush HotForeground = MakeFrozen(Color.FromRgb(0xF5, 0xF5, 0xF5));
 
+    private static readonly SolidColorBrush FallbackForeground = MakeFrozen(Color.FromRgb(0xF0, 0xF0, 0xF0));
+
     public object Convert(object value, Type targetType, object parameter, CultureInfo culture)
     {
         double t = value is float f ? Math.Clamp(f, 0f, 1f) : 0.0;
-        return t >= HotForegroundThreshold ? HotForeground : Application.Current.Resources["TextPrimary"];
+        if (t >= HotForegroundThreshold) return HotForeground;
+        // Application.Current.Resources["TextPrimary"] is always a SolidColorBrush in practice (ThemeManager.Apply
+        // only ever assigns one there), but this converter is a WPF resource itself and outlives any particular
+        // theme state, so a missing/wrong-typed resource (a future refactor, a stripped-down design-time
+        // dictionary) must fall back to a fixed brush rather than handing WPF a null/wrong-typed Foreground.
+        return Application.Current?.Resources["TextPrimary"] is Brush brush ? brush : FallbackForeground;
     }
 
     public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture) => throw new NotSupportedException();

@@ -68,8 +68,9 @@ public sealed class FanCurveEditor : FrameworkElement
         Unloaded += (_, _) => ThemeManager.Changed -= OnThemeChanged;
     }
 
-    // LineBrush/PointBrush/AxisBrush/TextBrush are already routed through shared theme brushes (bound via
-    // StaticResource in FansWindow.xaml), so WPF repaints them on its own. FloorBrush is palette-derived (a
+    // LineBrush/PointBrush/AxisBrush/TextBrush are routed through shared theme brushes via {DynamicResource} in
+    // FansWindow.xaml — a genuine DependencyProperty target, so WPF re-resolves it on its own the moment
+    // ThemeManager.Apply replaces the resource entry; no code needed here. FloorBrush is palette-derived (a
     // translucent tint of CritBrush, marking the channel's floor) but is never bound from XAML, so it needs an
     // explicit resync here. MarkerBrush (the live-temperature indicator) is a fixed decorative blue unrelated to
     // any of the 11 palette colours — it stays hardcoded on purpose so the "you are here" marker keeps reading

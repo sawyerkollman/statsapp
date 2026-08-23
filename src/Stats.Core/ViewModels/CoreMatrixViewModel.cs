@@ -15,6 +15,10 @@ public sealed partial class CoreCellViewModel : ObservableObject
     [ObservableProperty] private string _clockText = "";
     [ObservableProperty] private string _tempText = "";
     [ObservableProperty] private Severity _severity;
+
+    /// <summary>Re-raises PropertyChanged(Severity) without changing the value — see
+    /// MetricTileViewModel.RaiseSeverityRefresh for why this is needed after a live theme switch.</summary>
+    public void RaiseSeverityRefresh() => OnPropertyChanged(nameof(Severity));
 }
 
 /// <summary>One cell per CPU core, aggregated from LHM's "Core #n" named sensors (loads averaged across threads).</summary>
@@ -94,5 +98,12 @@ public sealed class CoreMatrixViewModel
             if (src.Temp is null && src.Loads.Count > 0)
                 cell.Severity = ThresholdEvaluator.Evaluate(src.Loads[0], loads.Count > 0 ? loads.Average() : null, _settings);
         }
+    }
+
+    /// <summary>Nudges every cell's Severity-bound Foreground to re-evaluate after a live theme switch — see
+    /// MetricTileViewModel.RaiseSeverityRefresh.</summary>
+    public void RaiseSeverityRefresh()
+    {
+        foreach (var cell in Cells) cell.RaiseSeverityRefresh();
     }
 }

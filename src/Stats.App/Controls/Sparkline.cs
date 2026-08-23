@@ -48,10 +48,11 @@ public sealed class Sparkline : FrameworkElement
         Unloaded += (_, _) => ThemeManager.Changed -= OnThemeChanged;
     }
 
-    // Stroke/Fill are already routed through shared theme brushes via SeverityToBrushConverter, so WPF's own
-    // Freezable-change notification repaints them automatically; the guide/hover overlays below are plain (not
-    // theme-resource-backed) Pens/Brushes drawn fresh every OnRender, so they need an explicit rebuild here to
-    // stay in step with a theme switch.
+    // Stroke is set via a Binding through SeverityToBrushConverter (see TileTemplates.xaml); the composition
+    // root (App) re-raises the bound Severity property after every ThemeManager.Apply, which re-runs that
+    // Binding and picks up the converter's freshly-fetched brush — no code needed in this control for Stroke/
+    // Fill. The guide/hover overlays below are plain (not theme-resource-backed) Pens/Brushes drawn fresh every
+    // OnRender, so they need an explicit rebuild here to stay in step with a theme switch.
     private void OnThemeChanged()
     {
         (_guidePen, _hoverLinePen, _hoverDotBrush) = BuildThemeBrushes();

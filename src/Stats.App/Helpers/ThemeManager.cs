@@ -4,19 +4,26 @@ using Stats.Core.Settings;
 
 namespace Stats.App.Helpers;
 
-/// <summary>Live-applies a theme preset (+ optional custom accent) by setting Color resources on the TOP-LEVEL
-/// Application.Current.Resources — never mutating or replacing any SolidColorBrush. A merged ResourceDictionary
-/// freezes/seals every Freezable it owns (so brush.Color = ... throws once Theme.xaml is merged), but each brush
-/// in Theme.xaml holds its Color via a DynamicResource pointing at one of the keys below, and a Freezable with a
-/// DynamicResource can never be sealed. Setting the Color resource at the application level shadows the defaults
-/// declared in Theme.xaml for every DynamicResource lookup — including from Theme.xaml's second, independent
-/// merge inside TileTemplates.xaml — so every StaticResource-bound brush (both physical instances) updates
-/// instantly, no restart. See docs/superpowers/specs/2026-08-23-theme-colors-design.md.</summary>
+/// <summary>Live-applies a theme preset (+ optional custom accent) by REPLACING each of the 11 palette brush
+/// entries on the TOP-LEVEL Application.Current.Resources with a brand-new (frozen) SolidColorBrush — this is
+/// the only mechanism runtime-verified to repaint every consumer with no restart. An earlier version of this
+/// class mutated brush.Color in place / via a DynamicResource-backed Color indirection; harness testing proved
+/// that approach never re-resolves a dictionary-owned SolidColorBrush once realized (StaticResource consumers
+/// never update; a bare {DynamicResource AccentBrush} with only the Color changing still doesn't repaint). Entry
+/// replacement works only for consumers that reference the brush via {DynamicResource X} — every such XAML
+/// reference was swept from StaticResource to DynamicResource alongside this change; StaticResource consumers
+/// can never update under entry replacement (including Style setters — WPF resolves those per-instance via
+/// DynamicResource too, so they DO update, but a hypothetical StaticResource setter would not).
+/// The backing "*Color" resources are still written on every Apply — ThemeManager.Get, HeatToBrushConverter,
+/// HeatToForegroundConverter, Sparkline and FanCurveEditor read those directly and that path is unaffected by
+/// this change. See docs/superpowers/specs/2026-08-23-theme-colors-design.md.</summary>
 public static class ThemeManager
 {
-    /// <summary>Raised after Apply() finishes setting the Color resources. HeatToBrushConverter and the
-    /// custom-drawn controls (Sparkline, ArcGauge, LevelBar, FanCurveEditor) subscribe to rebuild any
-    /// cached/derived brush and re-render.</summary>
+    /// <summary>Raised after Apply() finishes replacing the brush entries and Color resources. HeatToBrushConverter
+    /// and the custom-drawn controls (Sparkline, ArcGauge, LevelBar, FanCurveEditor) subscribe to rebuild any
+    /// cached/derived brush and re-render. App also uses this moment to nudge every live Severity-bound view-model
+    /// property (see the VMs' RaiseSeverityRefresh) since SeverityToBrushConverter's Bindings won't re-run on
+    /// their own — the Severity value they're bound to hasn't changed, only the brush instance it resolves to.</summary>
     public static event Action? Changed;
 
     /// <summary>The 11 brush keys defined in Theme.xaml — must match exactly (Warn/Crit stay semantic colours
@@ -74,10 +81,11 @@ public static class ThemeManager
         ["GaugeTrack"] = "#FF3A3A40",
     };
 
-    /// <summary>Sets the 11 palette Color resources on Application.Current.Resources (top level). Safe to call
-    /// before any window is created (App startup, before Show()) or any time after (live from a Settings
-    /// change). Falls back to the default preset if <paramref name="presetName"/> is unknown, so a future preset
-    /// removed from this dictionary (or Core's ThemePresets.Names drifting out of sync with it) never throws.</summary>
+    /// <summary>Replaces the 11 palette brush entries (and their backing Color resources) on
+    /// Application.Current.Resources (top level). Safe to call before any window is created (App startup, before
+    /// Show()) or any time after (live from a Settings change). Falls back to the default preset if
+    /// <paramref name="presetName"/> is unknown, so a future preset removed from this dictionary (or Core's
+    /// ThemePresets.Names drifting out of sync with it) never throws.</summary>
     public static void Apply(string? presetName, string? accentHex)
     {
         if (Application.Current is null) return;
@@ -90,11 +98,18 @@ public static class ThemeManager
         {
             var hex = key == "AccentBrush" && accentOverride is not null ? accentOverride : palette[key];
             var color = (Color)ColorConverter.ConvertFromString(hex);
-            var colorKey = ColorKeyFor(key);
-            // Set directly on the top-level dictionary (never inside a MergedDictionaries entry) so the value
-            // shadows Theme.xaml's default for every DynamicResource lookup, including TileTemplates.xaml's
-            // separate merge of Theme.xaml.
-            if (resources[colorKey] is not Color existing || existing != color) resources[colorKey] = color;
+
+            // Backing Color resource — still consumed directly by Get()/HeatToBrushConverter/
+            // HeatToForegroundConverter/Sparkline/FanCurveEditor. Set on the top-level dictionary (never inside
+            // a MergedDictionaries entry) so it's visible from both physical merges of Theme.xaml.
+            resources[ColorKeyFor(key)] = color;
+
+            // Brush entry REPLACEMENT — runtime-verified to be the only mechanism that repaints a
+            // {DynamicResource X}-bound consumer whose brush was already realized. Frozen: a replaced entry is
+            // never mutated again (the next Apply() replaces it wholesale), so freezing is safe and cheap.
+            var brush = new SolidColorBrush(color);
+            brush.Freeze();
+            resources[key] = brush;
         }
         Changed?.Invoke();
     }

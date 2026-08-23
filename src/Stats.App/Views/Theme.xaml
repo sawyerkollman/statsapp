@@ -5,15 +5,20 @@
     <!-- Shared primitives. Merged by BOTH App.xaml and TileTemplates.xaml — a StaticResource inside a merged
          dictionary cannot see the dictionary that merged it, so anything referenced from TileTemplates.xaml must
          live here rather than in App.xaml. This means Theme.xaml is instantiated as TWO DISTINCT
-         ResourceDictionary/Freezable instances at runtime (App.xaml's copy and TileTemplates.xaml's copy) — the
-         SolidColorBrush objects below are NOT shared between them. Live theme switching therefore cannot mutate
-         those brush instances directly (and can't anyway: a ResourceDictionary freezes/seals every Freezable it
-         owns once merged, so `brush.Color = ...` throws). Instead each brush's Color is a DynamicResource
-         pointing at a *Color* resource (a Freezable that holds a DynamicResourceExtension has CanFreeze==false,
-         so it is never sealed). ThemeManager.Apply sets the Color resources directly on the TOP-LEVEL
-         Application.Current.Resources, which shadows the Color entries declared below for every DynamicResource
-         lookup — including from inside TileTemplates.xaml's separate copy of this dictionary — so both physical
-         brush instances stay in sync without ever being mutated or replaced. -->
+         ResourceDictionary/Freezable instances at runtime (App.xaml's copy and TileTemplates.xaml's copy).
+
+         Live theme switching does NOT mutate the SolidColorBrush objects declared below in place, and does NOT
+         rely on a DynamicResource-backed Color indirection either — runtime harness testing proved neither
+         approach ever repaints a consumer whose brush was already realized (a dictionary-owned SolidColorBrush's
+         Color latches at first use and never re-resolves, regardless of how the Color itself is wired).
+         ThemeManager.Apply instead REPLACES each of the 11 brush entries below on the TOP-LEVEL
+         Application.Current.Resources with a brand-new brush, which shadows the Theme.xaml defaults declared
+         here for every {DynamicResource X} lookup — including from inside TileTemplates.xaml's separate copy of
+         this dictionary. Every consumer of these 11 brushes must therefore use DynamicResource, never
+         StaticResource (a StaticResource reference resolves once, at parse time, straight to the instance
+         declared here, and can never see the replacement). The plain Color values below are the pre-Apply
+         defaults, used only for the brief window before App.OnStartup calls ThemeManager.Apply (which runs
+         before any window is constructed, so in practice no visible frame ever paints with them). -->
 
     <!-- Palette colours (theme-tinted; ThemeManager.Apply overrides these at the top level) -->
     <Color x:Key="WindowBgColor">#FF1B1B1C</Color>
@@ -29,25 +34,31 @@
     <Color x:Key="GaugeTrackColor">#FF3A3A40</Color>
 
     <!-- Fixed, not theme-tinted: the overlay panel is always a dark translucent surface (readable text on it
-         regardless of the active preset), so these two are pinned to the Dark palette's text colours in every
-         preset rather than routed through ThemeManager.Apply. -->
+         regardless of the active preset), so these are pinned in every preset rather than routed through
+         ThemeManager.Apply (which only ever touches the 11 palette keys above). Referenced via StaticResource
+         throughout — they never change after parse time, so there is nothing for DynamicResource to buy here. -->
     <Color x:Key="OverlayTextPrimaryColor">#FFF0F0F0</Color>
     <Color x:Key="OverlayTextSecondaryColor">#FF9A9A9E</Color>
 
-    <!-- Palette -->
-    <SolidColorBrush x:Key="WindowBg" Color="{DynamicResource WindowBgColor}"/>
-    <SolidColorBrush x:Key="TileBg" Color="{DynamicResource TileBgColor}"/>
-    <SolidColorBrush x:Key="FlyoutBg" Color="{DynamicResource FlyoutBgColor}"/>
-    <SolidColorBrush x:Key="ControlBg" Color="{DynamicResource ControlBgColor}"/>
-    <SolidColorBrush x:Key="BorderDim" Color="{DynamicResource BorderDimColor}"/>
-    <SolidColorBrush x:Key="TextPrimary" Color="{DynamicResource TextPrimaryColor}"/>
-    <SolidColorBrush x:Key="TextSecondary" Color="{DynamicResource TextSecondaryColor}"/>
-    <SolidColorBrush x:Key="AccentBrush" Color="{DynamicResource AccentColor}"/>
-    <SolidColorBrush x:Key="WarnBrush" Color="{DynamicResource WarnColor}"/>
-    <SolidColorBrush x:Key="CritBrush" Color="{DynamicResource CritColor}"/>
-    <SolidColorBrush x:Key="GaugeTrack" Color="{DynamicResource GaugeTrackColor}"/>
-    <SolidColorBrush x:Key="OverlayTextPrimary" Color="{DynamicResource OverlayTextPrimaryColor}"/>
-    <SolidColorBrush x:Key="OverlayTextSecondary" Color="{DynamicResource OverlayTextSecondaryColor}"/>
+    <!-- Palette — plain pre-Apply defaults; ThemeManager.Apply replaces these entries wholesale at the top level. -->
+    <SolidColorBrush x:Key="WindowBg" Color="#FF1B1B1C"/>
+    <SolidColorBrush x:Key="TileBg" Color="#FF252528"/>
+    <SolidColorBrush x:Key="FlyoutBg" Color="#FF2B2B2F"/>
+    <SolidColorBrush x:Key="ControlBg" Color="#FF303035"/>
+    <SolidColorBrush x:Key="BorderDim" Color="#FF3A3A40"/>
+    <SolidColorBrush x:Key="TextPrimary" Color="#FFF0F0F0"/>
+    <SolidColorBrush x:Key="TextSecondary" Color="#FF9A9A9E"/>
+    <SolidColorBrush x:Key="AccentBrush" Color="#FFE68A2E"/>
+    <SolidColorBrush x:Key="WarnBrush" Color="#FFE6A23C"/>
+    <SolidColorBrush x:Key="CritBrush" Color="#FFE05A4F"/>
+    <SolidColorBrush x:Key="GaugeTrack" Color="#FF3A3A40"/>
+    <SolidColorBrush x:Key="OverlayTextPrimary" Color="{StaticResource OverlayTextPrimaryColor}"/>
+    <SolidColorBrush x:Key="OverlayTextSecondary" Color="{StaticResource OverlayTextSecondaryColor}"/>
+    <!-- Pinned overlay warn/crit: the overlay's fixed dark panel needs the Dark palette's amber/red — Light
+         preset's darkened WarnBrush (#8C5A0C, tuned for contrast on a light TileBg) reads at ~2.9:1 on the
+         overlay's dark background. Never touched by ThemeManager.Apply. -->
+    <SolidColorBrush x:Key="OverlayWarn" Color="#FFE6A23C"/>
+    <SolidColorBrush x:Key="OverlayCrit" Color="#FFE05A4F"/>
 
     <!-- Converters -->
     <BooleanToVisibilityConverter x:Key="BoolToVis"/>
