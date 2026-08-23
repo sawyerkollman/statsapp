@@ -55,7 +55,12 @@ public sealed class FanController
 
     public void SetMode(string id, FanMode mode) => Mutate(id, p => p.Mode = mode);
     public void SetManualPercent(string id, float percent) => Mutate(id, p => p.ManualPercent = Math.Clamp(percent, 0f, 100f));
-    public void SetSource(string id, string? metricId) => Mutate(id, p => p.SourceMetricId = string.IsNullOrWhiteSpace(metricId) ? null : metricId);
+    public void SetSources(string id, IEnumerable<string> metricIds) => Mutate(id, p =>
+    {
+        p.SourceMetricIds = metricIds.Where(m => !string.IsNullOrWhiteSpace(m)).Select(m => m.Trim()).Distinct().ToList();
+        p.SourceMetricId = p.SourceMetricIds.FirstOrDefault();
+    });
+    public void SetSource(string id, string? metricId) => SetSources(id, metricId is null ? Array.Empty<string>() : new[] { metricId });
     public void SetName(string id, string? name) => Mutate(id, p => p.Name = string.IsNullOrWhiteSpace(name) ? null : name.Trim());
     public void ResetCurve(string id) => Mutate(id, p => p.Points = FanCurve.DefaultPoints.ToList());
 
@@ -130,7 +135,7 @@ public sealed class FanController
                             break;
 
                         case FanMode.Curve:
-                            float? src = Value(snapshot, pref!.SourceMetricId);
+                            float? src = MaxSource(snapshot, pref!);
                             rt.SourceTemp = src;
                             if (src is float t)
                             {
@@ -150,7 +155,7 @@ public sealed class FanController
                                 if (rt.Status != FanChannelStatus.WriteFailed) rt.Status = FanChannelStatus.WaitingForSource;
                                 break; // no value yet (or holding through a short gap): keep current output
                             }
-                            if (!FanCurve.TryCreate(pref.Points, out var curve)) curve = FanCurve.Default;
+                            if (!FanCurve.TryCreate(pref!.Points, out var curve)) curve = FanCurve.Default;
                             target = curve!.Evaluate(useTemp);
                             break;
                     }
@@ -280,7 +285,8 @@ public sealed class FanController
                     ch.MinPercent, ch.MaxPercent,
                     pref?.SourceMetricId,
                     pref?.ManualPercent ?? 50f,
-                    pref?.Points ?? FanCurve.DefaultPoints));
+                    pref?.Points ?? FanCurve.DefaultPoints,
+                    (IReadOnlyList<string>?)pref?.SourceMetricIds ?? Array.Empty<string>()));
             }
             return list;
         }
@@ -294,4 +300,14 @@ public sealed class FanController
 
     private static float? Value(SensorSnapshot s, string? id) =>
         id is not null && s.Values.TryGetValue(id, out var v) && v is float f && !float.IsNaN(f) ? f : null;
+
+    /// <summary>Max over every configured source id that has a value in this snapshot; null if none do.</summary>
+    private static float? MaxSource(SensorSnapshot s, FanChannelPref pref)
+    {
+        float? best = null;
+        var ids = pref.SourceMetricIds.Count > 0 ? pref.SourceMetricIds : (pref.SourceMetricId is null ? new List<string>() : new List<string> { pref.SourceMetricId });
+        foreach (var id in ids)
+            if (Value(s, id) is float v && (best is null || v > best)) best = v;
+        return best;
+    }
 }

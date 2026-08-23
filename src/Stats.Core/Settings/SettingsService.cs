@@ -50,6 +50,10 @@ public sealed class SettingsService
             pref.ManualPercent = Math.Clamp(pref.ManualPercent, 0f, 100f);
             if (!FanCurve.TryCreate(pref.Points, out _))
                 pref.Points = FanCurve.DefaultPoints.ToList();
+            pref.SourceMetricIds ??= new();
+            if (pref.SourceMetricIds.Count == 0 && !string.IsNullOrWhiteSpace(pref.SourceMetricId))
+                pref.SourceMetricIds.Add(pref.SourceMetricId);
+            pref.SourceMetricId = pref.SourceMetricIds.FirstOrDefault();
         }
         return settings;
     }

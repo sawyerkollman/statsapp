@@ -65,9 +65,13 @@
                                                         <Button DockPanel.Dock="Right" Content="Reset curve" Command="{Binding ResetCurveCommand}" Style="{StaticResource HeaderButton}" FontSize="11"/>
                                                         <TextBlock DockPanel.Dock="Right" Text="{Binding TargetText, StringFormat='target {0}'}" Foreground="{StaticResource TextSecondary}" Margin="12,0" VerticalAlignment="Center"/>
                                                         <TextBlock DockPanel.Dock="Right" Text="{Binding SourceTempText}" Foreground="{StaticResource TextPrimary}" VerticalAlignment="Center"/>
-                                                        <TextBlock Text="Source" Foreground="{StaticResource TextSecondary}" VerticalAlignment="Center" Margin="0,0,8,0"/>
-                                                        <ComboBox ItemsSource="{Binding SourceOptions}" DisplayMemberPath="Label" SelectedValuePath="Id"
-                                                                  SelectedValue="{Binding SourceMetricId}" MinWidth="200" HorizontalAlignment="Left"/>
+                                                        <Expander Header="{Binding SourceSummary}" Foreground="{StaticResource TextPrimary}" MinWidth="220" HorizontalAlignment="Left">
+                                                            <ItemsControl ItemsSource="{Binding SourceSelections}" Margin="8,4">
+                                                                <ItemsControl.ItemTemplate><DataTemplate>
+                                                                    <CheckBox Content="{Binding Label}" IsChecked="{Binding IsSelected}" Foreground="{StaticResource TextPrimary}" Margin="0,1"/>
+                                                                </DataTemplate></ItemsControl.ItemTemplate>
+                                                            </ItemsControl>
+                                                        </Expander>
                                                     </DockPanel>
                                                     <ctl:FanCurveEditor Points="{Binding Points}" MinPercent="{Binding MinPercent}" MaxPercent="{Binding MaxPercent}"
                                                                         LiveTemp="{Binding LiveTemp}" LiveTarget="{Binding LiveTarget}" Height="150"

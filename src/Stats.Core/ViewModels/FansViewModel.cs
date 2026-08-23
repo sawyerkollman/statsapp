@@ -11,6 +11,17 @@ namespace Stats.Core.ViewModels;
 
 public sealed record FanSourceOption(string Id, string Label);
 
+/// <summary>One checkbox entry in a channel's multi-source picker; toggling pushes the whole selection to the controller.</summary>
+public sealed partial class FanSourceSelection : ObservableObject
+{
+    public FanSourceSelection(string id, string label, Action<FanSourceSelection> onChanged) { Id = id; Label = label; _onChanged = onChanged; }
+    private readonly Action<FanSourceSelection> _onChanged;
+    public string Id { get; }
+    public string Label { get; }
+    [ObservableProperty] private bool _isSelected;
+    partial void OnIsSelectedChanged(bool value) => _onChanged(this);
+}
+
 /// <summary>One controllable fan row. Setters push desired state to the controller; Refresh pulls live values.</summary>
 public sealed partial class FanChannelViewModel : ObservableObject
 {
@@ -20,6 +31,7 @@ public sealed partial class FanChannelViewModel : ObservableObject
     public FanChannelViewModel(FanChannelView v, FanController controller, IReadOnlyList<FanSourceOption> sourceOptions)
     {
         _controller = controller;
+        _refreshing = true; // SourceSelections below must not echo the just-loaded state back to the controller
         Id = v.Id;
         Device = v.Device;
         MinPercent = v.MinPercent;
@@ -29,6 +41,8 @@ public sealed partial class FanChannelViewModel : ObservableObject
         _mode = v.Mode;
         _manualPercent = v.ManualPercent;
         _sourceMetricId = v.SourceMetricId;
+        SourceSelections = new ObservableCollection<FanSourceSelection>(sourceOptions.Select(o =>
+            new FanSourceSelection(o.Id, o.Label, OnSelectionChanged) { IsSelected = v.SourceMetricIds.Contains(o.Id) }));
         Points = new ObservableCollection<FanPoint>(v.Points);
         Points.CollectionChanged += OnPointsChanged;
         Apply(v);
@@ -39,6 +53,8 @@ public sealed partial class FanChannelViewModel : ObservableObject
     public float MinPercent { get; }
     public float MaxPercent { get; }
     public IReadOnlyList<FanSourceOption> SourceOptions { get; }
+    public ObservableCollection<FanSourceSelection> SourceSelections { get; }
+    public string SourceSummary => $"Sources ({SourceSelections.Count(x => x.IsSelected)})";
     public ObservableCollection<FanPoint> Points { get; }
 
     [ObservableProperty] private string _name;
@@ -64,7 +80,15 @@ public sealed partial class FanChannelViewModel : ObservableObject
         if (!_refreshing) _controller.SetMode(Id, value);
     }
     partial void OnManualPercentChanged(float value) { if (!_refreshing) _controller.SetManualPercent(Id, value); }
-    partial void OnSourceMetricIdChanged(string? value) { if (!_refreshing) _controller.SetSource(Id, value); }
+
+    /// <summary>Called by any FanSourceSelection.IsSelected setter. SourceMetricId itself is a read-only mirror
+    /// of the first id now (set only from Apply) — the controller push happens here instead.</summary>
+    private void OnSelectionChanged(FanSourceSelection _)
+    {
+        if (_refreshing) return;
+        _controller.SetSources(Id, SourceSelections.Where(x => x.IsSelected).Select(x => x.Id));
+        OnPropertyChanged(nameof(SourceSummary));
+    }
 
     private void OnPointsChanged(object? sender, NotifyCollectionChangedEventArgs e)
     {
@@ -89,6 +113,12 @@ public sealed partial class FanChannelViewModel : ObservableObject
             if (Mode != v.Mode) Mode = v.Mode;
             if (ManualPercent != v.ManualPercent) ManualPercent = v.ManualPercent;
             if (SourceMetricId != v.SourceMetricId) SourceMetricId = v.SourceMetricId;
+            foreach (var sel in SourceSelections)
+            {
+                bool want = v.SourceMetricIds.Contains(sel.Id);
+                if (sel.IsSelected != want) sel.IsSelected = want;
+            }
+            OnPropertyChanged(nameof(SourceSummary));
             if (!Points.SequenceEqual(v.Points)) ReplacePoints(v.Points);
             RpmText = v.Rpm is float r ? $"{r:F0} RPM" : "—";
             PercentText = v.Percent is float p ? $"{p:F0} %" : "—";

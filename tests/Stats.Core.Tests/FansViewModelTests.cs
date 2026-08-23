@@ -63,7 +63,7 @@ public class FansViewModelTests
         var (vm, c, _, s) = Make();
         var ch = vm.Devices[0].Channels[0];
         ch.Mode = FanMode.Curve;
-        ch.SourceMetricId = "cpu.tctl";
+        ch.SourceSelections.Single(x => x.Id == "cpu.tctl").IsSelected = true;
         ch.ManualPercent = 66;
         ch.Name = "Front intake";
         Assert.True(ch.IsCurve); Assert.False(ch.IsManual);
@@ -92,7 +92,7 @@ public class FansViewModelTests
         var (vm, c, _, s) = Make();
         s.FanControlEnabled = true;
         var ch = vm.Devices[0].Channels[0];
-        ch.Mode = FanMode.Curve; ch.SourceMetricId = "cpu.tctl";
+        ch.Mode = FanMode.Curve; ch.SourceSelections.Single(x => x.Id == "cpu.tctl").IsSelected = true;
         c.Tick(new SensorSnapshot(new Dictionary<string, float?> { ["cpu.tctl"] = 60f, ["mb.fan1"] = 1450f }, DateTime.UtcNow), DateTime.UtcNow);
         vm.Refresh();
         Assert.Equal("1450 RPM", ch.RpmText);
@@ -134,6 +134,21 @@ public class FansViewModelTests
         vm.SetAllAutoCommand.Execute(null);
         Assert.All(c.Views(), v => Assert.Equal(FanMode.Auto, v.Mode));
         Assert.All(vm.Devices.SelectMany(d => d.Channels), ch => Assert.Equal(FanMode.Auto, ch.Mode));
+    }
+
+    [Fact]
+    public void SourceSelections_TogglingPersistsList_AndSummary()
+    {
+        var (vm, c, _, s) = Make();
+        var ch = vm.Devices[0].Channels[0];
+        Assert.Equal(3, ch.SourceSelections.Count);
+        ch.SourceSelections[0].IsSelected = true;   // cpu.tctl
+        ch.SourceSelections[2].IsSelected = true;   // cooler.liquid
+        Assert.Equal(new[] { "cpu.tctl", "cooler.liquid" }, s.FanChannels["/ite/control/0"].SourceMetricIds);
+        Assert.Equal("Sources (2)", ch.SourceSummary);
+        ch.SourceSelections[0].IsSelected = false;
+        Assert.Equal(new[] { "cooler.liquid" }, s.FanChannels["/ite/control/0"].SourceMetricIds);
+        Assert.Equal("Sources (1)", ch.SourceSummary);
     }
 
     [Fact]

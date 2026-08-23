@@ -249,4 +249,16 @@ public class SettingsServiceTests : IDisposable
         var svc = new SettingsService(_dir); svc.Save(new AppSettings { ReadMotherboardAndCoolers = false });
         Assert.False(new SettingsService(_dir).Load().ReadMotherboardAndCoolers);
     }
+
+    [Fact]
+    public void Load_MigratesSingleSourceToList()
+    {
+        var svc = new SettingsService(_dir);
+        var s = new AppSettings();
+        s.FanChannels["a"] = new FanChannelPref { SourceMetricId = "cpu.t", SourceMetricIds = new() };
+        svc.Save(s);
+        var p = new SettingsService(_dir).Load().FanChannels["a"];
+        Assert.Equal(new[] { "cpu.t" }, p.SourceMetricIds);
+        Assert.Equal("cpu.t", p.SourceMetricId);
+    }
 }

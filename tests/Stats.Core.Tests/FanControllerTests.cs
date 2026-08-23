@@ -49,6 +49,7 @@ public class FanControllerTests
             C = new FanController(B, S, () => Saves++);
         }
         public SensorSnapshot Snap(float? cpu, float? rpm = 1200) => new(new Dictionary<string, float?> { [Cpu] = cpu, [CaseRpm] = rpm }, T0);
+        public SensorSnapshot Snap2(float? cpu, float? gpu) => new(new Dictionary<string, float?> { [Cpu] = cpu, ["gpu.core"] = gpu, [CaseRpm] = 1200 }, T0);
         public void Tick(float? cpu, int secondsFromT0 = 0) => C.Tick(Snap(cpu), T0.AddSeconds(secondsFromT0));
         public IEnumerable<(string, float?)> WritesFor(string id) => B.Writes.Where(w => w.Id == id).Select(w => (w.Id, w.Pct));
     }
@@ -361,5 +362,31 @@ public class FanControllerTests
         Assert.Equal(Cpu, p.SourceMetricId);
         Assert.Equal(FanCurve.DefaultPoints, p.Points);
         Assert.Equal(5, h.Saves); // SetMode, SetManualPercent, SetSource, TrySetPoints(valid), ResetCurve
+    }
+
+    [Fact]
+    public void Curve_MultiSource_UsesMaxOfPresentValues()
+    {
+        var h = new H();
+        h.C.SetMode(Case, FanMode.Curve); h.C.SetSources(Case, new[] { Cpu, "gpu.core" }); h.C.TrySetPoints(Case, Linear);
+        h.C.Tick(h.Snap2(50, 70), T0);            // max 70 → 40 %
+        Assert.Equal((Case, 40f), h.WritesFor(Case).Last());
+        h.C.Tick(h.Snap2(null, 80), T0.AddSeconds(1)); // cpu null → gpu 80 → 50 % (slew allows +10)
+        Assert.Equal((Case, 50f), h.WritesFor(Case).Last());
+        Assert.Equal(80f, h.C.Views().Single(v => v.Id == Case).SourceTemp);
+        Assert.Equal(new[] { Cpu, "gpu.core" }, h.C.Views().Single(v => v.Id == Case).SourceMetricIds);
+    }
+
+    [Fact]
+    public void SetSources_Dedupes_DropsBlanks_KeepsFirstInLegacyField()
+    {
+        var h = new H();
+        h.C.SetSources(Case, new[] { " ", Cpu, Cpu, "gpu.core" });
+        var p = h.S.FanChannels[Case];
+        Assert.Equal(new[] { Cpu, "gpu.core" }, p.SourceMetricIds);
+        Assert.Equal(Cpu, p.SourceMetricId);
+        h.C.SetSources(Case, Array.Empty<string>());
+        Assert.Empty(h.S.FanChannels[Case].SourceMetricIds);
+        Assert.Null(h.S.FanChannels[Case].SourceMetricId);
     }
 }
