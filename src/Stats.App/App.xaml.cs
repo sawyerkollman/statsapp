@@ -41,6 +41,7 @@ public partial class App : Application
     private System.Drawing.Icon? _appIcon;
     private MetricDefinition? _trayCpuTempDef;
     private FanController? _fanController;
+    private bool _fanRecovered;
     private FansWindow? _fans;
     private FansViewModel? _fansVm;
     private IReadOnlyList<MetricDefinition> _definitions = Array.Empty<MetricDefinition>();
@@ -92,7 +93,8 @@ public partial class App : Application
         };
         if (_frameReader is not null) _frameReader.Window = TimeSpan.FromSeconds(_settings.PollIntervalSeconds);
         ApplyFrameTracing();
-        _fanController = new FanController(_composite!, _settings, SaveSettings);
+        _fanController = new FanController(_composite!, _settings, SaveSettings, new FileFanArmedMarker(settingsDir));
+        _fanRecovered = _fanController.RecoverFromUncleanShutdown(); // before _poller.Start(): single-threaded here
 
         _dashboardVm = new DashboardViewModel(_store, _settings, SaveSettings)
         {
@@ -363,6 +365,7 @@ public partial class App : Application
         if (_fans is null)
         {
             _fansVm = new FansViewModel(_fanController, _definitions, _settings);
+            if (_fanRecovered) _fansVm.RecoveryNotice = "Stats did not shut down cleanly last time — all fans were returned to device control.";
             _fans = new FansWindow { DataContext = _fansVm };
             if (_settings.FansWidth is double w) _fans.Width = w;
             if (_settings.FansHeight is double h) _fans.Height = h;

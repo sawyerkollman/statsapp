@@ -31,16 +31,19 @@ public sealed class FanController
     private readonly IFanControlBackend _backend;
     private readonly AppSettings _settings;
     private readonly Action _save;
+    private readonly IFanArmedMarker _marker;
     private readonly object _gate = new();
     private readonly Dictionary<string, Runtime> _rt = new();
     private DateTime? _firstTick;
     private bool _pendingSave;
+    private bool _armed;
 
-    public FanController(IFanControlBackend backend, AppSettings settings, Action saveSettings)
+    public FanController(IFanControlBackend backend, AppSettings settings, Action saveSettings, IFanArmedMarker? marker = null)
     {
         _backend = backend;
         _settings = settings;
         _save = saveSettings;
+        _marker = marker ?? new NullFanArmedMarker();
     }
 
     public IReadOnlyList<FanChannel> Channels => _backend.Channels;
@@ -187,6 +190,8 @@ public sealed class FanController
                 }
             }
 
+            UpdateMarkerLocked();
+
             // Rare path (the fail-safe mode flip). Saving inside _gate keeps JsonSerializer from enumerating
             // FanChannels while the UI thread's Mutate — which also takes _gate — modifies the dictionary.
             if (_pendingSave)
@@ -197,12 +202,37 @@ public sealed class FanController
         }
     }
 
+    /// <summary>Clears the fans-armed marker once no runtime channel is still under software control.
+    /// A failed release keeps a channel InSoftware, which correctly keeps the marker around.</summary>
+    private void UpdateMarkerLocked()
+    {
+        if (_armed && !_rt.Values.Any(r => r.InSoftware)) { _marker.Clear(); _armed = false; }
+    }
+
+    /// <summary>Call once at startup, before the poller starts. If the marker from a previous run exists, every
+    /// backend channel is handed back to device control (runtime state is gone) and the marker cleared.</summary>
+    public bool RecoverFromUncleanShutdown()
+    {
+        if (!_marker.Exists()) return false;
+        lock (_gate)
+        {
+            foreach (var ch in _backend.Channels)
+            {
+                try { _backend.SetAuto(ch.Id); } catch (Exception ex) { Trace.WriteLine($"[Stats.FanController] recovery SetAuto {ch.Id} failed: {ex.Message}"); }
+            }
+            _marker.Clear(); _armed = false;
+        }
+        Trace.WriteLine("[Stats.FanController] previous run did not shut down cleanly; all fans returned to device control");
+        return true;
+    }
+
     private void WriteLocked(FanChannel ch, Runtime rt, float percent, FanChannelPref pref)
     {
         // LHM's SetSoftware may switch the control into software mode before the hardware write itself fails
         // (a "partial write"), so mark InSoftware before the call — otherwise a failed write would leave the
         // channel pinned at whatever PWM it landed on while we believe it's still under device control.
         rt.InSoftware = true;
+        if (!_armed) { _marker.Set(); _armed = true; }
         try
         {
             _backend.SetPercent(ch.Id, percent);
@@ -264,6 +294,7 @@ public sealed class FanController
             {
                 if (rt.InSoftware) ReleaseLocked(id, rt, FanChannelStatus.Idle);
             }
+            UpdateMarkerLocked();
         }
     }
 

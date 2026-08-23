@@ -159,4 +159,17 @@ public class FansViewModelTests
         Assert.False(vm.HasChannels);
         Assert.Empty(vm.Devices);
     }
+
+    [Fact]
+    public void RecoveryNotice_DefaultsEmpty_DismissClearsIt()
+    {
+        var (vm, _, _, _) = Make();
+        Assert.Equal("", vm.RecoveryNotice);
+        Assert.False(vm.HasRecoveryNotice);
+        vm.RecoveryNotice = "Stats did not shut down cleanly last time — all fans were returned to device control.";
+        Assert.True(vm.HasRecoveryNotice);
+        vm.DismissRecoveryNoticeCommand.Execute(null);
+        Assert.Equal("", vm.RecoveryNotice);
+        Assert.False(vm.HasRecoveryNotice);
+    }
 }

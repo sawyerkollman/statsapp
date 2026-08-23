@@ -28,6 +28,8 @@ public class FanControllerTests
         }
     }
 
+    private sealed class FakeMarker : IFanArmedMarker { public bool Present; public int Sets, Clears; public bool Exists() => Present; public void Set() { Sets++; Present = true; } public void Clear() { Clears++; Present = false; } }
+
     private const string Case = "/lpc/it8696e/0/control/0";
     private const string Gpu = "/gpu-nvidia/0/control/1";
     private const string Pump = "/usbhid/0/fan/14";
@@ -39,6 +41,7 @@ public class FanControllerTests
     {
         public FakeBackend B = new();
         public AppSettings S = new() { FanControlEnabled = true };
+        public FakeMarker M = new();
         public int Saves;
         public FanController C;
         public H()
@@ -46,7 +49,7 @@ public class FanControllerTests
             B.Chans.Add(new FanChannel(Case, "Fan #1", "ITE IT8696E", CaseRpm, null, 0, 100));
             B.Chans.Add(new FanChannel(Gpu, "GPU Fan 1", "RTX 5070 Ti", null, null, 30, 100));
             B.Chans.Add(new FanChannel(Pump, "Pump", "MSI CoreLiquid S360", null, null, 0, 100));
-            C = new FanController(B, S, () => Saves++);
+            C = new FanController(B, S, () => Saves++, M);
         }
         public SensorSnapshot Snap(float? cpu, float? rpm = 1200) => new(new Dictionary<string, float?> { [Cpu] = cpu, [CaseRpm] = rpm }, T0);
         public SensorSnapshot Snap2(float? cpu, float? gpu) => new(new Dictionary<string, float?> { [Cpu] = cpu, ["gpu.core"] = gpu, [CaseRpm] = 1200 }, T0);
@@ -388,5 +391,37 @@ public class FanControllerTests
         h.C.SetSources(Case, Array.Empty<string>());
         Assert.Empty(h.S.FanChannels[Case].SourceMetricIds);
         Assert.Null(h.S.FanChannels[Case].SourceMetricId);
+    }
+
+    [Fact]
+    public void Marker_SetOnFirstSoftwareWrite_ClearedWhenAllReleased()
+    {
+        var h = new H();
+        h.Tick(50); Assert.Equal(0, h.M.Sets);
+        h.C.SetMode(Case, FanMode.Manual); h.C.SetManualPercent(Case, 40); h.Tick(50);
+        Assert.Equal(1, h.M.Sets); Assert.True(h.M.Present);
+        h.Tick(50); Assert.Equal(1, h.M.Sets);            // not rewritten every tick
+        h.C.RestoreAll();
+        Assert.False(h.M.Present); Assert.Equal(1, h.M.Clears);
+    }
+
+    [Fact]
+    public void Marker_KeptWhenReleaseFails()
+    {
+        var h = new H();
+        h.C.SetMode(Case, FanMode.Manual); h.C.SetManualPercent(Case, 40); h.Tick(50);
+        h.B.FailAuto = id => id == Case;
+        h.C.RestoreAll();
+        Assert.True(h.M.Present);
+    }
+
+    [Fact]
+    public void Recover_ReleasesEveryBackendChannel_AndClears()
+    {
+        var h = new H(); h.M.Present = true;
+        Assert.True(h.C.RecoverFromUncleanShutdown());
+        Assert.Equal(3, h.B.Writes.Count(w => w.Pct is null)); // Case, Gpu, Pump
+        Assert.False(h.M.Present);
+        Assert.False(h.C.RecoverFromUncleanShutdown()); // no marker now
     }
 }

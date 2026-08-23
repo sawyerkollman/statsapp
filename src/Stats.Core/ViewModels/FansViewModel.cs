@@ -190,6 +190,13 @@ public sealed partial class FansViewModel : ObservableObject
     [ObservableProperty] private bool _enabled;
     partial void OnEnabledChanged(bool value) => _controller.Enabled = value;
 
+    [ObservableProperty] private string _recoveryNotice = "";
+    public bool HasRecoveryNotice => RecoveryNotice.Length > 0;
+    partial void OnRecoveryNoticeChanged(string value) => OnPropertyChanged(nameof(HasRecoveryNotice));
+
+    [RelayCommand]
+    private void DismissRecoveryNotice() => RecoveryNotice = "";
+
     [RelayCommand]
     private void SetAllAuto()
     {
