@@ -270,10 +270,20 @@
                                     <ItemsControl.ItemTemplate>
                                         <DataTemplate>
                                             <Button Command="{Binding DataContext.SetAccentCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
-                                                    CommandParameter="{Binding}"
+                                                    CommandParameter="{Binding}" ToolTip="{Binding}"
                                                     Width="22" Height="22" Margin="0,0,6,6" Padding="0" BorderThickness="1"
                                                     BorderBrush="{StaticResource BorderDim}"
-                                                    Background="{Binding Converter={StaticResource HexToBrush}}" Cursor="Hand"/>
+                                                    Background="{Binding Converter={StaticResource HexToBrush}}" Cursor="Hand">
+                                                <!-- Border-only template: the system ControlTemplate repaints a hover-blue highlight
+                                                     over the swatch colour, defeating the point of a colour picker. -->
+                                                <Button.Template>
+                                                    <ControlTemplate TargetType="Button">
+                                                        <Border Background="{TemplateBinding Background}"
+                                                                BorderBrush="{TemplateBinding BorderBrush}"
+                                                                BorderThickness="{TemplateBinding BorderThickness}"/>
+                                                    </ControlTemplate>
+                                                </Button.Template>
+                                            </Button>
                                         </DataTemplate>
                                     </ItemsControl.ItemTemplate>
                                 </ItemsControl>

@@ -19,9 +19,9 @@
                                 <TextBlock Text="{Binding Index, StringFormat='{}#{0}'}" FontSize="9"
                                            Foreground="{StaticResource TextSecondary}" HorizontalAlignment="Center"/>
                                 <TextBlock Text="{Binding LoadText}" FontSize="13" FontWeight="SemiBold"
-                                           Foreground="{StaticResource TextPrimary}" HorizontalAlignment="Center"/>
+                                           Foreground="{Binding Load01, Converter={StaticResource HeatToForeground}}" HorizontalAlignment="Center"/>
                                 <TextBlock Text="{Binding ClockText}" FontSize="9"
-                                           Foreground="{StaticResource TextPrimary}" HorizontalAlignment="Center"/>
+                                           Foreground="{Binding Load01, Converter={StaticResource HeatToForeground}}" HorizontalAlignment="Center"/>
                                 <TextBlock Text="{Binding TempText}" FontSize="9"
                                            Foreground="{Binding Severity, Converter={StaticResource SeverityToBrush}}"
                                            HorizontalAlignment="Center"/>

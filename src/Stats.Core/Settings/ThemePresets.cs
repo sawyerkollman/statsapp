@@ -5,7 +5,7 @@ namespace Stats.Core.Settings;
 /// <summary>Pure, WPF-free theme preset data: preset names, accent swatch hex list, and hex validation/sanitation
 /// used by <see cref="SettingsService"/> at load. The actual palette colour values (System.Windows.Media.Color)
 /// live in Stats.App's ThemeManager — Stats.Core stays WPF-free (see CLAUDE.md).</summary>
-public static class ThemePresets
+public static partial class ThemePresets
 {
     public const string Default = "Dark Amber";
 
@@ -27,7 +27,10 @@ public static class ThemePresets
 
     /// <summary>Exactly #RRGGBB, case-insensitive.</summary>
     public static bool IsValidHex(string? hex) =>
-        hex is not null && Regex.IsMatch(hex, "^#[0-9A-Fa-f]{6}$");
+        hex is not null && HexPattern().IsMatch(hex);
+
+    [GeneratedRegex("^#[0-9A-Fa-f]{6}$")]
+    private static partial Regex HexPattern();
 
     /// <summary>Invalid input sanitizes to null (= "use the preset's accent").</summary>
     public static string? SanitizeAccentHex(string? hex) => IsValidHex(hex) ? hex!.ToUpperInvariant() : null;

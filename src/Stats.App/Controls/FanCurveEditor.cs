@@ -62,7 +62,9 @@ public sealed class FanCurveEditor : FrameworkElement
         MinHeight = 120;
         MinWidth = 200;
         ToolTip = "Drag points · double-click to add · right-click to remove";
-        Loaded += (_, _) => { ThemeManager.Changed += OnThemeChanged; SyncFloorBrush(); };
+        // Unloaded isn't raised on app shutdown, and Loaded can fire more than once for the same instance (e.g.
+        // re-parenting without an intervening unload) — unsubscribe first so the subscription stays idempotent.
+        Loaded += (_, _) => { ThemeManager.Changed -= OnThemeChanged; ThemeManager.Changed += OnThemeChanged; SyncFloorBrush(); };
         Unloaded += (_, _) => ThemeManager.Changed -= OnThemeChanged;
     }
 
@@ -76,9 +78,11 @@ public sealed class FanCurveEditor : FrameworkElement
 
     private void SyncFloorBrush()
     {
-        if (FloorBrush is not SolidColorBrush b) return;
+        // Assign a new brush rather than mutating one in place: the DP's default value is frozen by WPF at
+        // registration, and FloorBrush is never bound from XAML, so on first use this getter would otherwise
+        // always be that frozen default — mutating it throws.
         var crit = ThemeManager.Get("CritBrush");
-        b.Color = Color.FromArgb(0x40, crit.R, crit.G, crit.B);
+        FloorBrush = new SolidColorBrush(Color.FromArgb(0x40, crit.R, crit.G, crit.B));
     }
 
     private static void OnPointsChanged(DependencyObject d, DependencyPropertyChangedEventArgs e)

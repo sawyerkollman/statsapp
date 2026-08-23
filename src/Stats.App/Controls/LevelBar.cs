@@ -25,7 +25,9 @@ public sealed class LevelBar : FrameworkElement
 
     public LevelBar()
     {
-        Loaded += (_, _) => ThemeManager.Changed += OnThemeChanged;
+        // Unloaded isn't raised on app shutdown, and Loaded can fire more than once for the same instance —
+        // unsubscribe first so the subscription stays idempotent.
+        Loaded += (_, _) => { ThemeManager.Changed -= OnThemeChanged; ThemeManager.Changed += OnThemeChanged; };
         Unloaded += (_, _) => ThemeManager.Changed -= OnThemeChanged;
     }
 

@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Windows;
 using System.Windows.Data;
 using System.Windows.Media;
 using Stats.App.Helpers;
@@ -40,4 +41,31 @@ public sealed class HeatToBrushConverter : IValueConverter
         (byte)(a.R + (b.R - a.R) * t), (byte)(a.G + (b.G - a.G) * t), (byte)(a.B + (b.B - a.B) * t));
 
     public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture) => throw new NotSupportedException();
+}
+
+/// <summary>Paired with <see cref="HeatToBrushConverter"/>: same 0..1 load input, but returns the cell's text
+/// foreground. TextPrimary (theme colour) contrasts poorly against the hot end of the heat gradient — it flips
+/// to near-black under the Light preset, which lands on the same red/orange hot-end tile background — so cells
+/// at or above the hot threshold get a fixed near-white foreground instead, readable against CritBrush in every
+/// preset. Below the threshold the tile background is close to ControlBg/AccentBrush, where TextPrimary already
+/// reads fine.</summary>
+public sealed class HeatToForegroundConverter : IValueConverter
+{
+    private const double HotForegroundThreshold = 0.82;
+    private static readonly SolidColorBrush HotForeground = MakeFrozen(Color.FromRgb(0xF5, 0xF5, 0xF5));
+
+    public object Convert(object value, Type targetType, object parameter, CultureInfo culture)
+    {
+        double t = value is float f ? Math.Clamp(f, 0f, 1f) : 0.0;
+        return t >= HotForegroundThreshold ? HotForeground : Application.Current.Resources["TextPrimary"];
+    }
+
+    public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture) => throw new NotSupportedException();
+
+    private static SolidColorBrush MakeFrozen(Color c)
+    {
+        var b = new SolidColorBrush(c);
+        b.Freeze();
+        return b;
+    }
 }

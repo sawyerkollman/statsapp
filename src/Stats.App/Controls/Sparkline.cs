@@ -28,22 +28,53 @@ public sealed class Sparkline : FrameworkElement
         nameof(ShowGuides), typeof(bool), typeof(Sparkline),
         new FrameworkPropertyMetadata(true, FrameworkPropertyMetadataOptions.AffectsRender));
 
-    private static readonly Pen GuidePen = CreateGuidePen();
+    // Guide lines and the hover crosshair/dot are drawn fresh every OnRender and were a static, always-white
+    // translucent overlay — invisible against the Light preset's white TileBg. They're now instance fields
+    // derived from the theme's TextPrimary colour (low alpha for the guides/crosshair, full for the hover dot)
+    // and rebuilt whenever the theme changes.
+    private Pen _guidePen;
+    private Pen _hoverLinePen;
+    private Brush _hoverDotBrush;
     private int _hoverIndex = -1;
 
     public Sparkline()
     {
         ToolTipService.SetInitialShowDelay(this, 0);
         ToolTipService.SetShowDuration(this, 30000);
-        Loaded += (_, _) => ThemeManager.Changed += OnThemeChanged;
+        (_guidePen, _hoverLinePen, _hoverDotBrush) = BuildThemeBrushes();
+        // Unloaded isn't raised on app shutdown, and Loaded can fire more than once for the same instance —
+        // unsubscribe first so the subscription stays idempotent.
+        Loaded += (_, _) => { ThemeManager.Changed -= OnThemeChanged; ThemeManager.Changed += OnThemeChanged; OnThemeChanged(); };
         Unloaded += (_, _) => ThemeManager.Changed -= OnThemeChanged;
     }
 
     // Stroke/Fill are already routed through shared theme brushes via SeverityToBrushConverter, so WPF's own
-    // Freezable-change notification repaints them automatically; this keeps the guide/hover overlays (drawn
-    // fresh every OnRender) in step with a theme switch too, and matches the pattern used by the other three
-    // custom-drawn controls.
-    private void OnThemeChanged() => InvalidateVisual();
+    // Freezable-change notification repaints them automatically; the guide/hover overlays below are plain (not
+    // theme-resource-backed) Pens/Brushes drawn fresh every OnRender, so they need an explicit rebuild here to
+    // stay in step with a theme switch.
+    private void OnThemeChanged()
+    {
+        (_guidePen, _hoverLinePen, _hoverDotBrush) = BuildThemeBrushes();
+        InvalidateVisual();
+    }
+
+    private static (Pen Guide, Pen HoverLine, Brush HoverDot) BuildThemeBrushes()
+    {
+        var c = ThemeManager.Get("TextPrimary");
+        var guide = new Pen(Frozen(Color.FromArgb(0x30, c.R, c.G, c.B)), 0.75) { DashStyle = DashStyles.Dash };
+        guide.Freeze();
+        var hoverLine = new Pen(Frozen(Color.FromArgb(0x60, c.R, c.G, c.B)), 1);
+        hoverLine.Freeze();
+        Brush hoverDot = Frozen(c);
+        return (guide, hoverLine, hoverDot);
+    }
+
+    private static SolidColorBrush Frozen(Color c)
+    {
+        var b = new SolidColorBrush(c);
+        b.Freeze();
+        return b;
+    }
 
     public IReadOnlyList<float>? Values { get => (IReadOnlyList<float>?)GetValue(ValuesProperty); set => SetValue(ValuesProperty, value); }
     public Brush Stroke { get => (Brush)GetValue(StrokeProperty); set => SetValue(StrokeProperty, value); }
@@ -104,8 +135,8 @@ public sealed class Sparkline : FrameworkElement
         // guides
         if (ShowGuides && max - min > 1e-6f)
         {
-            dc.DrawLine(GuidePen, new Point(0, Y(max)), new Point(w, Y(max)));
-            dc.DrawLine(GuidePen, new Point(0, Y(min)), new Point(w, Y(min)));
+            dc.DrawLine(_guidePen, new Point(0, Y(max)), new Point(w, Y(max)));
+            dc.DrawLine(_guidePen, new Point(0, Y(min)), new Point(w, Y(min)));
         }
 
         // line
@@ -127,8 +158,8 @@ public sealed class Sparkline : FrameworkElement
         if (_hoverIndex >= 0 && _hoverIndex < values.Count)
         {
             double hx = X(_hoverIndex);
-            dc.DrawLine(new Pen(new SolidColorBrush(Color.FromArgb(0x60, 0xFF, 0xFF, 0xFF)), 1), new Point(hx, 0), new Point(hx, h));
-            dc.DrawEllipse(Brushes.White, null, new Point(hx, Y(values[_hoverIndex])), 3, 3);
+            dc.DrawLine(_hoverLinePen, new Point(hx, 0), new Point(hx, h));
+            dc.DrawEllipse(_hoverDotBrush, null, new Point(hx, Y(values[_hoverIndex])), 3, 3);
         }
     }
 
@@ -139,12 +170,5 @@ public sealed class Sparkline : FrameworkElement
             Color.FromArgb(0x55, c.R, c.G, c.B), Color.FromArgb(0x00, c.R, c.G, c.B), 90);
         b.Freeze();
         return b;
-    }
-
-    private static Pen CreateGuidePen()
-    {
-        var p = new Pen(new SolidColorBrush(Color.FromArgb(0x30, 0xFF, 0xFF, 0xFF)), 0.75) { DashStyle = DashStyles.Dash };
-        p.Freeze();
-        return p;
     }
 }
