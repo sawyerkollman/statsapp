@@ -165,20 +165,26 @@ public sealed partial class FansViewModel : ObservableObject
     private readonly GameModeSwitcher? _switcher;
     private readonly Dictionary<string, FanChannelViewModel> _byId = new();
     private readonly IReadOnlyList<FanSourceOption> _celsiusOptions;
+    private readonly bool _hardwareAtStartup;
     private DateTime _lastConflictCheck = DateTime.MinValue;
     private bool _refreshingProfiles;
+    private bool _clearingProfileRefs;
     public static readonly TimeSpan ConflictCheckEvery = TimeSpan.FromSeconds(5);
 
     /// <summary>Raised after a Game mode setting changes (enable toggle or either profile pick) so the host
     /// can re-apply frame tracing (game mode keeps the FPS reader running while enabled).</summary>
     public event Action? GameModeChanged;
 
+    /// <param name="hardwareEnabledAtStartup">The value of <see cref="AppSettings.ReadMotherboardAndCoolers"/> the
+    /// running hardware reader was actually built with. The setting only takes effect on restart, so the live
+    /// value would tell a user who just changed it exactly the wrong thing. Defaults to the live value.</param>
     public FansViewModel(FanController controller, IReadOnlyList<MetricDefinition> definitions, AppSettings settings,
         Func<IEnumerable<string>>? processNames = null, Func<DateTime>? clock = null, Action? saveSettings = null,
-        GameModeSwitcher? switcher = null)
+        GameModeSwitcher? switcher = null, bool? hardwareEnabledAtStartup = null)
     {
         _controller = controller;
         _settings = settings;
+        _hardwareAtStartup = hardwareEnabledAtStartup ?? settings.ReadMotherboardAndCoolers;
         _saveSettings = saveSettings ?? (() => { });
         _processNames = processNames ?? ConflictingFanSoftware.RunningProcessNames;
         _clock = clock ?? (() => DateTime.UtcNow);
@@ -197,7 +203,7 @@ public sealed partial class FansViewModel : ObservableObject
             _byId[v.Id] = ch;
         }
         _enabled = controller.Enabled;
-        foreach (var p in settings.FanProfiles) ProfileNames.Add(p.Name);
+        foreach (var name in controller.ProfileNames()) ProfileNames.Add(name);
         _gameModeEnabled = settings.GameModeEnabled;
         _gamingProfile = settings.GameModeGamingProfile;
         _desktopProfile = settings.GameModeDesktopProfile;
@@ -206,9 +212,16 @@ public sealed partial class FansViewModel : ObservableObject
 
     public ObservableCollection<FanDeviceGroupViewModel> Devices { get; } = new();
     public bool HasChannels => _byId.Count > 0;
-    public string UnavailableText => _settings.ReadMotherboardAndCoolers
-        ? "Fan control unavailable — the hardware reader is not active (degraded mode) or no controllable fans were found."
-        : "Fan control unavailable — enable “Read motherboard fan headers and USB coolers” in Settings and restart Stats.";
+    /// <summary>Why there are no controllable fans, judged against the setting the reader was BUILT with — a user
+    /// who just ticked the box needs "restart", not "enable it".</summary>
+    public string UnavailableText =>
+        !_hardwareAtStartup && _settings.ReadMotherboardAndCoolers
+            ? "Fan control unavailable — restart Stats to apply the hardware setting you changed."
+        : !_hardwareAtStartup
+            ? "Fan control unavailable — enable “Read motherboard fan headers and USB coolers” in Settings and restart Stats."
+        : _settings.ReadMotherboardAndCoolers
+            ? "Fan control unavailable — the hardware reader is not active (degraded mode) or no controllable fans were found."
+            : "Fan control unavailable — restart Stats to apply the hardware setting you changed.";
 
     [ObservableProperty] private bool _enabled;
     partial void OnEnabledChanged(bool value) => _controller.Enabled = value;
@@ -244,6 +257,7 @@ public sealed partial class FansViewModel : ObservableObject
     [ObservableProperty] private string? _gamingProfile;
     partial void OnGamingProfileChanged(string? value)
     {
+        if (IsComboBoxCoercion(value, _settings.GameModeGamingProfile)) return;
         _settings.GameModeGamingProfile = value;
         _saveSettings();
         GameModeChanged?.Invoke();
@@ -252,10 +266,18 @@ public sealed partial class FansViewModel : ObservableObject
     [ObservableProperty] private string? _desktopProfile;
     partial void OnDesktopProfileChanged(string? value)
     {
+        if (IsComboBoxCoercion(value, _settings.GameModeDesktopProfile)) return;
         _settings.GameModeDesktopProfile = value;
         _saveSettings();
         GameModeChanged?.Invoke();
     }
+
+    /// <summary>A ComboBox cannot select an item that is not in its ItemsSource, so WPF coerces SelectedItem to
+    /// null and the two-way binding pushes that null back here. Persisting it would silently erase a game-mode
+    /// pick that merely refers to a profile this settings file no longer has — so a null that lands on a
+    /// configured-but-missing name is dropped. Deliberate clears (DeleteProfile) set _clearingProfileRefs.</summary>
+    private bool IsComboBoxCoercion(string? value, string? configured) =>
+        !_clearingProfileRefs && value is null && configured is string kept && !ProfileNames.Contains(kept);
 
     [ObservableProperty] private string _gameModeStatus = "";
 
@@ -281,28 +303,37 @@ public sealed partial class FansViewModel : ObservableObject
     {
         if (string.IsNullOrWhiteSpace(name)) return;
         name = name.Trim();
-        var prof = _controller.SnapshotProfile(name);
-        int idx = _settings.FanProfiles.FindIndex(p => p.Name == name);
-        if (idx >= 0) _settings.FanProfiles[idx] = prof;
-        else { _settings.FanProfiles.Add(prof); ProfileNames.Add(name); }
+        bool isNew = !ProfileNames.Contains(name);
+        _controller.AddOrReplaceProfile(_controller.SnapshotProfile(name)); // under the controller's gate
+        if (isNew) ProfileNames.Add(name);
         _controller.SetActiveProfile(name); // saves settings.FanProfiles + ActiveFanProfile together
+        SetSelectedProfileQuietly(name);
         SyncProfileState();
     }
 
     [RelayCommand]
     private void LoadProfile(string name)
     {
-        var prof = _settings.FanProfiles.FirstOrDefault(p => p.Name == name);
-        if (prof is null) return;
-        _controller.ApplyProfile(prof);
+        if (!_controller.TryGetProfile(name, out var prof)) return;
+        _controller.ApplyProfile(prof!);
+        SetSelectedProfileQuietly(name);
         Refresh();
     }
 
     [RelayCommand]
     private void DeleteProfile(string name)
     {
-        if (_settings.FanProfiles.RemoveAll(p => p.Name == name) == 0) return;
+        if (!_controller.RemoveProfile(name)) return;
         ProfileNames.Remove(name);
+        // The game-mode picks are ordinary settings, not ComboBox state: erase them here, deliberately, rather
+        // than leaving a dangling name for the ComboBox to coerce away behind the user's back.
+        _clearingProfileRefs = true;
+        try
+        {
+            if (GamingProfile == name) GamingProfile = null;
+            if (DesktopProfile == name) DesktopProfile = null;
+        }
+        finally { _clearingProfileRefs = false; }
         if (_controller.ActiveProfile == name) _controller.SetActiveProfile(null);
         else _saveSettings();
         SyncProfileState();
@@ -317,12 +348,8 @@ public sealed partial class FansViewModel : ObservableObject
         string? gpuId = PreferredCelsiusId(
             id => id.StartsWith("gpu.", StringComparison.Ordinal),
             id => id.Contains("core", StringComparison.OrdinalIgnoreCase));
-        foreach (var prof in FanController.CreateDefaultProfiles(_controller.Channels, cpuId, gpuId))
-        {
-            if (_settings.FanProfiles.Any(p => p.Name == prof.Name)) continue;
-            _settings.FanProfiles.Add(prof);
+        foreach (var prof in _controller.AddProfilesIfMissing(FanController.CreateDefaultProfiles(_controller.Channels, cpuId, gpuId)))
             ProfileNames.Add(prof.Name);
-        }
         _saveSettings();
     }
 
@@ -334,13 +361,22 @@ public sealed partial class FansViewModel : ObservableObject
         return (candidates.FirstOrDefault(o => preferred(o.Id)) ?? candidates.FirstOrDefault())?.Id;
     }
 
-    /// <summary>Refreshes ActiveProfileName/SelectedProfileName bindings after a save/load/delete. The guard keeps
-    /// the SelectedProfileName setter from re-triggering LoadProfile.</summary>
+    /// <summary>Refreshes the ActiveProfileName binding. The ComboBox selection is the user's, NOT a mirror of the
+    /// applied profile: any channel edit clears ActiveFanProfile ("Custom"), and forcing the selection to follow
+    /// would blank the dropdown a second after every edit — leaving Delete (bound to SelectedProfileName) inert
+    /// and re-picking the profile the only way back, which would throw the edit away. Only a selection naming a
+    /// profile that no longer exists is cleared.</summary>
     private void SyncProfileState()
     {
         OnPropertyChanged(nameof(ActiveProfileName));
+        if (SelectedProfileName is not null && !ProfileNames.Contains(SelectedProfileName)) SetSelectedProfileQuietly(null);
+    }
+
+    /// <summary>Set the ComboBox selection without the setter re-entering LoadProfile.</summary>
+    private void SetSelectedProfileQuietly(string? name)
+    {
         _refreshingProfiles = true;
-        try { SelectedProfileName = _controller.ActiveProfile; }
+        try { SelectedProfileName = name; }
         finally { _refreshingProfiles = false; }
     }
 

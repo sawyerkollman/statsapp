@@ -32,7 +32,9 @@ public sealed class FanController
     private readonly AppSettings _settings;
     private readonly Action _save;
     private readonly IFanArmedMarker _marker;
-    private readonly object _gate = new();
+    /// <summary>The settings graph's own lock (<see cref="AppSettings.SyncRoot"/>): whoever serializes the
+    /// settings holds it too, so a poll-thread channel/profile change can never race a save.</summary>
+    private readonly object _gate;
     private readonly Dictionary<string, Runtime> _rt = new();
     private DateTime? _firstTick;
     private bool _pendingSave;
@@ -42,6 +44,7 @@ public sealed class FanController
     {
         _backend = backend;
         _settings = settings;
+        _gate = settings.SyncRoot;
         _save = saveSettings;
         _marker = marker ?? new NullFanArmedMarker();
     }
@@ -109,8 +112,12 @@ public sealed class FanController
     }
 
     /// <summary>Replace every channel's desired state with the profile's (channels absent from the profile → Auto,
-    /// names preserved). deferSave: poll-thread callers — the save runs at the end of the next Tick under _gate.</summary>
-    public void ApplyProfile(FanProfile profile, bool deferSave = false)
+    /// names preserved). deferSave: poll-thread callers — the save runs at the end of the next Tick under _gate.
+    /// resetFailures: only a user-initiated switch counts as "the user acted on this channel" and clears the
+    /// write fail-safe (CLAUDE.md rule 6). An automatic switch (game mode) passes false so a control that is
+    /// failing mid-write stays parked in Auto with its WriteFailed status, costing one probe write per
+    /// transition instead of three. LastSourceUsed is cleared either way — the curve must re-evaluate at once.</summary>
+    public void ApplyProfile(FanProfile profile, bool deferSave = false, bool resetFailures = true)
     {
         lock (_gate)
         {
@@ -121,7 +128,11 @@ public sealed class FanController
                 if (!_settings.FanChannels.ContainsKey(ch.Id)) _settings.FanChannels[ch.Id] = new FanChannelPref();
             foreach (var (id, name) in names)
                 if (_settings.FanChannels.TryGetValue(id, out var p) && name is not null) p.Name = name;
-            foreach (var rt in _rt.Values) { rt.LastSourceUsed = null; rt.Failures = 0; rt.FailedOver = false; }
+            foreach (var rt in _rt.Values)
+            {
+                rt.LastSourceUsed = null;
+                if (resetFailures) { rt.Failures = 0; rt.FailedOver = false; }
+            }
             _settings.ActiveFanProfile = profile.Name;
             if (deferSave) { _pendingSave = true; return; }
         }
@@ -134,6 +145,56 @@ public sealed class FanController
     {
         lock (_gate) { _settings.ActiveFanProfile = name; }
         _save();
+    }
+
+    // ---- saved profiles (the list itself lives in settings; every access takes _gate because the poll thread
+    // reads it inside GameModeSwitcher.Apply while the UI thread adds and removes entries) ----
+
+    public bool TryGetProfile(string name, out FanProfile? profile)
+    {
+        lock (_gate)
+        {
+            profile = _settings.FanProfiles.FirstOrDefault(p => p.Name == name);
+            return profile is not null;
+        }
+    }
+
+    public IReadOnlyList<string> ProfileNames()
+    {
+        lock (_gate) return _settings.FanProfiles.Select(p => p.Name).ToList();
+    }
+
+    /// <summary>Store <paramref name="profile"/> under its name, replacing any profile with the same name.</summary>
+    public void AddOrReplaceProfile(FanProfile profile)
+    {
+        lock (_gate)
+        {
+            int idx = _settings.FanProfiles.FindIndex(p => p.Name == profile.Name);
+            if (idx >= 0) _settings.FanProfiles[idx] = profile;
+            else _settings.FanProfiles.Add(profile);
+        }
+    }
+
+    /// <summary>Returns false when no profile of that name existed.</summary>
+    public bool RemoveProfile(string name)
+    {
+        lock (_gate) return _settings.FanProfiles.RemoveAll(p => p.Name == name) > 0;
+    }
+
+    /// <summary>Adds the profiles whose names are not taken yet; returns the ones actually added, in order.</summary>
+    public IReadOnlyList<FanProfile> AddProfilesIfMissing(IEnumerable<FanProfile> profiles)
+    {
+        var added = new List<FanProfile>();
+        lock (_gate)
+        {
+            foreach (var prof in profiles)
+            {
+                if (_settings.FanProfiles.Any(p => p.Name == prof.Name)) continue;
+                _settings.FanProfiles.Add(prof);
+                added.Add(prof);
+            }
+        }
+        return added;
     }
 
     public static IReadOnlyList<FanProfile> CreateDefaultProfiles(IReadOnlyList<FanChannel> channels, string? cpuTempId, string? gpuTempId)
@@ -266,8 +327,9 @@ public sealed class FanController
 
             UpdateMarkerLocked();
 
-            // Rare path (the fail-safe mode flip). Saving inside _gate keeps JsonSerializer from enumerating
-            // FanChannels while the UI thread's Mutate — which also takes _gate — modifies the dictionary.
+            // Poll-thread save: the write fail-safe mode flip, or a game-mode profile switch. Kept inside _gate
+            // (which IS AppSettings.SyncRoot) so even a save callback that serializes straight from this thread
+            // cannot enumerate FanChannels while the UI thread's Mutate modifies it.
             if (_pendingSave)
             {
                 _pendingSave = false;
@@ -283,25 +345,43 @@ public sealed class FanController
         if (_armed && !_rt.Values.Any(r => r.InSoftware)) { _marker.Clear(); _armed = false; }
     }
 
+    /// <inheritdoc cref="RecoverFromUncleanShutdown(out bool)"/>
+    public bool RecoverFromUncleanShutdown() => RecoverFromUncleanShutdown(out _);
+
     /// <summary>Call once at startup, before the poller starts. If the marker from a previous run exists, every
-    /// backend channel is handed back to device control (runtime state is gone) and the marker cleared. If the
-    /// backend currently exposes no channels (e.g. LHM failed to open and the app fell back to perf counters),
-    /// the marker is left in place so a later, healthy launch still performs the recovery — releasing nothing now
-    /// but reporting success would be a false "fans returned to device control" claim.</summary>
-    public bool RecoverFromUncleanShutdown()
+    /// backend channel is handed back to device control (runtime state is gone). If the backend currently exposes
+    /// no channels (e.g. LHM failed to open and the app fell back to perf counters), the marker is left in place
+    /// so a later, healthy launch still performs the recovery — releasing nothing now but reporting success would
+    /// be a false "fans returned to device control" claim. A channel whose SetAuto throws is still pinned at the
+    /// PWM the crashed run left it at, so it is marked InSoftware (the next Tick/RestoreAll retries the release
+    /// through ReleaseLocked) and the marker is kept: <see cref="UpdateMarkerLocked"/> clears it only once every
+    /// channel is genuinely released. <paramref name="partial"/> reports that case so the caller can say so.</summary>
+    public bool RecoverFromUncleanShutdown(out bool partial)
     {
+        partial = false;
         if (!_marker.Exists()) return false;
         lock (_gate)
         {
             if (_backend.Channels.Count == 0) return false;
 
+            bool allReleased = true;
             foreach (var ch in _backend.Channels)
             {
-                try { _backend.SetAuto(ch.Id); } catch (Exception ex) { Trace.WriteLine($"[Stats.FanController] recovery SetAuto {ch.Id} failed: {ex.Message}"); }
+                try { _backend.SetAuto(ch.Id); }
+                catch (Exception ex)
+                {
+                    allReleased = false;
+                    Rt(ch.Id).InSoftware = true; // still driven: keep it tracked so the release is retried
+                    Trace.WriteLine($"[Stats.FanController] recovery SetAuto {ch.Id} failed: {ex.Message}");
+                }
             }
-            _marker.Clear(); _armed = false;
+            if (allReleased) { _marker.Clear(); _armed = false; }
+            else _armed = true;
+            partial = !allReleased;
         }
-        Trace.WriteLine("[Stats.FanController] previous run did not shut down cleanly; all fans returned to device control");
+        Trace.WriteLine(partial
+            ? "[Stats.FanController] previous run did not shut down cleanly; some fans could not be returned to device control"
+            : "[Stats.FanController] previous run did not shut down cleanly; all fans returned to device control");
         return true;
     }
 
@@ -311,7 +391,9 @@ public sealed class FanController
         // (a "partial write"), so mark InSoftware before the call — otherwise a failed write would leave the
         // channel pinned at whatever PWM it landed on while we believe it's still under device control.
         rt.InSoftware = true;
-        if (!_armed) { _marker.Set(); _armed = true; }
+        // Only latch _armed once the marker is actually on disk — a transient failure (AV lock, disk full) must
+        // not disable crash recovery for the rest of the session; the next write retries the marker.
+        if (!_armed && _marker.Set()) _armed = true;
         try
         {
             _backend.SetPercent(ch.Id, percent);

@@ -211,6 +211,28 @@ public class DashboardViewModelTests
     }
 
     [Fact]
+    public void SetTileThresholds_InvertedMetric_AcceptsWarnAboveCrit()
+    {
+        // For FPS the accepted ordering flips: 60/30 is the valid pair and the "natural" 30/60 is the one that
+        // gets rejected — which, in this method, means the override is REMOVED. The tile dialog's example text
+        // has to match this or a user typing the obvious thing silently loses their thresholds.
+        var store = new MetricStore(new List<MetricDefinition>
+        {
+            new("fps.avg", "FPS", MetricGroup.Game, "Foreground app", "fps", "F0"),
+        });
+        var s = new AppSettings { DashboardMetrics = { "fps.avg" }, ThresholdRules = ThresholdDefaults.Rules() };
+        var vm = new DashboardViewModel(store, s, () => { });
+
+        vm.SetTileThresholds("fps.avg", 60f, 30f);
+        Assert.Equal(60f, s.ThresholdOverrides["fps.avg"].Warn);
+        Assert.Equal(30f, s.ThresholdOverrides["fps.avg"].Crit);
+        Assert.True(s.ThresholdOverrides["fps.avg"].LowerIsWorse);   // copied from the group rule
+
+        vm.SetTileThresholds("fps.avg", 30f, 60f);
+        Assert.False(s.ThresholdOverrides.ContainsKey("fps.avg"));
+    }
+
+    [Fact]
     public void RenameTile_RaisesDashboardMetricsChanged()
     {
         var (vm, _, _, _) = Make("cpu.temp");

@@ -289,4 +289,98 @@ public class SettingsServiceTests : IDisposable
         Assert.NotNull(loaded2.FanProfiles);
         Assert.Empty(loaded2.FanProfiles);
     }
+
+    // System.Text.Json accepts a null element as happily as a null collection, and every one of these used to
+    // reach the sanitation block — which runs before any window exists and would kill Stats on every launch.
+    [Fact]
+    public void Load_NullProfileElement_IsDropped()
+    {
+        Write("""{ "FanProfiles": [null] }""");
+        Assert.Empty(new SettingsService(_dir).Load().FanProfiles);
+    }
+
+    [Fact]
+    public void Load_NullProfileName_BecomesEmptyString()
+    {
+        Write("""{ "FanProfiles": [ { "Name": null } ] }""");
+        Assert.Equal("", new SettingsService(_dir).Load().FanProfiles.Single().Name);
+    }
+
+    [Fact]
+    public void Load_NullFanChannelEntry_IsDropped()
+    {
+        Write("""{ "FanChannels": { "a": null }, "FanProfiles": [ { "Name": "P", "Channels": { "b": null } } ] }""");
+        var loaded = new SettingsService(_dir).Load();
+        Assert.Empty(loaded.FanChannels);
+        Assert.Empty(loaded.FanProfiles.Single().Channels);
+        Assert.Equal(1.0, loaded.PollIntervalSeconds); // and the rest of the file is still usable
+    }
+
+    [Fact]
+    public void Load_V13File_MigratesSourcesAndGainsV14Defaults_WithoutTouchingExistingRules()
+    {
+        Write("""
+        {
+          "PollIntervalSeconds": 1,
+          "DefaultsApplied": true,
+          "DashboardMetrics": [ "cpu.tctl" ],
+          "ThresholdRules": [
+            { "Group": "Cpu", "Unit": "°C", "Warn": 85, "Crit": 92 },
+            { "Group": "Gpu", "Unit": "°C", "Warn": 80, "Crit": 88 },
+            { "Group": "Cpu", "Unit": "%", "Warn": 90, "Crit": 98 },
+            { "Group": "Gpu", "Unit": "%", "Warn": 90, "Crit": 98 }
+          ],
+          "FanControlEnabled": true,
+          "FanChannels": {
+            "/lpc/it8696e/0/control/0": { "Mode": "Curve", "ManualPercent": 40, "SourceMetricId": "cpu.t" }
+          }
+        }
+        """);
+        var loaded = new SettingsService(_dir).Load();
+
+        var pref = loaded.FanChannels["/lpc/it8696e/0/control/0"];
+        Assert.Equal(new[] { "cpu.t" }, pref.SourceMetricIds);   // §8 migration
+        Assert.Equal("cpu.t", pref.SourceMetricId);
+        Assert.Equal(FanMode.Curve, pref.Mode);
+        Assert.True(loaded.ReadMotherboardAndCoolers);           // §4 default: on
+        Assert.Empty(loaded.FanProfiles);                        // §5
+        Assert.Null(loaded.ActiveFanProfile);
+        Assert.False(loaded.GameModeEnabled);                    // §6
+        Assert.Null(loaded.GameModeGamingProfile);
+        Assert.Null(loaded.GameModeDesktopProfile);
+        Assert.Equal(5, loaded.ThresholdRules.Count);            // §7: the fps rule was appended …
+        Assert.All(loaded.ThresholdRules.Take(4), r => Assert.False(r.LowerIsWorse)); // … the four kept as they were
+        Assert.Equal(85f, loaded.ThresholdRules[0].Warn);
+        var fps = loaded.ThresholdRules.Single(r => r.Group == Stats.Core.Metrics.MetricGroup.Game && r.Unit == "fps");
+        Assert.True(fps.LowerIsWorse);
+        Assert.Equal(30f, loaded.ThresholdOverrides["fps.low1"].Warn); // and the 1 % low gets its own scale
+        Assert.True(loaded.ThresholdOverrides["fps.low1"].LowerIsWorse);
+    }
+
+    [Fact]
+    public void SaveThenLoad_GameModeFields_RoundTrip()
+    {
+        var svc = new SettingsService(_dir);
+        svc.Save(new AppSettings { GameModeEnabled = true, GameModeGamingProfile = "Gaming", GameModeDesktopProfile = "Silent" });
+        var loaded = new SettingsService(_dir).Load();
+        Assert.True(loaded.GameModeEnabled);
+        Assert.Equal("Gaming", loaded.GameModeGamingProfile);
+        Assert.Equal("Silent", loaded.GameModeDesktopProfile);
+    }
+
+    [Fact]
+    public void Load_ExistingFpsLow1Override_IsNotOverwritten()
+    {
+        var svc = new SettingsService(_dir);
+        var s = new AppSettings();
+        s.ThresholdOverrides["fps.low1"] = new ThresholdRule { Warn = 20, Crit = 10, LowerIsWorse = true };
+        svc.Save(s);
+        Assert.Equal(20f, new SettingsService(_dir).Load().ThresholdOverrides["fps.low1"].Warn);
+    }
+
+    private void Write(string json)
+    {
+        Directory.CreateDirectory(_dir);
+        File.WriteAllText(Path.Combine(_dir, "settings.json"), json);
+    }
 }

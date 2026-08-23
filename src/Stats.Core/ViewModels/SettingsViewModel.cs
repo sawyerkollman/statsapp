@@ -7,7 +7,9 @@ using Stats.Core.Settings;
 
 namespace Stats.Core.ViewModels;
 
-public enum SettingsChange { PollInterval, HistoryWindow, Thresholds, Limits, Overlay, Hotkey, CoreMatrix, Hardware, GameMode }
+// No GameMode member: the game-mode controls live in the Fans window, which re-applies frame tracing through
+// FansViewModel.GameModeChanged. A member nothing raises only invites the next feature onto a dead channel.
+public enum SettingsChange { PollInterval, HistoryWindow, Thresholds, Limits, Overlay, Hotkey, CoreMatrix, Hardware }
 
 /// <summary>One editable metric limit (PPT/TDC/EDC/GPU power). Empty text = no limit.</summary>
 public sealed partial class LimitItemViewModel : ObservableObject

@@ -28,7 +28,14 @@ public class FanControllerTests
         }
     }
 
-    private sealed class FakeMarker : IFanArmedMarker { public bool Present; public int Sets, Clears; public bool Exists() => Present; public void Set() { Sets++; Present = true; } public void Clear() { Clears++; Present = false; } }
+    private sealed class FakeMarker : IFanArmedMarker
+    {
+        public bool Present; public int Sets, Clears;
+        public bool FailNextSet; // models a transient marker write failure (AV lock, disk full)
+        public bool Exists() => Present;
+        public bool Set() { Sets++; if (FailNextSet) { FailNextSet = false; return false; } Present = true; return true; }
+        public void Clear() { Clears++; Present = false; }
+    }
 
     private const string Case = "/lpc/it8696e/0/control/0";
     private const string Gpu = "/gpu-nvidia/0/control/1";
@@ -53,6 +60,7 @@ public class FanControllerTests
         }
         public SensorSnapshot Snap(float? cpu, float? rpm = 1200) => new(new Dictionary<string, float?> { [Cpu] = cpu, [CaseRpm] = rpm }, T0);
         public SensorSnapshot Snap2(float? cpu, float? gpu) => new(new Dictionary<string, float?> { [Cpu] = cpu, ["gpu.core"] = gpu, [CaseRpm] = 1200 }, T0);
+        public SensorSnapshot FpsSnap(float fps) => new(new Dictionary<string, float?> { [Cpu] = 50f, [CaseRpm] = 1200, [GameModeSwitcher.FpsMetricId] = fps }, T0);
         public void Tick(float? cpu, int secondsFromT0 = 0) => C.Tick(Snap(cpu), T0.AddSeconds(secondsFromT0));
         public IEnumerable<(string, float?)> WritesFor(string id) => B.Writes.Where(w => w.Id == id).Select(w => (w.Id, w.Pct));
     }
@@ -496,5 +504,202 @@ public class FanControllerTests
         Assert.Equal(new FanPoint(30, 20), profs[0].Channels[Case].Points[0]);
         var none = FanController.CreateDefaultProfiles(h.B.Chans, null, null);
         Assert.Equal(FanMode.Auto, none[2].Channels[Case].Mode); // no source → Auto
+    }
+
+    [Fact]
+    public void Recover_PartialFailure_KeepsMarkerAndTracking_ReleasedByLaterRestoreAll()
+    {
+        var h = new H(); h.M.Present = true;
+        h.B.FailAuto = id => id == Gpu;
+        Assert.True(h.C.RecoverFromUncleanShutdown(out var partial));
+        Assert.True(partial);
+        Assert.True(h.M.Present);                    // still driven somewhere → the marker must survive
+        Assert.Equal(0, h.M.Clears);
+
+        h.B.FailAuto = null;
+        h.C.RestoreAll();                            // the channel stayed tracked, so the release is retried
+        Assert.Contains(h.WritesFor(Gpu), w => w.Item2 is null);
+        Assert.False(h.M.Present);
+    }
+
+    [Fact]
+    public void Recover_AllReleased_ReportsNotPartial()
+    {
+        var h = new H(); h.M.Present = true;
+        Assert.True(h.C.RecoverFromUncleanShutdown(out var partial));
+        Assert.False(partial);
+        Assert.False(h.M.Present);
+    }
+
+    [Fact]
+    public void Marker_NotSetWhileFanControlDisabled()
+    {
+        var h = new H();
+        h.S.FanControlEnabled = false;
+        h.C.SetMode(Case, FanMode.Manual);
+        h.Tick(50);
+        Assert.Equal(0, h.M.Sets);       // nothing was driven, so the next launch must not claim an unclean exit
+        Assert.False(h.M.Present);
+    }
+
+    [Fact]
+    public void Marker_FailedSet_IsRetriedOnTheNextWrite()
+    {
+        var h = new H();
+        h.M.FailNextSet = true;
+        h.C.SetMode(Case, FanMode.Manual); h.C.SetManualPercent(Case, 40);
+        h.Tick(50);
+        Assert.False(h.M.Present);       // one transient failure …
+        h.C.SetManualPercent(Case, 50);
+        h.Tick(50);
+        Assert.True(h.M.Present);        // … must not disable crash recovery for the whole session
+        Assert.Equal(2, h.M.Sets);
+    }
+
+    [Fact]
+    public void ApplyProfile_ChannelMissingFromProfile_IsHandedBackToTheDevice()
+    {
+        var h = new H();
+        h.C.SetMode(Gpu, FanMode.Manual); h.C.SetManualPercent(Gpu, 60);
+        h.Tick(50);
+        Assert.Contains(h.WritesFor(Gpu), w => w.Item2 == 60f);   // actually driven before the switch
+        h.C.ApplyProfile(new FanProfile { Name = "P", Channels = { [Case] = new FanChannelPref { Mode = FanMode.Manual, ManualPercent = 40 } } });
+        h.Tick(50);
+        Assert.Contains(h.WritesFor(Gpu), w => w.Item2 is null);  // SetAuto reached the backend, not just the pref
+        Assert.Equal(FanChannelStatus.Idle, h.C.Views().Single(v => v.Id == Gpu).Status);
+    }
+
+    [Fact]
+    public void ApplyProfile_ResetsRuntime_CurveFollowsTheNewSourceImmediately()
+    {
+        var h = new H();
+        h.C.SetMode(Case, FanMode.Curve); h.C.SetSource(Case, Cpu); h.C.TrySetPoints(Case, Linear);
+        h.C.Tick(h.Snap2(50, 51), T0);
+        Assert.Equal((Case, 20f), h.WritesFor(Case).Last());
+        h.C.ApplyProfile(new FanProfile
+        {
+            Name = "P",
+            Channels = { [Case] = new FanChannelPref { Mode = FanMode.Curve, SourceMetricIds = { "gpu.core" }, SourceMetricId = "gpu.core", Points = Linear.ToList() } },
+        });
+        h.C.Tick(h.Snap2(50, 51), T0.AddSeconds(1));
+        // 51 °C is within the 2 °C hysteresis band of the 50 °C the old source last used: only a reset
+        // LastSourceUsed lets the new source take effect on the very first tick.
+        Assert.Equal((Case, 21f), h.WritesFor(Case).Last());
+    }
+
+    [Fact]
+    public void AutomaticProfileSwitch_KeepsTheWriteFailSafe_OneProbeWritePerTransition()
+    {
+        var h = new H();
+        h.B.FailWrite = id => id == Case;
+        h.B.RecordBeforeThrow = true;              // count attempts, not successes
+        h.C.SetMode(Case, FanMode.Manual); h.C.SetManualPercent(Case, 40);
+        h.Tick(50); h.Tick(50); h.Tick(50);        // three failures → parked in Auto, status kept
+        Assert.Equal(FanMode.Auto, h.S.FanChannels[Case].Mode);
+        Assert.Equal(FanChannelStatus.WriteFailed, h.C.Views().Single(v => v.Id == Case).Status);
+        int attempts = h.WritesFor(Case).Count(w => w.Item2 is not null);
+
+        h.S.GameModeEnabled = true;
+        h.S.GameModeGamingProfile = "Gaming";
+        h.C.AddOrReplaceProfile(new FanProfile { Name = "Gaming", Channels = { [Case] = new FanChannelPref { Mode = FanMode.Manual, ManualPercent = 80 } } });
+        var sw = new GameModeSwitcher(h.C, h.S);
+        for (int t = 0; t <= 5; t++) sw.Tick(h.FpsSnap(120), T0.AddSeconds(t));
+        Assert.True(sw.IsGaming);
+        h.C.Tick(h.FpsSnap(120), T0.AddSeconds(6));
+
+        Assert.Equal(FanMode.Auto, h.S.FanChannels[Case].Mode);                                 // still parked
+        Assert.Equal(FanChannelStatus.WriteFailed, h.C.Views().Single(v => v.Id == Case).Status); // status survives
+        Assert.Equal(attempts + 1, h.WritesFor(Case).Count(w => w.Item2 is not null));           // one probe, not three
+    }
+
+    [Fact]
+    public void UserProfileLoad_ResetsTheFailureBudget_UnlikeAnAutomaticSwitch()
+    {
+        var h = new H();
+        h.B.FailWrite = id => id == Case;
+        h.B.RecordBeforeThrow = true;
+        h.C.SetMode(Case, FanMode.Manual); h.C.SetManualPercent(Case, 40);
+        h.Tick(50); h.Tick(50); h.Tick(50);
+        int attempts = h.WritesFor(Case).Count(w => w.Item2 is not null);
+
+        h.C.ApplyProfile(new FanProfile { Name = "P", Channels = { [Case] = new FanChannelPref { Mode = FanMode.Manual, ManualPercent = 80 } } });
+        Assert.Equal(FanMode.Manual, h.S.FanChannels[Case].Mode);
+        h.Tick(50); h.Tick(50); h.Tick(50);
+        Assert.Equal(attempts + 3, h.WritesFor(Case).Count(w => w.Item2 is not null)); // the user acted: full budget
+        Assert.Equal(FanMode.Auto, h.S.FanChannels[Case].Mode);
+    }
+
+    [Fact]
+    public void PreservedFailures_StillRecover_WhenAWriteFinallySucceeds()
+    {
+        var h = new H();
+        h.B.FailWrite = id => id == Case;
+        h.C.SetMode(Case, FanMode.Manual); h.C.SetManualPercent(Case, 40);
+        h.Tick(50); h.Tick(50); h.Tick(50);
+        Assert.Equal(FanChannelStatus.WriteFailed, h.C.Views().Single(v => v.Id == Case).Status);
+
+        h.B.FailWrite = null;
+        h.C.ApplyProfile(new FanProfile { Name = "Desktop", Channels = { [Case] = new FanChannelPref { Mode = FanMode.Manual, ManualPercent = 30 } } }, resetFailures: false);
+        h.Tick(50);
+        Assert.Equal(FanChannelStatus.Active, h.C.Views().Single(v => v.Id == Case).Status);
+        Assert.Equal((Case, 30f), h.WritesFor(Case).Last());
+    }
+
+    [Fact]
+    public void Profiles_AddReplaceRemoveAndLookup_GoThroughTheGate()
+    {
+        var h = new H();
+        h.C.AddOrReplaceProfile(new FanProfile { Name = "A", Channels = { [Case] = new FanChannelPref { ManualPercent = 10 } } });
+        h.C.AddOrReplaceProfile(new FanProfile { Name = "A", Channels = { [Case] = new FanChannelPref { ManualPercent = 20 } } });
+        Assert.Equal(new[] { "A" }, h.C.ProfileNames());
+        Assert.True(h.C.TryGetProfile("A", out var a));
+        Assert.Equal(20f, a!.Channels[Case].ManualPercent);
+        Assert.False(h.C.TryGetProfile("B", out var b));
+        Assert.Null(b);
+        var added = h.C.AddProfilesIfMissing(new[] { new FanProfile { Name = "A" }, new FanProfile { Name = "B" } });
+        Assert.Equal(new[] { "B" }, added.Select(p => p.Name));
+        Assert.Equal(new[] { "A", "B" }, h.C.ProfileNames());
+        Assert.True(h.C.RemoveProfile("A"));
+        Assert.False(h.C.RemoveProfile("A"));
+        Assert.Equal(new[] { "B" }, h.C.ProfileNames());
+    }
+
+    [Fact]
+    public void PollThreadProfileSwitches_AndUiEdits_NeverSerializeAMutatingCollection()
+    {
+        var b = new FakeBackend();
+        b.Chans.Add(new FanChannel(Case, "Fan #1", "ITE IT8696E", CaseRpm, null, 0, 100));
+        b.Chans.Add(new FanChannel(Gpu, "GPU Fan 1", "RTX 5070 Ti", null, null, 30, 100));
+        var s = new AppSettings { FanControlEnabled = true };
+        s.FanProfiles.Add(new FanProfile { Name = "Gaming", Channels = { [Case] = new FanChannelPref { Mode = FanMode.Manual, ManualPercent = 80 } } });
+        Exception? failure = null;
+        // Every real save serializes the whole graph under AppSettings.SyncRoot (SettingsService.Serialize's
+        // contract, which App.SaveSettings implements). The controller's gate IS that lock, so a poll-thread
+        // profile switch can never be mid-Clear()+insert while the serializer walks FanChannels.
+        var c = new FanController(b, s, () =>
+        {
+            try { lock (s.SyncRoot) SettingsService.Serialize(s); }
+            catch (Exception ex) { failure ??= ex; }
+        });
+        var prof = s.FanProfiles[0];
+        var snap = new SensorSnapshot(new Dictionary<string, float?> { [Cpu] = 50f, [CaseRpm] = 1200f }, T0);
+
+        var poll = new Thread(() =>
+        {
+            try
+            {
+                for (int i = 0; i < 400; i++)
+                {
+                    c.ApplyProfile(prof, deferSave: true, resetFailures: false);
+                    c.Tick(snap, T0.AddSeconds(i));
+                }
+            }
+            catch (Exception ex) { failure ??= ex; }
+        });
+        poll.Start();
+        for (int i = 0; i < 400; i++) { c.SetManualPercent(Gpu, 40 + (i % 20)); c.SetName(Case, "Fan " + i); }
+        poll.Join();
+
+        Assert.Null(failure);
     }
 }

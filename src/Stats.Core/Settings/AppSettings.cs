@@ -1,7 +1,15 @@
+using System.Text.Json.Serialization;
+
 namespace Stats.Core.Settings;
 
 public sealed class AppSettings
 {
+    /// <summary>The one owner lock for this whole object graph. Everything that serializes the settings
+    /// (<see cref="SettingsService.Serialize"/>) must hold it, and so must any thread other than the UI thread
+    /// that mutates a collection in the graph — <see cref="Fans.FanController"/> uses it as its own gate, so a
+    /// poll-thread fan change can never run while a save is walking <see cref="FanChannels"/>.</summary>
+    [JsonIgnore] public object SyncRoot { get; } = new();
+
     public double PollIntervalSeconds { get; set; } = 1.0;
     /// <summary>True once first-run defaults have been applied; lets "user unchecked everything" survive restarts.</summary>
     public bool DefaultsApplied { get; set; }

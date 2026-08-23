@@ -24,15 +24,22 @@ public static class ConflictingFanSoftware
             {
                 bool hit = exact ? name.Equals(stem, StringComparison.OrdinalIgnoreCase)
                                  : name.Contains(stem, StringComparison.OrdinalIgnoreCase);
-                if (hit && !result.Contains(friendly)) { result.Add(friendly); break; }
+                // Stop at the first stem this process matches either way: continuing would let one process be
+                // attributed to a second, different product just because its friendly name was already listed.
+                if (hit) { if (!result.Contains(friendly)) result.Add(friendly); break; }
             }
         }
         return result;
     }
 
+    /// <summary>Names of every running process. Each Process holds a native handle until finalization, so they are
+    /// disposed here. Enumerating the process table takes tens of milliseconds — call it off the UI thread.</summary>
     public static IEnumerable<string> RunningProcessNames()
     {
-        try { return Process.GetProcesses().Select(p => { try { return p.ProcessName; } catch { return ""; } }).ToList(); }
+        Process[] procs;
+        try { procs = Process.GetProcesses(); }
         catch { return Array.Empty<string>(); }
+        try { return procs.Select(p => { try { return p.ProcessName; } catch { return ""; } }).ToList(); }
+        finally { foreach (var p in procs) p.Dispose(); }
     }
 }

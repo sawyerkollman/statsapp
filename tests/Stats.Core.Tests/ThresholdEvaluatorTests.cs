@@ -70,4 +70,24 @@ public class ThresholdEvaluatorTests
         ThresholdDefaults.EnsureDefaults(rules);
         Assert.Equal(n, rules.Count); // idempotent
     }
+
+    private static readonly MetricDefinition FpsLow = new("fps.low1", "1% Low FPS", MetricGroup.Game, "Foreground app", "fps", "F0");
+
+    [Fact]
+    public void EnsureDefaults_GivesTheOnePercentLow_ItsOwnScale()
+    {
+        // Same (Group, Unit) as fps.avg, so the 60/30 group rule would paint the 1 % Low tile Warn — and often
+        // Crit — permanently on a machine that is gaming perfectly happily.
+        var s = new AppSettings { ThresholdRules = new() };
+        ThresholdDefaults.EnsureDefaults(s.ThresholdRules, s.ThresholdOverrides);
+        Assert.Equal(Severity.Normal, ThresholdEvaluator.Evaluate(FpsLow, 45f, s));
+        Assert.Equal(Severity.Warn, ThresholdEvaluator.Evaluate(Fps, 45f, s));
+        Assert.Equal(Severity.Warn, ThresholdEvaluator.Evaluate(FpsLow, 30f, s));
+        Assert.Equal(Severity.Crit, ThresholdEvaluator.Evaluate(FpsLow, 15f, s));
+
+        var kept = new AppSettings { ThresholdRules = new() };
+        kept.ThresholdOverrides["fps.low1"] = new ThresholdRule { Warn = 20, Crit = 10, LowerIsWorse = true };
+        ThresholdDefaults.EnsureDefaults(kept.ThresholdRules, kept.ThresholdOverrides);
+        Assert.Equal(20f, kept.ThresholdOverrides["fps.low1"].Warn); // never overwrites the user's own
+    }
 }
