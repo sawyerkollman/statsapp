@@ -78,7 +78,7 @@ public class SettingsServiceTests : IDisposable
     public void Load_SeedsThresholdRulesWhenEmpty()
     {
         var s = new SettingsService(_dir).Load();
-        Assert.Equal(4, s.ThresholdRules.Count);
+        Assert.Equal(5, s.ThresholdRules.Count);
         var cpu = s.ThresholdRules.First(r => r.Group == Stats.Core.Metrics.MetricGroup.Cpu && r.Unit == "°C");
         Assert.Equal(85f, cpu.Warn);
         Assert.Equal(92f, cpu.Crit);
@@ -139,7 +139,7 @@ public class SettingsServiceTests : IDisposable
         Assert.Equal(2, l.HistoryWindowMinutes);
         Assert.True(l.ShowCoreMatrix);
         Assert.Equal("Ctrl+Shift+O", l.OverlayHotkey);
-        Assert.Equal(4, l.ThresholdRules.Count);
+        Assert.Equal(5, l.ThresholdRules.Count);
     }
 
     [Theory]
@@ -202,7 +202,7 @@ public class SettingsServiceTests : IDisposable
         Assert.True(loaded.FanControlEnabled);
         Assert.NotNull(loaded.FanChannels);
         Assert.Empty(loaded.FanChannels);          // an explicit null must not blow up the fan loop
-        Assert.Equal(4, loaded.ThresholdRules.Count); // …and null rules still get the defaults
+        Assert.Equal(5, loaded.ThresholdRules.Count); // …and null rules still get the defaults
     }
 
     [Fact]
@@ -218,5 +218,27 @@ public class SettingsServiceTests : IDisposable
         Assert.Equal(FanCurve.DefaultPoints, loaded.FanChannels["a"].Points);
         Assert.Equal(0f, loaded.FanChannels["b"].ManualPercent);
         Assert.Equal(FanCurve.DefaultPoints, loaded.FanChannels["b"].Points);
+    }
+
+    [Fact]
+    public void Load_OlderFile_GainsFpsDefaultRule_KeepsExisting()
+    {
+        var svc = new SettingsService(_dir);
+        var s = new AppSettings { ThresholdRules = new() { new() { Group = Stats.Core.Metrics.MetricGroup.Cpu, Unit = "°C", Warn = 70, Crit = 80 } } };
+        svc.Save(s);
+        var loaded = new SettingsService(_dir).Load();
+        Assert.Equal(70f, loaded.ThresholdRules.Single(r => r.Group == Stats.Core.Metrics.MetricGroup.Cpu && r.Unit == "°C").Warn);
+        var fps = loaded.ThresholdRules.Single(r => r.Group == Stats.Core.Metrics.MetricGroup.Game && r.Unit == "fps");
+        Assert.True(fps.LowerIsWorse);
+    }
+
+    [Fact]
+    public void SaveThenLoad_LowerIsWorse_RoundTrips()
+    {
+        var svc = new SettingsService(_dir);
+        var s = new AppSettings();
+        s.ThresholdOverrides["fps.avg"] = new ThresholdRule { Warn = 90, Crit = 45, LowerIsWorse = true };
+        svc.Save(s);
+        Assert.True(new SettingsService(_dir).Load().ThresholdOverrides["fps.avg"].LowerIsWorse);
     }
 }

@@ -43,8 +43,7 @@ public sealed class SettingsService
         // An explicit JSON null deserializes over the property initializer, so re-establish the empty collections.
         settings.ThresholdRules ??= new();
         settings.FanChannels ??= new();
-        if (settings.ThresholdRules.Count == 0)
-            settings.ThresholdRules = ThresholdDefaults.Rules();
+        ThresholdDefaults.EnsureDefaults(settings.ThresholdRules);
         settings.OverlayHotkey ??= "";
         foreach (var pref in settings.FanChannels.Values)
         {

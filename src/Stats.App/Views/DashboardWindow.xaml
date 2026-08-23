@@ -164,7 +164,7 @@
                                         <ColumnDefinition Width="70"/>
                                     </Grid.ColumnDefinitions>
                                     <Grid.RowDefinitions>
-                                        <RowDefinition/><RowDefinition/><RowDefinition/>
+                                        <RowDefinition/><RowDefinition/><RowDefinition/><RowDefinition/>
                                     </Grid.RowDefinitions>
                                     <TextBlock Text="CPU temp °C" Style="{StaticResource SettingsLabel}"/>
                                     <TextBox Grid.Column="1" Margin="0,2,6,2" Text="{Binding CpuTempWarn, UpdateSourceTrigger=LostFocus}"/>
@@ -175,6 +175,9 @@
                                     <TextBlock Grid.Row="2" Text="Load %" Style="{StaticResource SettingsLabel}"/>
                                     <TextBox Grid.Row="2" Grid.Column="1" Margin="0,2,6,2" Text="{Binding LoadWarn, UpdateSourceTrigger=LostFocus}"/>
                                     <TextBox Grid.Row="2" Grid.Column="2" Margin="0,2,0,2" Text="{Binding LoadCrit, UpdateSourceTrigger=LostFocus}"/>
+                                    <TextBlock Grid.Row="3" Text="FPS (lower is worse)" Style="{StaticResource SettingsLabel}"/>
+                                    <TextBox Grid.Row="3" Grid.Column="1" Margin="0,2,6,2" Text="{Binding FpsWarn, UpdateSourceTrigger=LostFocus}"/>
+                                    <TextBox Grid.Row="3" Grid.Column="2" Margin="0,2,0,2" Text="{Binding FpsCrit, UpdateSourceTrigger=LostFocus}"/>
                                 </Grid>
                                 <TextBlock Text="{Binding ThresholdError}" Foreground="{StaticResource CritBrush}" FontSize="11"/>
 

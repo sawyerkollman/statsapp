@@ -36,4 +36,38 @@ public class ThresholdEvaluatorTests
         Assert.Equal(Severity.Normal, ThresholdEvaluator.Evaluate(CpuTemp, null, Seeded()));
         Assert.Equal(Severity.Normal, ThresholdEvaluator.Evaluate(CpuTemp, float.NaN, Seeded()));
     }
+
+    private static readonly MetricDefinition Fps = new("fps.avg", "FPS", MetricGroup.Game, "Foreground app", "fps", "F0");
+
+    [Theory]
+    [InlineData(61f, Severity.Normal)]
+    [InlineData(60f, Severity.Warn)]
+    [InlineData(59.9f, Severity.Warn)]
+    [InlineData(30.1f, Severity.Warn)]
+    [InlineData(30f, Severity.Crit)]
+    [InlineData(5f, Severity.Crit)]
+    public void Evaluate_LowerIsWorse_InvertsComparison(float value, Severity expected) =>
+        Assert.Equal(expected, ThresholdEvaluator.Evaluate(Fps, value, Seeded()));
+
+    [Fact]
+    public void Defaults_ContainFpsRule_LowerIsWorse()
+    {
+        var r = ThresholdDefaults.Rules().Single(x => x.Group == MetricGroup.Game && x.Unit == "fps");
+        Assert.True(r.LowerIsWorse);
+        Assert.Equal(60f, r.Warn);
+        Assert.Equal(30f, r.Crit);
+    }
+
+    [Fact]
+    public void EnsureDefaults_AddsOnlyMissingPairs_KeepsUserValues()
+    {
+        var rules = new List<ThresholdRule> { new() { Group = MetricGroup.Cpu, Unit = "°C", Warn = 70, Crit = 80 } };
+        ThresholdDefaults.EnsureDefaults(rules);
+        Assert.Equal(70f, rules.Single(r => r.Group == MetricGroup.Cpu && r.Unit == "°C").Warn); // untouched
+        Assert.Contains(rules, r => r.Group == MetricGroup.Game && r.Unit == "fps" && r.LowerIsWorse);
+        Assert.Equal(ThresholdDefaults.Rules().Count, rules.Count);
+        int n = rules.Count;
+        ThresholdDefaults.EnsureDefaults(rules);
+        Assert.Equal(n, rules.Count); // idempotent
+    }
 }

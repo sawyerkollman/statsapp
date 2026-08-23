@@ -50,6 +50,7 @@ public sealed partial class SettingsViewModel : ObservableObject
         _cpuTempWarn = Rule(MetricGroup.Cpu, "°C").Warn; _cpuTempCrit = Rule(MetricGroup.Cpu, "°C").Crit;
         _gpuTempWarn = Rule(MetricGroup.Gpu, "°C").Warn; _gpuTempCrit = Rule(MetricGroup.Gpu, "°C").Crit;
         _loadWarn = Rule(MetricGroup.Cpu, "%").Warn;     _loadCrit = Rule(MetricGroup.Cpu, "%").Crit;
+        _fpsWarn = Rule(MetricGroup.Game, "fps").Warn;   _fpsCrit = Rule(MetricGroup.Game, "fps").Crit;
         _overlayIsVertical = settings.OverlayOrientation == OverlayOrientation.Vertical;
         _overlayFontScale = settings.OverlayFontScale;
         _overlayOpacity = settings.OverlayOpacity;
@@ -77,6 +78,8 @@ public sealed partial class SettingsViewModel : ObservableObject
     [ObservableProperty] private float _gpuTempCrit;
     [ObservableProperty] private float _loadWarn;
     [ObservableProperty] private float _loadCrit;
+    [ObservableProperty] private float _fpsWarn;
+    [ObservableProperty] private float _fpsCrit;
     [ObservableProperty] private string _thresholdError = "";
     [ObservableProperty] private bool _overlayIsVertical;
     [ObservableProperty] private double _overlayFontScale;
@@ -115,6 +118,8 @@ public sealed partial class SettingsViewModel : ObservableObject
     partial void OnGpuTempCritChanged(float value) => ApplyThresholds();
     partial void OnLoadWarnChanged(float value) => ApplyThresholds();
     partial void OnLoadCritChanged(float value) => ApplyThresholds();
+    partial void OnFpsWarnChanged(float value) => ApplyThresholds();
+    partial void OnFpsCritChanged(float value) => ApplyThresholds();
 
     private void ApplyThresholds()
     {
@@ -124,11 +129,13 @@ public sealed partial class SettingsViewModel : ObservableObject
             ThresholdError = "Warn must be below Crit";
             return;
         }
+        if (FpsWarn <= FpsCrit) { ThresholdError = "FPS: warn must be above crit"; return; }
         ThresholdError = "";
         Upsert(MetricGroup.Cpu, "°C", CpuTempWarn, CpuTempCrit);
         Upsert(MetricGroup.Gpu, "°C", GpuTempWarn, GpuTempCrit);
         Upsert(MetricGroup.Cpu, "%", LoadWarn, LoadCrit);
         Upsert(MetricGroup.Gpu, "%", LoadWarn, LoadCrit);
+        Upsert(MetricGroup.Game, "fps", FpsWarn, FpsCrit, lowerIsWorse: true);
         Raise(SettingsChange.Thresholds);
     }
 
@@ -215,12 +222,13 @@ public sealed partial class SettingsViewModel : ObservableObject
         _s.ThresholdRules.FirstOrDefault(r => r.Group == group && r.Unit == unit)
         ?? new ThresholdRule { Group = group, Unit = unit };
 
-    private void Upsert(MetricGroup group, string unit, float warn, float crit)
+    private void Upsert(MetricGroup group, string unit, float warn, float crit, bool? lowerIsWorse = null)
     {
         var rule = _s.ThresholdRules.FirstOrDefault(r => r.Group == group && r.Unit == unit);
         if (rule is null) { rule = new ThresholdRule { Group = group, Unit = unit }; _s.ThresholdRules.Add(rule); }
         rule.Warn = warn;
         rule.Crit = crit;
+        if (lowerIsWorse is bool low) rule.LowerIsWorse = low;
     }
 
     private void Raise(SettingsChange change)

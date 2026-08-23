@@ -171,8 +171,11 @@ public sealed partial class DashboardViewModel : ObservableObject
     /// <summary>Per-metric threshold override. Both null = remove override (fall back to the group rule).</summary>
     public void SetTileThresholds(string id, float? warn, float? crit)
     {
-        if (warn is float w && crit is float c && w < c)
-            _settings.ThresholdOverrides[id] = new ThresholdRule { Warn = w, Crit = c };
+        var def = _store.Definitions.FirstOrDefault(d => d.Id == id);
+        bool lowerIsWorse = def is not null && _settings.ThresholdRules.FirstOrDefault(r => r.Group == def.Group && r.Unit == def.Unit)?.LowerIsWorse == true;
+        bool ordered = warn is float w && crit is float c && (lowerIsWorse ? w > c : w < c);
+        if (ordered)
+            _settings.ThresholdOverrides[id] = new ThresholdRule { Warn = warn!.Value, Crit = crit!.Value, LowerIsWorse = lowerIsWorse };
         else
             _settings.ThresholdOverrides.Remove(id);
         RefreshAll();
