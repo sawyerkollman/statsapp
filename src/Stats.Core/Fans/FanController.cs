@@ -210,12 +210,17 @@ public sealed class FanController
     }
 
     /// <summary>Call once at startup, before the poller starts. If the marker from a previous run exists, every
-    /// backend channel is handed back to device control (runtime state is gone) and the marker cleared.</summary>
+    /// backend channel is handed back to device control (runtime state is gone) and the marker cleared. If the
+    /// backend currently exposes no channels (e.g. LHM failed to open and the app fell back to perf counters),
+    /// the marker is left in place so a later, healthy launch still performs the recovery — releasing nothing now
+    /// but reporting success would be a false "fans returned to device control" claim.</summary>
     public bool RecoverFromUncleanShutdown()
     {
         if (!_marker.Exists()) return false;
         lock (_gate)
         {
+            if (_backend.Channels.Count == 0) return false;
+
             foreach (var ch in _backend.Channels)
             {
                 try { _backend.SetAuto(ch.Id); } catch (Exception ex) { Trace.WriteLine($"[Stats.FanController] recovery SetAuto {ch.Id} failed: {ex.Message}"); }

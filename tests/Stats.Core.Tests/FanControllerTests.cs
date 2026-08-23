@@ -424,4 +424,18 @@ public class FanControllerTests
         Assert.False(h.M.Present);
         Assert.False(h.C.RecoverFromUncleanShutdown()); // no marker now
     }
+
+    [Fact]
+    public void Recover_WithEmptyBackendChannels_KeepsMarker_AndReportsFalse()
+    {
+        // Degraded-launch case: LHM failed to open (or exposes no fan channels) and the app fell back to
+        // perf counters, so there is nothing to release. Discarding the marker here would falsely claim
+        // "fans returned to device control" while the crashed PWM stays pinned until a healthy launch.
+        var h = new H(); h.M.Present = true;
+        h.B.Chans.Clear();
+        Assert.False(h.C.RecoverFromUncleanShutdown());
+        Assert.Empty(h.B.Writes);
+        Assert.True(h.M.Present);
+        Assert.Equal(0, h.M.Clears);
+    }
 }
