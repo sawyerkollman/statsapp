@@ -655,20 +655,17 @@ public partial class App : Application
         ExitApp();
     }
 
-    /// <summary>Creates "%ProgramData%\Stats\update\{guid}" with an explicit, non-inherited DACL granting
-    /// FullControl only to BUILTIN\Administrators and NT AUTHORITY\SYSTEM — the installer and helper script both
-    /// live here instead of %TEMP% so a non-elevated same-user process cannot pre-plant or swap either file out
-    /// from under the elevated cmd.exe that runs the helper (local-EoP fix; see task-1 review finding B1). The
-    /// per-call GUID name also means a pre-plant attempt cannot even guess the path in advance.</summary>
+    /// <summary>Creates "%SystemRoot%\Temp\Stats-update-{guid}" with an explicit, non-inherited DACL granting
+    /// FullControl only to BUILTIN\Administrators and NT AUTHORITY\SYSTEM, owned by Administrators — the
+    /// installer and helper script both live here instead of %TEMP% so a non-elevated same-user process cannot
+    /// pre-plant or swap either file out from under the elevated cmd.exe that runs the helper (local-EoP fix;
+    /// review finding B1). %SystemRoot%\Temp is the base because its default DACL lets only SYSTEM,
+    /// Administrators and CREATOR OWNER create anything, so no parent level can be pre-created, junctioned, or
+    /// owned by a non-elevated attacker — which is why no existing-directory "repair" branch exists (a re-ACL
+    /// path is both unreliable without SeTakeOwnershipPrivilege handling and TOCTOU-exploitable; see re-review).
+    /// The SD is applied atomically at creation and a pre-existing leaf makes Create throw (fail closed).</summary>
     private static string CreateSecureStagingDirectory()
     {
-        // Every level (Stats, update, {guid}) gets the same protected admin-only DACL *and* an
-        // Administrators owner. Owner matters: the OS default owner for admin-created objects is the
-        // creating *user's* SID, whose non-elevated processes would then hold implicit WRITE_DAC and
-        // could re-ACL the directory and swap the helper script mid-run (the original B1 attack).
-        // Parent levels matter too: %ProgramData% lets any user pre-create Stats\update and own it
-        // (CREATOR OWNER FullControl incl. FILE_DELETE_CHILD → rename-and-replace of the guid child,
-        // or plant a junction), so existing levels are re-owned and re-ACLed, and reparse points refused.
         var security = new DirectorySecurity();
         security.SetAccessRuleProtection(true, false); // protected: drop inherited rules entirely
         var admins = new SecurityIdentifier(WellKnownSidType.BuiltinAdministratorsSid, null);
@@ -676,25 +673,24 @@ public partial class App : Application
         var inherit = InheritanceFlags.ContainerInherit | InheritanceFlags.ObjectInherit;
         security.AddAccessRule(new FileSystemAccessRule(admins, FileSystemRights.FullControl, inherit, PropagationFlags.None, AccessControlType.Allow));
         security.AddAccessRule(new FileSystemAccessRule(system, FileSystemRights.FullControl, inherit, PropagationFlags.None, AccessControlType.Allow));
-        security.SetOwner(admins); // allowed: the elevated token contains the Administrators SID
+        security.SetOwner(admins); // default owner would be the creating user's SID → implicit WRITE_DAC for
+                                   // that user's non-elevated processes; the elevated token contains the
+                                   // Administrators SID, so setting it as owner at creation is permitted.
 
-        var level = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData), "Stats");
-        foreach (var name in new[] { "", "update", Guid.NewGuid().ToString("N") })
+        var baseDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Windows), "Temp");
+
+        // Best-effort sweep of leftovers from previous updates (each holds a ~50 MB installer). They are
+        // admin-only directories we created ourselves; failures (e.g. a helper still running) are ignored.
+        try
         {
-            if (name.Length > 0) level = Path.Combine(level, name);
-            var dirInfo = new DirectoryInfo(level);
-            if (dirInfo.Exists)
-            {
-                if ((File.GetAttributes(level) & FileAttributes.ReparsePoint) != 0)
-                    throw new IOException($"Refusing update staging path: '{level}' is a reparse point.");
-                dirInfo.SetAccessControl(security); // repair: take ownership + protected DACL (elevated)
-            }
-            else
-            {
-                dirInfo.Create(security); // SD applied atomically at creation
-            }
+            foreach (var old in Directory.EnumerateDirectories(baseDir, "Stats-update-*"))
+                try { Directory.Delete(old, recursive: true); } catch { /* in use or already gone */ }
         }
-        return level;
+        catch { /* enumeration denied — never block an update on cleanup */ }
+
+        var stagingDir = Path.Combine(baseDir, "Stats-update-" + Guid.NewGuid().ToString("N"));
+        new DirectoryInfo(stagingDir).Create(security); // SD applied atomically at creation; throws if it exists
+        return stagingDir;
     }
 
     /// <summary>Writes {stagingDir}\stats-update.cmd (waits for this process to exit, runs the installer
