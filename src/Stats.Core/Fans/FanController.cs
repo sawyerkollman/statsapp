@@ -48,6 +48,8 @@ public sealed class FanController
 
     public IReadOnlyList<FanChannel> Channels => _backend.Channels;
 
+    public string? ActiveProfile { get { lock (_gate) return _settings.ActiveFanProfile; } }
+
     public bool Enabled
     {
         get { lock (_gate) return _settings.FanControlEnabled; }
@@ -85,8 +87,80 @@ public sealed class FanController
             rt.LastSourceUsed = null; // re-evaluate immediately on next tick
             rt.Failures = 0;          // the user acted on this channel: give it a fresh retry budget
             rt.FailedOver = false;    // …and stop reporting the old fail-safe flip
+            _settings.ActiveFanProfile = null;
         }
         _save();
+    }
+
+    private static FanChannelPref Clone(FanChannelPref p) => new()
+    {
+        Mode = p.Mode, ManualPercent = p.ManualPercent, SourceMetricId = p.SourceMetricId,
+        SourceMetricIds = p.SourceMetricIds.ToList(), Points = p.Points.ToList(), Name = p.Name,
+    };
+
+    public FanProfile SnapshotProfile(string name)
+    {
+        lock (_gate)
+        {
+            var prof = new FanProfile { Name = name };
+            foreach (var (id, p) in _settings.FanChannels) prof.Channels[id] = Clone(p);
+            return prof;
+        }
+    }
+
+    /// <summary>Replace every channel's desired state with the profile's (channels absent from the profile → Auto,
+    /// names preserved). deferSave: poll-thread callers — the save runs at the end of the next Tick under _gate.</summary>
+    public void ApplyProfile(FanProfile profile, bool deferSave = false)
+    {
+        lock (_gate)
+        {
+            var names = _settings.FanChannels.ToDictionary(kv => kv.Key, kv => kv.Value.Name);
+            _settings.FanChannels.Clear();
+            foreach (var (id, p) in profile.Channels) _settings.FanChannels[id] = Clone(p);
+            foreach (var ch in _backend.Channels)
+                if (!_settings.FanChannels.ContainsKey(ch.Id)) _settings.FanChannels[ch.Id] = new FanChannelPref();
+            foreach (var (id, name) in names)
+                if (_settings.FanChannels.TryGetValue(id, out var p) && name is not null) p.Name = name;
+            foreach (var rt in _rt.Values) { rt.LastSourceUsed = null; rt.Failures = 0; rt.FailedOver = false; }
+            _settings.ActiveFanProfile = profile.Name;
+            if (deferSave) { _pendingSave = true; return; }
+        }
+        _save();
+    }
+
+    /// <summary>Set which saved profile name currently matches live state without touching any channel
+    /// (e.g. after the caller itself snapshotted/edited <c>settings.FanProfiles</c>). Pass null for "Custom".</summary>
+    public void SetActiveProfile(string? name)
+    {
+        lock (_gate) { _settings.ActiveFanProfile = name; }
+        _save();
+    }
+
+    public static IReadOnlyList<FanProfile> CreateDefaultProfiles(IReadOnlyList<FanChannel> channels, string? cpuTempId, string? gpuTempId)
+    {
+        var silent = new[] { new FanPoint(30, 20), new FanPoint(50, 30), new FanPoint(70, 55), new FanPoint(85, 100) };
+        var gaming = new[] { new FanPoint(30, 40), new FanPoint(50, 60), new FanPoint(70, 90), new FanPoint(85, 100) };
+        return new[]
+        {
+            Build("Silent", silent), Build("Balanced", FanCurve.DefaultPoints), Build("Gaming", gaming),
+        };
+
+        FanProfile Build(string name, IReadOnlyList<FanPoint> points)
+        {
+            var prof = new FanProfile { Name = name };
+            foreach (var ch in channels)
+            {
+                bool isPump = ch.Name.Contains("pump", StringComparison.OrdinalIgnoreCase);
+                bool isGpu = ch.Device.Contains("NVIDIA", StringComparison.OrdinalIgnoreCase) || ch.Device.Contains("GeForce", StringComparison.OrdinalIgnoreCase)
+                          || ch.Device.Contains("Radeon", StringComparison.OrdinalIgnoreCase) || ch.Device.Contains("RTX", StringComparison.OrdinalIgnoreCase)
+                          || ch.Device.Contains("RX ", StringComparison.OrdinalIgnoreCase);
+                string? src = isGpu ? gpuTempId : cpuTempId;
+                prof.Channels[ch.Id] = isPump || src is null
+                    ? new FanChannelPref()
+                    : new FanChannelPref { Mode = FanMode.Curve, SourceMetricIds = new() { src }, SourceMetricId = src, Points = points.ToList() };
+            }
+            return prof;
+        }
     }
 
     // ---- loop (poll thread) ----

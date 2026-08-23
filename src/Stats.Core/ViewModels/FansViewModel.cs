@@ -159,20 +159,24 @@ public sealed partial class FansViewModel : ObservableObject
 {
     private readonly FanController _controller;
     private readonly AppSettings _settings;
+    private readonly Action _saveSettings;
     private readonly Func<IEnumerable<string>> _processNames;
     private readonly Func<DateTime> _clock;
     private readonly Dictionary<string, FanChannelViewModel> _byId = new();
+    private readonly IReadOnlyList<FanSourceOption> _celsiusOptions;
     private DateTime _lastConflictCheck = DateTime.MinValue;
+    private bool _refreshingProfiles;
     public static readonly TimeSpan ConflictCheckEvery = TimeSpan.FromSeconds(5);
 
     public FansViewModel(FanController controller, IReadOnlyList<MetricDefinition> definitions, AppSettings settings,
-        Func<IEnumerable<string>>? processNames = null, Func<DateTime>? clock = null)
+        Func<IEnumerable<string>>? processNames = null, Func<DateTime>? clock = null, Action? saveSettings = null)
     {
         _controller = controller;
         _settings = settings;
+        _saveSettings = saveSettings ?? (() => { });
         _processNames = processNames ?? ConflictingFanSoftware.RunningProcessNames;
         _clock = clock ?? (() => DateTime.UtcNow);
-        var options = definitions
+        _celsiusOptions = definitions
             .Where(d => d.Unit == "°C")
             .Select(d => new FanSourceOption(d.Id,
                 settings.TilePrefs.TryGetValue(d.Id, out var p) && !string.IsNullOrWhiteSpace(p.Name) ? p.Name! : d.DisplayName))
@@ -181,11 +185,12 @@ public sealed partial class FansViewModel : ObservableObject
         {
             var group = Devices.FirstOrDefault(g => g.Device == v.Device);
             if (group is null) { group = new FanDeviceGroupViewModel(v.Device); Devices.Add(group); }
-            var ch = new FanChannelViewModel(v, controller, options);
+            var ch = new FanChannelViewModel(v, controller, _celsiusOptions);
             group.Channels.Add(ch);
             _byId[v.Id] = ch;
         }
         _enabled = controller.Enabled;
+        foreach (var p in settings.FanProfiles) ProfileNames.Add(p.Name);
     }
 
     public ObservableCollection<FanDeviceGroupViewModel> Devices { get; } = new();
@@ -214,6 +219,89 @@ public sealed partial class FansViewModel : ObservableObject
         foreach (var ch in _byId.Values) ch.Mode = FanMode.Auto;
     }
 
+    // ---- fan profiles ----
+
+    public ObservableCollection<string> ProfileNames { get; } = new();
+
+    /// <summary>Live — always reflects the controller, so any channel edit (including ones made through
+    /// FanChannelViewModel) is picked up without a Refresh().</summary>
+    public string ActiveProfileName => _controller.ActiveProfile ?? "Custom";
+
+    [ObservableProperty] private string? _selectedProfileName;
+    partial void OnSelectedProfileNameChanged(string? value)
+    {
+        if (_refreshingProfiles || value is null) return;
+        LoadProfile(value);
+    }
+
+    [RelayCommand]
+    private void SaveProfile(string name)
+    {
+        if (string.IsNullOrWhiteSpace(name)) return;
+        name = name.Trim();
+        var prof = _controller.SnapshotProfile(name);
+        int idx = _settings.FanProfiles.FindIndex(p => p.Name == name);
+        if (idx >= 0) _settings.FanProfiles[idx] = prof;
+        else { _settings.FanProfiles.Add(prof); ProfileNames.Add(name); }
+        _controller.SetActiveProfile(name); // saves settings.FanProfiles + ActiveFanProfile together
+        SyncProfileState();
+    }
+
+    [RelayCommand]
+    private void LoadProfile(string name)
+    {
+        var prof = _settings.FanProfiles.FirstOrDefault(p => p.Name == name);
+        if (prof is null) return;
+        _controller.ApplyProfile(prof);
+        Refresh();
+    }
+
+    [RelayCommand]
+    private void DeleteProfile(string name)
+    {
+        if (_settings.FanProfiles.RemoveAll(p => p.Name == name) == 0) return;
+        ProfileNames.Remove(name);
+        if (_controller.ActiveProfile == name) _controller.SetActiveProfile(null);
+        else _saveSettings();
+        SyncProfileState();
+    }
+
+    [RelayCommand]
+    private void CreateDefaultProfiles()
+    {
+        string? cpuId = PreferredCelsiusId(
+            id => id.StartsWith("cpu.", StringComparison.Ordinal),
+            id => id.Contains("tctl", StringComparison.OrdinalIgnoreCase) || id.Contains("package", StringComparison.OrdinalIgnoreCase));
+        string? gpuId = PreferredCelsiusId(
+            id => id.StartsWith("gpu.", StringComparison.Ordinal),
+            id => id.Contains("core", StringComparison.OrdinalIgnoreCase));
+        foreach (var prof in FanController.CreateDefaultProfiles(_controller.Channels, cpuId, gpuId))
+        {
+            if (_settings.FanProfiles.Any(p => p.Name == prof.Name)) continue;
+            _settings.FanProfiles.Add(prof);
+            ProfileNames.Add(prof.Name);
+        }
+        _saveSettings();
+    }
+
+    /// <summary>First °C option matching <paramref name="prefix"/> whose id matches <paramref name="preferred"/>,
+    /// else the first matching <paramref name="prefix"/> at all; null if none match the prefix.</summary>
+    private string? PreferredCelsiusId(Func<string, bool> prefix, Func<string, bool> preferred)
+    {
+        var candidates = _celsiusOptions.Where(o => prefix(o.Id)).ToList();
+        return (candidates.FirstOrDefault(o => preferred(o.Id)) ?? candidates.FirstOrDefault())?.Id;
+    }
+
+    /// <summary>Refreshes ActiveProfileName/SelectedProfileName bindings after a save/load/delete. The guard keeps
+    /// the SelectedProfileName setter from re-triggering LoadProfile.</summary>
+    private void SyncProfileState()
+    {
+        OnPropertyChanged(nameof(ActiveProfileName));
+        _refreshingProfiles = true;
+        try { SelectedProfileName = _controller.ActiveProfile; }
+        finally { _refreshingProfiles = false; }
+    }
+
     public void Refresh()
     {
         var now = _clock();
@@ -226,5 +314,6 @@ public sealed partial class FansViewModel : ObservableObject
         foreach (var v in _controller.Views())
             if (_byId.TryGetValue(v.Id, out var ch)) ch.Apply(v);
         if (Enabled != _controller.Enabled) Enabled = _controller.Enabled;
+        SyncProfileState();
     }
 }

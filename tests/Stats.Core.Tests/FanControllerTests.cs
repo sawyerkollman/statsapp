@@ -438,4 +438,63 @@ public class FanControllerTests
         Assert.True(h.M.Present);
         Assert.Equal(0, h.M.Clears);
     }
+
+    [Fact]
+    public void SnapshotProfile_IsDeepCopy()
+    {
+        var h = new H();
+        h.C.SetMode(Case, FanMode.Curve); h.C.TrySetPoints(Case, Linear);
+        var prof = h.C.SnapshotProfile("Mine");
+        prof.Channels[Case].Points[0] = new FanPoint(99, 99);
+        prof.Channels[Case].Mode = FanMode.Manual;
+        Assert.Equal(FanMode.Curve, h.S.FanChannels[Case].Mode);
+        Assert.Equal(30f, h.S.FanChannels[Case].Points[0].TempC);
+    }
+
+    [Fact]
+    public void ApplyProfile_ReplacesChannels_MissingBecomeAuto_SetsActive_ClearedOnEdit()
+    {
+        var h = new H();
+        h.C.SetMode(Gpu, FanMode.Manual);
+        var prof = new FanProfile { Name = "P", Channels = { [Case] = new FanChannelPref { Mode = FanMode.Manual, ManualPercent = 70 } } };
+        h.C.ApplyProfile(prof);
+        Assert.Equal("P", h.S.ActiveFanProfile);
+        Assert.Equal(FanMode.Manual, h.S.FanChannels[Case].Mode);
+        Assert.Equal(FanMode.Auto, h.S.FanChannels[Gpu].Mode);
+        prof.Channels[Case].ManualPercent = 10; // applied copy is independent
+        Assert.Equal(70f, h.S.FanChannels[Case].ManualPercent);
+        h.Tick(50);
+        Assert.Equal((Case, 70f), h.WritesFor(Case).Last());
+        h.C.SetManualPercent(Case, 60);
+        Assert.Null(h.S.ActiveFanProfile);
+    }
+
+    [Fact]
+    public void ApplyProfile_DeferSave_SavesAtEndOfNextTick()
+    {
+        var h = new H();
+        int before = h.Saves;
+        h.C.ApplyProfile(new FanProfile { Name = "P" }, deferSave: true);
+        Assert.Equal(before, h.Saves);
+        h.Tick(50);
+        Assert.Equal(before + 1, h.Saves);
+    }
+
+    [Fact]
+    public void CreateDefaultProfiles_ThreeProfiles_SourcesByDevice_PumpsAuto()
+    {
+        var h = new H();
+        var profs = FanController.CreateDefaultProfiles(h.B.Chans, "cpu.t", "gpu.t");
+        Assert.Equal(new[] { "Silent", "Balanced", "Gaming" }, profs.Select(p => p.Name));
+        var gaming = profs[2];
+        Assert.Equal(FanMode.Curve, gaming.Channels[Case].Mode);
+        Assert.Equal(new[] { "cpu.t" }, gaming.Channels[Case].SourceMetricIds);
+        Assert.Equal(new[] { "gpu.t" }, gaming.Channels[Gpu].SourceMetricIds);   // Device "RTX 5070 Ti"
+        Assert.Equal(FanMode.Auto, gaming.Channels[Pump].Mode);
+        Assert.Equal(new FanPoint(30, 40), gaming.Channels[Case].Points[0]);
+        Assert.Equal(FanCurve.DefaultPoints, profs[1].Channels[Case].Points);
+        Assert.Equal(new FanPoint(30, 20), profs[0].Channels[Case].Points[0]);
+        var none = FanController.CreateDefaultProfiles(h.B.Chans, null, null);
+        Assert.Equal(FanMode.Auto, none[2].Channels[Case].Mode); // no source → Auto
+    }
 }

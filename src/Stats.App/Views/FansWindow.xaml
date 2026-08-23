@@ -11,6 +11,13 @@
                       Foreground="{StaticResource TextPrimary}"/>
             <TextBlock Text="Fans" FontSize="18" FontWeight="Bold" Foreground="{StaticResource TextPrimary}"/>
         </DockPanel>
+        <DockPanel DockPanel.Dock="Top" Margin="0,0,0,10">
+            <Button DockPanel.Dock="Right" Content="Create defaults" Command="{Binding CreateDefaultProfilesCommand}" Style="{StaticResource HeaderButton}" Margin="6,0,0,0"/>
+            <Button DockPanel.Dock="Right" Content="Delete" Command="{Binding DeleteProfileCommand}" CommandParameter="{Binding SelectedProfileName}" Style="{StaticResource HeaderButton}" Margin="6,0,0,0"/>
+            <Button DockPanel.Dock="Right" Content="Save as…" Click="SaveAs_Click" Style="{StaticResource HeaderButton}" Margin="6,0,0,0"/>
+            <TextBlock DockPanel.Dock="Right" Text="{Binding ActiveProfileName, StringFormat='profile: {0}'}" Foreground="{StaticResource TextSecondary}" VerticalAlignment="Center" Margin="10,0,0,0"/>
+            <ComboBox ItemsSource="{Binding ProfileNames}" SelectedItem="{Binding SelectedProfileName}" MinWidth="160" VerticalAlignment="Center" HorizontalAlignment="Left"/>
+        </DockPanel>
         <Border DockPanel.Dock="Top" Background="#4A3A1E" CornerRadius="4" Padding="10,6" Margin="0,0,0,10">
             <TextBlock Foreground="{StaticResource TextPrimary}" TextWrapping="Wrap" FontSize="12"
                        Text="Writes fan speeds to your hardware. Close other fan software (MSI Center, Fan Control, Afterburner fan curves) first — two controllers fighting over the same fan is unsafe. Speeds return to device control when you switch a fan to Auto, turn this off, or exit Stats. Changes apply on the next sensor poll (≈1 s)."/>

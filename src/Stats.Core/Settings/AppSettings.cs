@@ -48,6 +48,11 @@ public sealed class AppSettings
     // ---- v1.4 ----
     /// <summary>Poll motherboard Super-I/O and USB/HID fan controllers (needed for fan control); restart to apply.</summary>
     public bool ReadMotherboardAndCoolers { get; set; } = true;
+    /// <summary>Saved fan configurations (e.g. Silent/Balanced/Gaming plus any user-named ones).</summary>
+    public List<FanProfile> FanProfiles { get; set; } = new();
+    /// <summary>Name of the profile that matches the live <see cref="FanChannels"/> state; null = "Custom"
+    /// (edited since the last save/load of a profile).</summary>
+    public string? ActiveFanProfile { get; set; }
 
     /// <summary>Get-or-create the TilePref for a metric id.</summary>
     public TilePref PrefFor(string metricId)

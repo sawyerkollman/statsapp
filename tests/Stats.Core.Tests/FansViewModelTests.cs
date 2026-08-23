@@ -184,4 +184,26 @@ public class FansViewModelTests
         now = now.AddSeconds(3); vm.Refresh(); Assert.Equal(1, calls);
         now = now.AddSeconds(3); vm.Refresh(); Assert.Equal(2, calls);
     }
+
+    [Fact]
+    public void Profiles_SaveLoadDelete_CreateDefaults()
+    {
+        var (vm, c, _, s) = Make();
+        vm.Devices[0].Channels[0].Mode = FanMode.Manual;
+        vm.SaveProfileCommand.Execute("Quiet");
+        Assert.Equal(new[] { "Quiet" }, vm.ProfileNames);
+        Assert.Equal("Quiet", vm.ActiveProfileName);
+        vm.Devices[0].Channels[0].Mode = FanMode.Auto;
+        Assert.Equal("Custom", vm.ActiveProfileName);
+        vm.LoadProfileCommand.Execute("Quiet");
+        Assert.Equal(FanMode.Manual, vm.Devices[0].Channels[0].Mode);
+        Assert.Equal("Quiet", vm.ActiveProfileName);
+        vm.CreateDefaultProfilesCommand.Execute(null);
+        Assert.Equal(new[] { "Quiet", "Silent", "Balanced", "Gaming" }, vm.ProfileNames);
+        Assert.Equal(new[] { "cpu.tctl" }, s.FanProfiles.Single(p => p.Name == "Gaming").Channels["/ite/control/0"].SourceMetricIds);
+        Assert.Equal(new[] { "gpu.core" }, s.FanProfiles.Single(p => p.Name == "Gaming").Channels["/gpu/control/1"].SourceMetricIds);
+        vm.DeleteProfileCommand.Execute("Quiet");
+        Assert.DoesNotContain("Quiet", vm.ProfileNames);
+        Assert.Equal("Custom", vm.ActiveProfileName);
+    }
 }

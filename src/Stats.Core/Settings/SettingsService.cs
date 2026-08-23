@@ -43,9 +43,18 @@ public sealed class SettingsService
         // An explicit JSON null deserializes over the property initializer, so re-establish the empty collections.
         settings.ThresholdRules ??= new();
         settings.FanChannels ??= new();
+        settings.FanProfiles ??= new();
         ThresholdDefaults.EnsureDefaults(settings.ThresholdRules);
         settings.OverlayHotkey ??= "";
-        foreach (var pref in settings.FanChannels.Values)
+        foreach (var pref in settings.FanChannels.Values) Sanitize(pref);
+        foreach (var profile in settings.FanProfiles)
+        {
+            profile.Channels ??= new();
+            foreach (var pref in profile.Channels.Values) Sanitize(pref);
+        }
+        return settings;
+
+        static void Sanitize(FanChannelPref pref)
         {
             pref.ManualPercent = Math.Clamp(pref.ManualPercent, 0f, 100f);
             if (!FanCurve.TryCreate(pref.Points, out _))
@@ -55,7 +64,6 @@ public sealed class SettingsService
                 pref.SourceMetricIds.Add(pref.SourceMetricId);
             pref.SourceMetricId = pref.SourceMetricIds.FirstOrDefault();
         }
-        return settings;
     }
 
     public void Save(AppSettings settings)

@@ -364,7 +364,7 @@ public partial class App : Application
         if (_fanController is null || _settings is null) return;
         if (_fans is null)
         {
-            _fansVm = new FansViewModel(_fanController, _definitions, _settings);
+            _fansVm = new FansViewModel(_fanController, _definitions, _settings, saveSettings: SaveSettings);
             if (_fanRecovered) _fansVm.RecoveryNotice = "Stats did not shut down cleanly last time — all fans were returned to device control.";
             _fans = new FansWindow { DataContext = _fansVm };
             if (_settings.FansWidth is double w) _fans.Width = w;

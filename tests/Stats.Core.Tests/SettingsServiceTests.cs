@@ -261,4 +261,32 @@ public class SettingsServiceTests : IDisposable
         Assert.Equal(new[] { "cpu.t" }, p.SourceMetricIds);
         Assert.Equal("cpu.t", p.SourceMetricId);
     }
+
+    [Fact]
+    public void FanProfiles_RoundTrip_AndNullGuard()
+    {
+        var svc = new SettingsService(_dir);
+        var s = new AppSettings { ActiveFanProfile = "Silent" };
+        s.FanProfiles.Add(new FanProfile
+        {
+            Name = "Silent",
+            Channels = { ["/lpc/it8696e/0/control/0"] = new FanChannelPref { Mode = FanMode.Curve, ManualPercent = 140, Points = new() { new(50, 50) } } },
+        });
+        svc.Save(s);
+
+        var loaded = new SettingsService(_dir).Load();
+        Assert.Equal("Silent", loaded.ActiveFanProfile);
+        var prof = loaded.FanProfiles.Single();
+        Assert.Equal("Silent", prof.Name);
+        var p = prof.Channels["/lpc/it8696e/0/control/0"];
+        Assert.Equal(FanMode.Curve, p.Mode);
+        Assert.Equal(100f, p.ManualPercent);                 // profile channels get the same sanitation as live ones
+        Assert.Equal(FanCurve.DefaultPoints, p.Points);       // 1 point = invalid curve → default
+
+        Directory.CreateDirectory(_dir);
+        File.WriteAllText(Path.Combine(_dir, "settings.json"), """{ "FanProfiles": null }""");
+        var loaded2 = new SettingsService(_dir).Load();
+        Assert.NotNull(loaded2.FanProfiles);
+        Assert.Empty(loaded2.FanProfiles);
+    }
 }
