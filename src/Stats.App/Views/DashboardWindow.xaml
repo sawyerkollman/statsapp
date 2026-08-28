@@ -174,7 +174,7 @@
                                     <TextBlock DockPanel.Dock="Right" Width="44" TextAlignment="Right" Style="{StaticResource SettingsLabel}"
                                                Text="{Binding PollIntervalSeconds, StringFormat='{}{0:0.0} s'}"/>
                                     <Slider Minimum="0.5" Maximum="5" TickFrequency="0.5" IsSnapToTickEnabled="True"
-                                            Value="{Binding PollIntervalSeconds}"/>
+                                            Value="{Binding PollIntervalSeconds, Delay=250}"/>
                                 </DockPanel>
 
                                 <TextBlock Text="History window" Style="{StaticResource SettingsHeader}"/>
@@ -243,7 +243,7 @@
                                     <TextBlock Text="Font scale" Width="90" Style="{StaticResource SettingsLabel}"/>
                                     <TextBlock DockPanel.Dock="Right" Width="40" TextAlignment="Right" Style="{StaticResource SettingsLabel}"
                                                Text="{Binding OverlayFontScale, StringFormat='{}{0:0.0}×'}"/>
-                                    <Slider Minimum="0.8" Maximum="1.6" TickFrequency="0.1" IsSnapToTickEnabled="True" Value="{Binding OverlayFontScale}"/>
+                                    <Slider Minimum="0.8" Maximum="1.6" TickFrequency="0.1" IsSnapToTickEnabled="True" Value="{Binding OverlayFontScale, Delay=250}"/>
                                 </DockPanel>
                                 <DockPanel Margin="0,2">
                                     <TextBlock Text="Opacity" Width="90" Style="{StaticResource SettingsLabel}"/>

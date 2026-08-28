@@ -63,7 +63,9 @@ public sealed partial class MetricTileViewModel : ObservableObject
             ? string.Create(CultureInfo.InvariantCulture, $"{cur / lim * 100:F0}% of {ValueFormatter.Format(Definition, lim)}")
             : "";
         HistoryValues = _history.ToArray();
-        HistoryWindowTag = $"{_settings.HistoryWindowMinutes}m";
+        // The requested window can be clamped (HistoryCapacity.Compute) to fit the [30, 3600]-sample buffer, so
+        // the tag reports what the buffer actually covers — capacity × current poll interval — not the request.
+        HistoryWindowTag = HistoryCapacity.FormatWindow(_history.Capacity * _settings.PollIntervalSeconds);
     }
 
     /// <summary>Re-raises PropertyChanged(Severity) without changing the value — used after a live theme switch

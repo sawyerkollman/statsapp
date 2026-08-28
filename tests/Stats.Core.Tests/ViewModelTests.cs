@@ -40,6 +40,19 @@ public class ViewModelTests
     }
 
     [Fact]
+    public void Tile_HistoryWindowTag_ReflectsClampedCapacity_NotRequestedMinutes()
+    {
+        // 60 requested minutes at 0.5s would need 7200 samples; HistoryCapacity.Compute clamps to 3600, which at
+        // 0.5s only covers 30 minutes — the tag must be honest about what the buffer actually holds.
+        var history = new MetricHistory(HistoryCapacity.Compute(60, 0.5));
+        var s = new AppSettings { HistoryWindowMinutes = 60, PollIntervalSeconds = 0.5 };
+        var tile = new MetricTileViewModel(CpuTemp, history, s);
+        tile.Refresh();
+        Assert.Equal(3600, history.Capacity);
+        Assert.Equal("30m", tile.HistoryWindowTag);
+    }
+
+    [Fact]
     public void Tile_WithLimit_ShowsPercentOfLimit_AndGaugeKind()
     {
         var store = NewStore();

@@ -67,6 +67,11 @@ public partial class App : Application
     /// AppDomain.UnhandledException so a race between the two (or a repeated fault) only restores fans and
     /// flushes the log once.</summary>
     private int _fatalCleanupDone;
+    /// <summary>Shared debounce for Dashboard/Peaks/Fans window-bounds persistence: coalesces bursts of drag/resize
+    /// events (each of which already mutated the in-memory AppSettings) into one SaveSettings() call about five
+    /// seconds after the last change. The explicit exit-time SaveSettings() in OnExit remains the final backstop
+    /// if the app closes before this timer fires.</summary>
+    private DispatcherTimer? _boundsSaveTimer;
 
     protected override void OnStartup(StartupEventArgs e)
     {
@@ -307,6 +312,25 @@ public partial class App : Application
         else Dispatcher.BeginInvoke(SaveSettings);
     }
 
+    /// <summary>Called after Dashboard/Peaks/Fans LocationChanged/SizeChanged already updated the in-memory
+    /// AppSettings bounds. Restarts a single shared ~5s timer so a drag or resize that fires many events only
+    /// persists once, shortly after the last one — window bounds are no longer left only to the exit-time save.
+    /// UI-thread only, like the window events that call it.</summary>
+    private void ScheduleBoundsSave()
+    {
+        if (_boundsSaveTimer is null)
+        {
+            _boundsSaveTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(5) };
+            _boundsSaveTimer.Tick += (_, _) =>
+            {
+                _boundsSaveTimer!.Stop();
+                SaveSettings();
+            };
+        }
+        _boundsSaveTimer.Stop();
+        _boundsSaveTimer.Start();
+    }
+
     /// <summary>Background refresh of the running-process names the Fans window checks for competing fan tools.
     /// Process.GetProcesses() walks the whole process table (tens of ms) — far too slow for the Dispatcher.</summary>
     private void RefreshProcessNames()
@@ -355,6 +379,7 @@ public partial class App : Application
         _settings.WindowTop = _dashboard.Top;
         _settings.WindowWidth = _dashboard.Width;
         _settings.WindowHeight = _dashboard.Height;
+        ScheduleBoundsSave();
     }
 
     /// <summary>Keeps at least <paramref name="minVisible"/> px of the window inside the combined monitor area.</summary>
@@ -478,6 +503,7 @@ public partial class App : Application
         _settings.PeaksTop = _peaks.Top;
         _settings.PeaksWidth = _peaks.Width;
         _settings.PeaksHeight = _peaks.Height;
+        ScheduleBoundsSave();
     }
 
     private void ShowFans()
@@ -519,6 +545,7 @@ public partial class App : Application
         _settings.FansTop = _fans.Top;
         _settings.FansWidth = _fans.Width;
         _settings.FansHeight = _fans.Height;
+        ScheduleBoundsSave();
     }
 
     private void OnSettingsChanged(SettingsChange change)
