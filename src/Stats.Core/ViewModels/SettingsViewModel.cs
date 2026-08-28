@@ -41,6 +41,7 @@ public sealed partial class SettingsViewModel : ObservableObject
 
     public event Action<SettingsChange>? Changed;
     public event Action? OverlayPositionResetRequested;
+    public event Action? OpenLogFolderRequested;
 
     public SettingsViewModel(AppSettings settings, IReadOnlyList<MetricDefinition> definitions, Action save)
     {
@@ -104,6 +105,8 @@ public sealed partial class SettingsViewModel : ObservableObject
     [ObservableProperty] private string _accentHex;
     /// <summary>True while the AccentHex TextBox holds text that isn't "" and isn't valid #RRGGBB — red outline.</summary>
     [ObservableProperty] private bool _isAccentInvalid;
+    /// <summary>"" = ok; set by App after Open log folder fails (folder create or shell-open error).</summary>
+    [ObservableProperty] private string _diagnosticsError = "";
 
     public IReadOnlyList<string> ThemePresetNames => ThemePresets.Names;
     public IReadOnlyList<string> AccentSwatches => ThemePresets.AccentSwatches;
@@ -111,6 +114,7 @@ public sealed partial class SettingsViewModel : ObservableObject
     [RelayCommand] private void ResetOverlayPosition() => OverlayPositionResetRequested?.Invoke();
     [RelayCommand] private void ResetAccent() => AccentHex = "";
     [RelayCommand] private void SetAccent(string hex) => AccentHex = hex;
+    [RelayCommand] private void OpenLogFolder() => OpenLogFolderRequested?.Invoke();
 
     // ---- write-through ----
 

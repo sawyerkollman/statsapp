@@ -323,6 +323,15 @@
 
                                 <TextBlock Text="Updates" Style="{StaticResource SettingsHeader}"/>
                                 <CheckBox Content="Check for updates automatically" IsChecked="{Binding CheckForUpdatesAutomatically}"/>
+
+                                <TextBlock Text="Diagnostics" Style="{StaticResource SettingsHeader}"/>
+                                <DockPanel Margin="0,0,0,4">
+                                    <Button Content="Open log folder" Command="{Binding OpenLogFolderCommand}"
+                                            Style="{StaticResource HeaderButton}" HorizontalAlignment="Left"/>
+                                </DockPanel>
+                                <TextBlock Text="Crash and error details are written to %AppData%\Stats\logs (newest seven days kept)."
+                                           Foreground="{DynamicResource TextSecondary}" FontSize="11" TextWrapping="Wrap"/>
+                                <TextBlock Text="{Binding DiagnosticsError}" Foreground="{DynamicResource CritBrush}" FontSize="11" TextWrapping="Wrap"/>
                             </StackPanel>
                         </ScrollViewer>
                     </TabItem>

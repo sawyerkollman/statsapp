@@ -6,6 +6,7 @@ using System.Security.Principal;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Resources;
+using System.Windows.Threading;
 using H.NotifyIcon;
 using Stats.App.Helpers;
 using Stats.App.Tray;
@@ -62,9 +63,17 @@ public partial class App : Application
     /// <summary>Cancelled by ExitApp()/OnExit() so an in-flight install download bails out (and resets the busy
     /// state) instead of racing app shutdown; a fresh instance per "Update now" click.</summary>
     private CancellationTokenSource? _installCts;
+    /// <summary>0 = not run yet, 1 = fatal cleanup has run. Guards DispatcherUnhandledException and
+    /// AppDomain.UnhandledException so a race between the two (or a repeated fault) only restores fans and
+    /// flushes the log once.</summary>
+    private int _fatalCleanupDone;
 
     protected override void OnStartup(StartupEventArgs e)
     {
+        RollingTraceLog.Install();
+        DispatcherUnhandledException += OnDispatcherUnhandledException;
+        AppDomain.CurrentDomain.UnhandledException += OnAppDomainUnhandledException;
+        TaskScheduler.UnobservedTaskException += OnUnobservedTaskException;
         base.OnStartup(e);
 
         var settingsDir = Path.Combine(
@@ -141,6 +150,7 @@ public partial class App : Application
         _dashboardVm.SettingsPanel = _settingsVm;
         _settingsVm.Changed += OnSettingsChanged;
         _settingsVm.OverlayPositionResetRequested += ResetOverlayPosition;
+        _settingsVm.OpenLogFolderRequested += OpenLogFolder;
 
         ClickThrough.Set(_overlay, _settings.OverlayClickThrough);
 
@@ -219,6 +229,51 @@ public partial class App : Application
         _trayRenderer?.Dispose();
         _appIcon?.Dispose();
         base.OnExit(e);
+    }
+
+    /// <summary>WPF's last-chance handler for an exception that reached the Dispatcher's message loop unhandled.
+    /// Deliberately never sets e.Handled — this is fatal-cleanup-then-terminate, not error recovery.</summary>
+    private void OnDispatcherUnhandledException(object sender, DispatcherUnhandledExceptionEventArgs e) =>
+        FatalCleanup("DispatcherUnhandledException", e.Exception);
+
+    /// <summary>Last-resort handler for an exception that unwound an entire thread (e.g. a background Task
+    /// continuation with no awaiter). There is no "mark handled" here — the CLR is already terminating the
+    /// process by the time this fires when e.IsTerminating is true.</summary>
+    private void OnAppDomainUnhandledException(object sender, UnhandledExceptionEventArgs e) =>
+        FatalCleanup("AppDomain.UnhandledException", e.ExceptionObject as Exception
+            ?? new Exception(e.ExceptionObject?.ToString() ?? "unknown non-Exception payload"));
+
+    /// <summary>A Task's exception was never observed (awaited/handled) before its finalizer ran. This is not
+    /// treated as fatal — the process keeps running — so it is only logged and flushed, and deliberately left
+    /// unobserved (not calling e.SetObserved()) so the condition stays visible rather than being silently hidden.</summary>
+    private void OnUnobservedTaskException(object? sender, UnobservedTaskExceptionEventArgs e)
+    {
+        Trace.WriteLine("[Stats] UnobservedTaskException: " + e.Exception);
+        FlushTraceListeners();
+    }
+
+    /// <summary>Runs once per process, however many fatal handlers race to call it. Traces the failure,
+    /// best-effort restores every fan to device control (the same release path OnExit uses — no second release
+    /// path), then flushes so the trace log survives process termination. Never swallows or converts the fault
+    /// into continued execution.</summary>
+    private void FatalCleanup(string source, Exception ex)
+    {
+        if (Interlocked.Exchange(ref _fatalCleanupDone, 1) != 0) return;
+        try { Trace.WriteLine($"[Stats] FATAL ({source}): {ex}"); }
+        catch (Exception) { /* logging must never block cleanup */ }
+        try { _fanController?.RestoreAll(); }
+        catch (Exception restoreError)
+        {
+            try { Trace.WriteLine("[Stats] Fatal fan restore failed: " + restoreError); }
+            catch (Exception) { /* logging must never block cleanup */ }
+        }
+        FlushTraceListeners();
+    }
+
+    private static void FlushTraceListeners()
+    {
+        try { Trace.Flush(); }
+        catch (Exception) { /* best-effort */ }
     }
 
     /// <summary>The UI thread owns every collection in the settings graph, so every save is serialized here, on
@@ -536,6 +591,26 @@ public partial class App : Application
         _settings.OverlayTop = _overlay.Top;
         if (!_overlay.IsVisible) _overlay.Show();
         SaveSettings();
+    }
+
+    /// <summary>Settings "Open log folder". Creates the folder if RollingTraceLog.Install() never got that far
+    /// (e.g. it failed before creating the directory) and opens it with the shell; a failure is surfaced inline
+    /// rather than silently ignored, per the Diagnostics section's explicit error state.</summary>
+    private void OpenLogFolder()
+    {
+        if (_settingsVm is null) return;
+        try
+        {
+            var dir = RollingTraceLog.LogDirectory ?? Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Stats", "logs");
+            Directory.CreateDirectory(dir);
+            Process.Start(new ProcessStartInfo(dir) { UseShellExecute = true });
+            _settingsVm.DiagnosticsError = "";
+        }
+        catch (Exception ex)
+        {
+            _settingsVm.DiagnosticsError = "Couldn't open log folder: " + ex.Message;
+        }
     }
 
     private void ExitApp()
