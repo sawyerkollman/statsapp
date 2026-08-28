@@ -198,6 +198,16 @@ public class DashboardViewModelTests
     }
 
     [Fact]
+    public void OpenSettings_RaisesSettingsOpened()
+    {
+        var (vm, _, _, _) = Make();
+        int opened = 0;
+        vm.SettingsOpened += () => opened++;
+        vm.OpenSettingsCommand.Execute(null);
+        Assert.Equal(1, opened);
+    }
+
+    [Fact]
     public void SetTileThresholds_WritesOverride_RemovesWhenNullOrInvalid()
     {
         var (vm, s, _, saves) = Make("cpu.temp");

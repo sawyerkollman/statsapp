@@ -206,6 +206,48 @@ public class SettingsViewModelTests
     }
 
     [Fact]
+    public void StartupEnabled_UserToggle_RaisesRequest_NoSaveNoChanged()
+    {
+        var (vm, _, changes, saves) = Make();
+        var requests = new List<bool>();
+        vm.StartupToggleRequested += requests.Add;
+
+        vm.StartupEnabled = true;
+
+        Assert.Equal(new[] { true }, requests);
+        Assert.Empty(changes); // live OS state — never routed through SettingsChange
+        Assert.Equal(0, saves()); // — nor persisted to AppSettings
+    }
+
+    [Fact]
+    public void ApplyStartupState_UpdatesPropertiesWithoutRaisingToggleRequest()
+    {
+        var (vm, _, _, _) = Make();
+        int requests = 0;
+        vm.StartupToggleRequested += _ => requests++;
+
+        vm.ApplyStartupState(enabled: true, busy: false, error: "boom");
+
+        Assert.True(vm.StartupEnabled);
+        Assert.False(vm.StartupBusy);
+        Assert.Equal("boom", vm.StartupError);
+        Assert.Equal(0, requests); // the query/mutation result must not loop back as a user toggle
+    }
+
+    [Fact]
+    public void ApplyStartupState_ThenUserToggle_StillRaisesRequest()
+    {
+        var (vm, _, _, _) = Make();
+        var requests = new List<bool>();
+        vm.StartupToggleRequested += requests.Add;
+
+        vm.ApplyStartupState(enabled: true, busy: false, error: "");
+        vm.StartupEnabled = false; // a genuine user click after the suppressed write above
+
+        Assert.Equal(new[] { false }, requests);
+    }
+
+    [Fact]
     public void Ctor_LoadsThemeFromSettings()
     {
         var s = new AppSettings { ThemePreset = "Dark Blue", ThemeAccent = "#123456" };

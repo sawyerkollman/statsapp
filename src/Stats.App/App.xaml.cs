@@ -16,6 +16,7 @@ using Stats.Core.Frames;
 using Stats.Core.Metrics;
 using Stats.Core.Sensors;
 using Stats.Core.Settings;
+using Stats.Core.Startup;
 using Stats.Core.Updates;
 using Stats.Core.ViewModels;
 
@@ -60,6 +61,11 @@ public partial class App : Application
     private CompositeSensorReader? _composite;
     private UpdateService? _updateService;
     private CancellationTokenSource? _updateCts;
+    private StartupTaskService? _startupTaskService;
+    /// <summary>True until the first ShowDashboard() call (tray click or Settings/Open dashboard) — that call
+    /// performs one immediate RefreshAll() against already-polled data before showing, since a --minimized
+    /// launch skipped the initial Show() and its first snapshot dispatch race.</summary>
+    private bool _pendingFirstShowRefresh;
     /// <summary>Cancelled by ExitApp()/OnExit() so an in-flight install download bails out (and resets the busy
     /// state) instead of racing app shutdown; a fresh instance per "Update now" click.</summary>
     private CancellationTokenSource? _installCts;
@@ -80,6 +86,8 @@ public partial class App : Application
         AppDomain.CurrentDomain.UnhandledException += OnAppDomainUnhandledException;
         TaskScheduler.UnobservedTaskException += OnUnobservedTaskException;
         base.OnStartup(e);
+
+        bool startMinimized = StartupArgs.HasMinimizedFlag(e.Args); // case-insensitive: installer/shortcuts may pass any casing
 
         var settingsDir = Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Stats");
@@ -156,6 +164,9 @@ public partial class App : Application
         _settingsVm.Changed += OnSettingsChanged;
         _settingsVm.OverlayPositionResetRequested += ResetOverlayPosition;
         _settingsVm.OpenLogFolderRequested += OpenLogFolder;
+        _settingsVm.StartupToggleRequested += OnStartupToggleRequested;
+        _dashboardVm.SettingsOpened += () => _ = RefreshStartupTaskStateAsync();
+        _startupTaskService = new StartupTaskService();
 
         ClickThrough.Set(_overlay, _settings.OverlayClickThrough);
 
@@ -214,9 +225,11 @@ public partial class App : Application
         _dashboard.LocationChanged += (_, _) => SaveWindowBounds();
         _dashboard.SizeChanged += (_, _) => SaveWindowBounds();
         SessionEnding += (_, _) => ExitApp();
-        _dashboard.Show();
+        _pendingFirstShowRefresh = true; // consumed by the first ShowDashboard() call, whether that's now or a later tray click
+        if (!startMinimized) _dashboard.Show(); // --minimized: dashboard/tray/services/poller are still fully constructed above, just not shown
         _poller.Start();
         StartUpdateChecks();
+        _ = RefreshStartupTaskStateAsync(); // settings load: reflect the actual "Stats" logon task state, not a persisted setting
     }
 
     protected override void OnExit(ExitEventArgs e)
@@ -459,9 +472,18 @@ public partial class App : Application
         catch { /* keep previous icon */ }
     }
 
+    /// <summary>Tray icon left-click, "Open dashboard", and "Settings" all funnel through here. The very first
+    /// call refreshes the dashboard VM against the already-current MetricStore before showing/activating —
+    /// closes the gap between a --minimized launch's skipped initial Show() and whatever poll tick last ran.
+    /// </summary>
     private void ShowDashboard()
     {
         if (_dashboard is null) return;
+        if (_pendingFirstShowRefresh)
+        {
+            _pendingFirstShowRefresh = false;
+            _dashboardVm?.RefreshAll();
+        }
         _dashboard.Show();
         _dashboard.WindowState = WindowState.Normal;
         _dashboard.Activate();
@@ -641,6 +663,88 @@ public partial class App : Application
         {
             _settingsVm.DiagnosticsError = "Couldn't open log folder: " + ex.Message;
         }
+    }
+
+    // ---- startup (autostart) ----
+
+    /// <summary>Settings checkbox toggled. Runs the same schtasks /Create the installer's Scheduled Task uses
+    /// (see StartupTaskCommands.Create) or /Delete, then re-queries so the checkbox always reflects actual OS
+    /// state rather than the click that requested it — a failed mutation snaps the checkbox back automatically.
+    /// </summary>
+    private async void OnStartupToggleRequested(bool enable)
+    {
+        if (_settingsVm is null || _startupTaskService is null) return;
+        _settingsVm.ApplyStartupState(enable, busy: true, error: "");
+
+        string error = "";
+        try
+        {
+            if (enable)
+            {
+                var exePath = Environment.ProcessPath;
+                if (string.IsNullOrEmpty(exePath))
+                    throw new InvalidOperationException("Could not resolve the running executable's path.");
+                var result = await _startupTaskService.CreateAsync(exePath).ConfigureAwait(true);
+                if (!result.Succeeded) error = FormatStartupTaskError("create", result);
+            }
+            else
+            {
+                var result = await _startupTaskService.DeleteAsync().ConfigureAwait(true);
+                if (!result.Succeeded) error = FormatStartupTaskError("remove", result);
+            }
+        }
+        catch (Exception ex)
+        {
+            error = $"Could not {(enable ? "enable" : "disable")} startup: {ex.Message}";
+        }
+
+        await RefreshStartupTaskStateAsync(error, desiredState: enable, allowWhileBusy: true).ConfigureAwait(true);
+    }
+
+    /// <summary>Re-queries the "Stats" logon Scheduled Task and pushes the actual result into the Settings VM.
+    /// <paramref name="pendingError"/> (from a just-completed /Create or /Delete) takes priority over a query
+    /// failure so the user sees why the mutation didn't take, not a generic "couldn't check" message.</summary>
+    private async Task RefreshStartupTaskStateAsync(
+        string pendingError = "",
+        bool? desiredState = null,
+        bool allowWhileBusy = false)
+    {
+        if (_settingsVm is null || _startupTaskService is null) return;
+        if (_settingsVm.StartupBusy && !allowWhileBusy) return;
+        _settingsVm.ApplyStartupState(_settingsVm.StartupEnabled, busy: true, error: "");
+
+        bool enabled;
+        string queryError = "";
+        try
+        {
+            var result = await _startupTaskService.QueryAsync().ConfigureAwait(true);
+            enabled = result.Succeeded;
+            if (!enabled && !StartupTaskIsMissing(result))
+                queryError = FormatStartupTaskError("check", result);
+        }
+        catch (Exception ex)
+        {
+            enabled = false;
+            queryError = "Could not check startup status: " + ex.Message;
+        }
+
+        if (queryError.Length == 0 && desiredState == enabled) pendingError = "";
+        _settingsVm.ApplyStartupState(enabled, busy: false, pendingError.Length > 0 ? pendingError : queryError);
+    }
+
+    private static bool StartupTaskIsMissing(StartupTaskResult result)
+    {
+        var detail = result.StandardError + "\n" + result.StandardOutput;
+        return detail.Contains("cannot find the file specified", StringComparison.OrdinalIgnoreCase)
+            || detail.Contains("does not exist", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static string FormatStartupTaskError(string verb, StartupTaskResult result)
+    {
+        var detail = !string.IsNullOrWhiteSpace(result.StandardError) ? result.StandardError
+            : !string.IsNullOrWhiteSpace(result.StandardOutput) ? result.StandardOutput
+            : $"exit code {result.ExitCode}";
+        return $"Could not {verb} the startup task ({detail}).";
     }
 
     private void ExitApp()

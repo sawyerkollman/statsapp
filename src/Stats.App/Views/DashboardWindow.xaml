@@ -328,6 +328,14 @@
                                 </CheckBox>
                                 <TextBlock Text="{Binding HardwareStatus}" Foreground="{DynamicResource WarnBrush}" FontSize="11"/>
 
+                                <TextBlock Text="Startup" Style="{StaticResource SettingsHeader}"/>
+                                <CheckBox IsChecked="{Binding StartupEnabled}" IsEnabled="{Binding StartupBusy, Converter={StaticResource InverseBool}}">
+                                    <TextBlock Text="Start Stats when I sign in" Foreground="{DynamicResource TextPrimary}" TextWrapping="Wrap"/>
+                                </CheckBox>
+                                <TextBlock Text="Checking…" Visibility="{Binding StartupBusy, Converter={StaticResource BoolToVis}}"
+                                           Foreground="{DynamicResource TextSecondary}" FontSize="11"/>
+                                <TextBlock Text="{Binding StartupError}" Foreground="{DynamicResource CritBrush}" FontSize="11" TextWrapping="Wrap"/>
+
                                 <TextBlock Text="Updates" Style="{StaticResource SettingsHeader}"/>
                                 <CheckBox Content="Check for updates automatically" IsChecked="{Binding CheckForUpdatesAutomatically}"/>
 

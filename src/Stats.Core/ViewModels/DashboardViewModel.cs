@@ -57,6 +57,10 @@ public sealed partial class DashboardViewModel : ObservableObject
     /// <summary>Update now was clicked. All process/file/network work for the actual download + install happens
     /// in the composition root (App.xaml.cs) — this VM only owns the banner's display state.</summary>
     public event Action<UpdateInfo>? InstallUpdateRequested;
+    /// <summary>The Settings tab was opened (gear button or tray "Settings"). The composition root re-queries the
+    /// "Stats" logon Scheduled Task so the Startup checkbox reflects current OS state rather than a stale value
+    /// from the last time Settings was open.</summary>
+    public event Action? SettingsOpened;
 
     /// <summary>Startup-only degraded status (e.g. PawnIO missing at launch). Distinct from — and never cleared
     /// by — transient runtime sensor-read recovery below.</summary>
@@ -83,7 +87,7 @@ public sealed partial class DashboardViewModel : ObservableObject
     [RelayCommand] private void ToggleOverlay() => OverlayToggleRequested?.Invoke();
     [RelayCommand] private void OpenPeaks() => OpenPeaksRequested?.Invoke();
     [RelayCommand] private void OpenFans() => OpenFansRequested?.Invoke();
-    [RelayCommand] private void OpenSettings() { FlyoutTabIndex = 1; IsPickerOpen = true; }
+    [RelayCommand] private void OpenSettings() { FlyoutTabIndex = 1; IsPickerOpen = true; SettingsOpened?.Invoke(); }
     [RelayCommand] private void CollapseAll() { foreach (var s in Sections) s.IsExpanded = false; }
     [RelayCommand] private void ExpandAll() { foreach (var s in Sections) s.IsExpanded = true; }
 

@@ -42,6 +42,11 @@ public sealed partial class SettingsViewModel : ObservableObject
     public event Action<SettingsChange>? Changed;
     public event Action? OverlayPositionResetRequested;
     public event Action? OpenLogFolderRequested;
+    /// <summary>The Startup checkbox was toggled by the user (not by <see cref="ApplyStartupState"/>). The
+    /// composition root performs the actual schtasks /Create or /Delete asynchronously and reports the result
+    /// back through <see cref="ApplyStartupState"/> — this view model never touches Process or AppSettings for
+    /// this feature; it is live OS state, not a persisted preference.</summary>
+    public event Action<bool>? StartupToggleRequested;
 
     public SettingsViewModel(AppSettings settings, IReadOnlyList<MetricDefinition> definitions, Action save)
     {
@@ -107,6 +112,18 @@ public sealed partial class SettingsViewModel : ObservableObject
     [ObservableProperty] private bool _isAccentInvalid;
     /// <summary>"" = ok; set by App after Open log folder fails (folder create or shell-open error).</summary>
     [ObservableProperty] private string _diagnosticsError = "";
+    /// <summary>Reflects the actual "Stats" logon Scheduled Task's existence, refreshed by the composition root
+    /// via <see cref="ApplyStartupState"/> — never backed by a persisted AppSettings field.</summary>
+    [ObservableProperty] private bool _startupEnabled;
+    /// <summary>True while a query or /Create /Delete is in flight; the checkbox is disabled in the XAML while
+    /// this is true.</summary>
+    [ObservableProperty] private bool _startupBusy;
+    /// <summary>"" = ok; set by App after a schtasks query/create/delete failure (non-zero exit code or a
+    /// process-launch error).</summary>
+    [ObservableProperty] private string _startupError = "";
+    /// <summary>Guards <see cref="OnStartupEnabledChanged"/> while <see cref="ApplyStartupState"/> is writing the
+    /// re-queried result back, so that write doesn't re-raise <see cref="StartupToggleRequested"/>.</summary>
+    private bool _suppressStartupToggle;
 
     public IReadOnlyList<string> ThemePresetNames => ThemePresets.Names;
     public IReadOnlyList<string> AccentSwatches => ThemePresets.AccentSwatches;
@@ -227,6 +244,27 @@ public sealed partial class SettingsViewModel : ObservableObject
         if (!_loaded) return;
         _s.CheckForUpdatesAutomatically = value;
         Raise(SettingsChange.Updates);
+    }
+
+    /// <summary>The checkbox is bound TwoWay, so a user click lands here first. Deliberately does not write to
+    /// AppSettings or call <see cref="Raise"/> — Startup is live OS state; the composition root performs the
+    /// actual schtasks mutation and reports the real result back through <see cref="ApplyStartupState"/>.</summary>
+    partial void OnStartupEnabledChanged(bool value)
+    {
+        if (!_loaded || _suppressStartupToggle) return;
+        StartupToggleRequested?.Invoke(value);
+    }
+
+    /// <summary>Called by the composition root after querying or mutating the "Stats" logon Scheduled Task.
+    /// Setting <see cref="StartupEnabled"/> here reflects the actual re-queried task state and must not re-raise
+    /// <see cref="StartupToggleRequested"/>, hence the suppression flag.</summary>
+    public void ApplyStartupState(bool enabled, bool busy, string error)
+    {
+        _suppressStartupToggle = true;
+        try { StartupEnabled = enabled; }
+        finally { _suppressStartupToggle = false; }
+        StartupBusy = busy;
+        StartupError = error;
     }
 
     partial void OnSelectedThemePresetChanged(string value)
