@@ -231,4 +231,90 @@ public class UpdateCheckerTests
         Assert.Equal("v1.7.0", UpdateChecker.FormatVersionDisplay(new Version(1, 7, 0)));
         Assert.Equal("v1.7.0", UpdateChecker.FormatVersionDisplay(new Version(1, 7, 0, 3))); // fourth field ignored
     }
+
+    // ---- SHA-256 release-body parsing (v1.7 update integrity) ----
+
+    private const string ValidHash = "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08";
+
+    /// <summary>Same shape as <see cref="Release"/> but with a "body" field, mirroring the real payload field
+    /// UpdateChecker.Parse reads the SHA256 line from.</summary>
+    private static string ReleaseWithBody(string tag, string assetName, long assetSize, string body) => $$"""
+        {
+          "tag_name": "{{tag}}",
+          "html_url": "https://github.com/sawyerkollman/statsapp/releases/tag/v1.4.2",
+          "body": {{System.Text.Json.JsonSerializer.Serialize(body)}},
+          "assets": [
+            { "name": "{{assetName}}", "size": {{assetSize}}, "browser_download_url": "https://github.com/sawyerkollman/statsapp/releases/download/v1.4.2/asset.exe" }
+          ]
+        }
+        """;
+
+    [Fact]
+    public void Parse_ReleaseBodyWithSha256Line_IsSurfacedAndLowercased()
+    {
+        var json = ReleaseWithBody("v1.4.2", "Stats-Setup-1.4.2.exe", 1, $"## Install\n\nSHA256: {ValidHash.ToUpperInvariant()}\n\n---");
+        var info = UpdateChecker.Parse(json, Current141);
+        Assert.NotNull(info);
+        Assert.Equal(ValidHash, info!.Sha256);
+    }
+
+    [Fact]
+    public void Parse_ReleaseBodyCaseInsensitiveLabelAndSurroundingWhitespace_IsRecognized()
+    {
+        var json = ReleaseWithBody("v1.4.2", "Stats-Setup-1.4.2.exe", 1, $"  sha256:   {ValidHash}  ");
+        var info = UpdateChecker.Parse(json, Current141);
+        Assert.NotNull(info);
+        Assert.Equal(ValidHash, info!.Sha256);
+    }
+
+    [Fact]
+    public void Parse_ReleaseBodyWithoutSha256Line_LeavesShaNull()
+    {
+        var json = ReleaseWithBody("v1.4.2", "Stats-Setup-1.4.2.exe", 1, "## Install\n\nDownload and run it.");
+        var info = UpdateChecker.Parse(json, Current141);
+        Assert.NotNull(info);
+        Assert.Null(info!.Sha256);
+    }
+
+    [Fact]
+    public void Parse_ReleaseWithNoBodyField_LeavesShaNull()
+    {
+        var json = Release("v1.4.2", "Stats-Setup-1.4.2.exe", 12345); // no "body" property at all
+        var info = UpdateChecker.Parse(json, Current141);
+        Assert.NotNull(info);
+        Assert.Null(info!.Sha256);
+    }
+
+    [Theory]
+    [InlineData("SHA256: " /* too short */ + "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a")]
+    [InlineData("SHA256: " /* too long: 65 hex chars */ + "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a081")]
+    [InlineData("SHA256: 9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08 trailing-text")]
+    [InlineData("SHA256: 9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a0g")] // non-hex char
+    [InlineData("SHA-256: 9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08")] // wrong label
+    [InlineData("PGP256: 9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08")]
+    public void Parse_MalformedSha256Line_IsIgnored(string malformedLine)
+    {
+        var json = ReleaseWithBody("v1.4.2", "Stats-Setup-1.4.2.exe", 1, $"## Install\n{malformedLine}\n---");
+        var info = UpdateChecker.Parse(json, Current141);
+        Assert.NotNull(info);
+        Assert.Null(info!.Sha256);
+    }
+
+    [Fact]
+    public void Parse_BodyIsNotAString_LeavesShaNull()
+    {
+        const string json = """
+            {
+              "tag_name": "v1.4.2",
+              "html_url": "https://github.com/sawyerkollman/statsapp/releases/tag/v1.4.2",
+              "body": 12345,
+              "assets": [
+                { "name": "Stats-Setup-1.4.2.exe", "size": 1, "browser_download_url": "https://github.com/sawyerkollman/statsapp/releases/download/v1.4.2/asset.exe" }
+              ]
+            }
+            """;
+        var info = UpdateChecker.Parse(json, Current141);
+        Assert.NotNull(info);
+        Assert.Null(info!.Sha256);
+    }
 }

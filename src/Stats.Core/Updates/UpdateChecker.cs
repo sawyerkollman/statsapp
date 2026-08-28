@@ -1,10 +1,15 @@
 using System.Text.Json;
+using System.Text.RegularExpressions;
 
 namespace Stats.Core.Updates;
 
 /// <summary>A newer release, ready to offer. <see cref="Version"/> is the parsed numeric version (first three
-/// fields; the fourth is always 0); <see cref="TagName"/> is the raw GitHub tag (e.g. "v1.4.2") for display.</summary>
-public sealed record UpdateInfo(Version Version, string TagName, string AssetUrl, long AssetSize, string ReleasePageUrl);
+/// fields; the fourth is always 0); <see cref="TagName"/> is the raw GitHub tag (e.g. "v1.4.2") for display.
+/// <see cref="Sha256"/> is the lowercase hex SHA-256 of the installer asset when the release body carries a
+/// machine-readable "SHA256: &lt;64 hex chars&gt;" line (see <see cref="UpdateChecker.Parse"/>); null for older
+/// releases published before integrity verification, in which case <see cref="UpdateService.DownloadAsync"/>
+/// falls back to size-only verification.</summary>
+public sealed record UpdateInfo(Version Version, string TagName, string AssetUrl, long AssetSize, string ReleasePageUrl, string? Sha256 = null);
 
 /// <summary>Pure parsing of a GitHub "latest release" API response — no I/O, no WPF. Kept separate from
 /// <see cref="UpdateService"/> so the interesting logic is unit-testable without a network.</summary>
@@ -12,6 +17,14 @@ public static class UpdateChecker
 {
     private const string AssetPrefix = "Stats-Setup-";
     private const string AssetSuffix = ".exe";
+
+    /// <summary>Matches a standalone release-body line of the form "SHA256: &lt;64 hex chars&gt;" (label
+    /// case-insensitive, optional surrounding whitespace). The hex group is fixed at exactly 64 characters, so
+    /// lines with extra trailing characters, a short/long hash, or no hash at all do not match and are ignored —
+    /// old releases without this line simply produce no match.</summary>
+    private static readonly Regex Sha256LinePattern = new(
+        @"^[ \t]*SHA256[ \t]*:[ \t]*([0-9a-fA-F]{64})[ \t]*\r?$",
+        RegexOptions.IgnoreCase | RegexOptions.Multiline | RegexOptions.CultureInvariant);
 
     /// <summary>Parses a GitHub /releases/latest JSON body and decides whether it describes an update over
     /// <paramref name="current"/>. Returns null for: malformed/empty JSON, a missing/non-string tag_name, a
@@ -46,6 +59,8 @@ public static class UpdateChecker
             var releasePageUrl = root.TryGetProperty("html_url", out var htmlProp) && htmlProp.ValueKind == JsonValueKind.String
                 ? htmlProp.GetString() ?? "" : "";
 
+            var sha256 = ParseSha256(root);
+
             if (!root.TryGetProperty("assets", out var assets) || assets.ValueKind != JsonValueKind.Array) return null;
 
             var expectedName = AssetPrefix + versionPart + AssetSuffix;
@@ -60,10 +75,25 @@ public static class UpdateChecker
                 var assetUrl = urlProp.GetString();
                 if (string.IsNullOrEmpty(assetUrl) || !IsAllowedAssetHost(assetUrl)) continue;
 
-                return new UpdateInfo(latest, tag, assetUrl, sizeProp.GetInt64(), releasePageUrl);
+                return new UpdateInfo(latest, tag, assetUrl, sizeProp.GetInt64(), releasePageUrl, sha256);
             }
             return null; // no asset with the expected exact name (and an allowed host)
         }
+    }
+
+    /// <summary>Reads the release "body" (markdown text), looking for a single machine-readable
+    /// "SHA256: &lt;64 hex chars&gt;" line (see <see cref="Sha256LinePattern"/>). Returns the hash normalized to
+    /// lowercase, or null when the body is absent/not a string, has no such line, or the line is malformed
+    /// (wrong length, extra trailing characters, etc.) — old releases without the line simply return null and
+    /// <see cref="UpdateService.DownloadAsync"/> continues with size-only verification.</summary>
+    private static string? ParseSha256(JsonElement root)
+    {
+        if (!root.TryGetProperty("body", out var bodyProp) || bodyProp.ValueKind != JsonValueKind.String) return null;
+        var body = bodyProp.GetString();
+        if (string.IsNullOrEmpty(body)) return null;
+
+        var match = Sha256LinePattern.Match(body);
+        return match.Success ? match.Groups[1].Value.ToLowerInvariant() : null;
     }
 
     /// <summary>First three fields only; an unset Minor/Build (-1, from parsing e.g. "1") normalizes to 0.</summary>

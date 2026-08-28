@@ -1,5 +1,6 @@
 using System.Net;
 using System.Net.Http;
+using System.Security.Cryptography;
 using Stats.Core.Updates;
 
 namespace Stats.Core.Tests;
@@ -56,6 +57,37 @@ public class UpdateServiceTests
         }
     }
 
+    [Fact]
+    public async Task DownloadAsync_PreExistingDestination_IsNotDeleted()
+    {
+        var original = new byte[] { 9, 8, 7 };
+        var service = MakeService(_ => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new ByteArrayContent(new byte[] { 1, 2, 3 }),
+        });
+        var info = new UpdateInfo(
+            new Version(1, 4, 2),
+            "v1.4.2",
+            "https://github.com/sawyerkollman/statsapp/releases/download/v1.4.2/Stats-Setup-1.4.2.exe",
+            AssetSize: 3,
+            ReleasePageUrl: "");
+        var destPath = Path.Combine(Path.GetTempPath(), $"stats-updateservice-test-{Guid.NewGuid():N}.exe");
+
+        try
+        {
+            await File.WriteAllBytesAsync(destPath, original);
+
+            await Assert.ThrowsAsync<IOException>(() =>
+                service.DownloadAsync(info, destPath, progress: null, CancellationToken.None));
+
+            Assert.Equal(original, await File.ReadAllBytesAsync(destPath));
+        }
+        finally
+        {
+            if (File.Exists(destPath)) File.Delete(destPath);
+        }
+    }
+
     private sealed class SyncProgress : IProgress<double>
     {
         public readonly List<double> Reports = new();
@@ -85,6 +117,88 @@ public class UpdateServiceTests
             Assert.NotEmpty(progress.Reports);
             Assert.Equal(1.0, progress.Reports[^1]); // progress ends at 100% on success
             Assert.All(progress.Reports, r => Assert.InRange(r, 0.0, 1.0));
+        }
+        finally
+        {
+            if (File.Exists(destPath)) File.Delete(destPath);
+        }
+    }
+
+    // ---- SHA-256 verification (v1.7 update integrity) ----
+
+    [Fact]
+    public async Task DownloadAsync_Sha256Matches_WritesFileAndReportsCompletion()
+    {
+        var bytes = new byte[50_000];
+        new Random(7).NextBytes(bytes);
+        var expectedHash = Convert.ToHexString(SHA256.HashData(bytes)).ToLowerInvariant();
+        var service = MakeService(_ => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new ByteArrayContent(bytes),
+        });
+        var info = new UpdateInfo(new Version(1, 4, 2), "v1.4.2", "https://github.com/sawyerkollman/statsapp/releases/download/v1.4.2/Stats-Setup-1.4.2.exe",
+            AssetSize: bytes.Length, ReleasePageUrl: "", Sha256: expectedHash.ToUpperInvariant()); // uppercase on purpose — comparison is case-insensitive
+        var destPath = Path.Combine(Path.GetTempPath(), $"stats-updateservice-test-{Guid.NewGuid():N}.exe");
+        var progress = new SyncProgress();
+
+        try
+        {
+            await service.DownloadAsync(info, destPath, progress, CancellationToken.None);
+
+            Assert.True(File.Exists(destPath));
+            Assert.Equal(bytes, await File.ReadAllBytesAsync(destPath));
+            Assert.Equal(1.0, progress.Reports[^1]);
+        }
+        finally
+        {
+            if (File.Exists(destPath)) File.Delete(destPath);
+        }
+    }
+
+    [Fact]
+    public async Task DownloadAsync_Sha256Mismatch_DeletesFileAndThrows()
+    {
+        var bytes = new byte[50_000];
+        new Random(9).NextBytes(bytes);
+        var wrongHash = new string('a', 64); // definitely not this payload's hash
+        var service = MakeService(_ => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new ByteArrayContent(bytes),
+        });
+        var info = new UpdateInfo(new Version(1, 4, 2), "v1.4.2", "https://github.com/sawyerkollman/statsapp/releases/download/v1.4.2/Stats-Setup-1.4.2.exe",
+            AssetSize: bytes.Length, ReleasePageUrl: "", Sha256: wrongHash);
+        var destPath = Path.Combine(Path.GetTempPath(), $"stats-updateservice-test-{Guid.NewGuid():N}.exe");
+
+        try
+        {
+            await Assert.ThrowsAsync<InvalidOperationException>(() =>
+                service.DownloadAsync(info, destPath, progress: null, CancellationToken.None));
+
+            Assert.False(File.Exists(destPath)); // mismatch must delete the file, not leave it behind
+        }
+        finally
+        {
+            if (File.Exists(destPath)) File.Delete(destPath);
+        }
+    }
+
+    [Fact]
+    public async Task DownloadAsync_NoSha256Present_SkipsHashVerificationAndSucceeds()
+    {
+        var bytes = new byte[1024];
+        new Random(11).NextBytes(bytes);
+        var service = MakeService(_ => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new ByteArrayContent(bytes),
+        });
+        var info = new UpdateInfo(new Version(1, 4, 2), "v1.4.2", "https://github.com/sawyerkollman/statsapp/releases/download/v1.4.2/Stats-Setup-1.4.2.exe",
+            AssetSize: bytes.Length, ReleasePageUrl: ""); // Sha256 defaults to null — old-release size-only path
+        var destPath = Path.Combine(Path.GetTempPath(), $"stats-updateservice-test-{Guid.NewGuid():N}.exe");
+
+        try
+        {
+            await service.DownloadAsync(info, destPath, progress: null, CancellationToken.None);
+            Assert.True(File.Exists(destPath));
         }
         finally
         {
