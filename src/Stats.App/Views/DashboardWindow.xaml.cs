@@ -98,21 +98,17 @@ public partial class DashboardWindow : Window
 
         var menu = new ContextMenu { PlacementTarget = (UIElement)sender };
 
-        // Submenu popups keep the default light Aero2 background while inheriting the ContextMenu
-        // style's near-white Foreground — pin submenu items to dark text (same fix as ComboBoxItem).
-        var submenuText = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(0x1E, 0x1E, 0x1E));
-
         var kind = new MenuItem { Header = "Tile kind" };
         foreach (var k in new[] { TileKind.Auto, TileKind.Sparkline, TileKind.Gauge, TileKind.Bar, TileKind.Value })
         {
-            var mi = new MenuItem { Header = k.ToString(), IsCheckable = true, IsChecked = CurrentPrefKind(id) == k, Foreground = submenuText };
+            var mi = new MenuItem { Header = k.ToString(), IsCheckable = true, IsChecked = CurrentPrefKind(id) == k };
             mi.Click += (_, _) => vm.SetTileKind(id, k);
             kind.Items.Add(mi);
         }
         var size = new MenuItem { Header = "Size" };
         foreach (var s in new[] { TileSize.S, TileSize.M, TileSize.L })
         {
-            var mi = new MenuItem { Header = s switch { TileSize.S => "Small", TileSize.L => "Large", _ => "Medium" }, IsCheckable = true, IsChecked = tile.Size == s, Foreground = submenuText };
+            var mi = new MenuItem { Header = s switch { TileSize.S => "Small", TileSize.L => "Large", _ => "Medium" }, IsCheckable = true, IsChecked = tile.Size == s };
             mi.Click += (_, _) => vm.SetTileSize(id, s);
             size.Items.Add(mi);
         }

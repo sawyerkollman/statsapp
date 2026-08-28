@@ -8,6 +8,11 @@
                  and the styles below reference the palette from Theme.xaml. -->
             <ResourceDictionary.MergedDictionaries>
                 <ResourceDictionary Source="pack://application:,,,/Stats.App;component/Views/Theme.xaml"/>
+                <!-- Controls.xaml owns the hand-rolled implicit styles/templates for ScrollBar, Slider,
+                     ProgressBar, ComboBox/ComboBoxItem, ContextMenu/MenuItem, CheckBox/RadioButton, and
+                     Expander — merged after Theme.xaml (palette) and before TileTemplates.xaml (tile-specific
+                     content) per docs/superpowers/specs/2026-08-27-v1.7-trust-polish-design.md. -->
+                <ResourceDictionary Source="pack://application:,,,/Stats.App;component/Views/Controls.xaml"/>
                 <ResourceDictionary Source="pack://application:,,,/Stats.App;component/Views/TileTemplates.xaml"/>
             </ResourceDictionary.MergedDictionaries>
 
@@ -48,32 +53,9 @@
                 <Setter Property="Padding" Value="4,2"/>
                 <Setter Property="VerticalContentAlignment" Value="Center"/>
             </Style>
-            <Style TargetType="CheckBox">
-                <Setter Property="Foreground" Value="{DynamicResource TextPrimary}"/>
-                <Setter Property="VerticalContentAlignment" Value="Center"/>
-            </Style>
-            <!-- Minimal dark treatment: without it the Fans window's ComboBoxes render as light Aero controls. -->
-            <Style TargetType="ComboBox">
-                <Setter Property="Background" Value="{DynamicResource ControlBg}"/>
-                <Setter Property="Foreground" Value="{DynamicResource TextPrimary}"/>
-                <Setter Property="BorderBrush" Value="{DynamicResource BorderDim}"/>
-                <Setter Property="VerticalContentAlignment" Value="Center"/>
-            </Style>
-            <!-- The Aero2 dropdown popup keeps its white background, so items must not inherit the
-                 near-white ComboBox Foreground (final re-review minor: white-on-white popup text). -->
-            <Style TargetType="ComboBoxItem">
-                <Setter Property="Foreground" Value="#FF1E1E1E"/>
-            </Style>
-            <Style TargetType="RadioButton">
-                <Setter Property="Foreground" Value="{DynamicResource TextPrimary}"/>
-                <Setter Property="Margin" Value="0,0,12,0"/>
-                <Setter Property="VerticalContentAlignment" Value="Center"/>
-            </Style>
-            <Style TargetType="Expander">
-                <Setter Property="Foreground" Value="{DynamicResource TextPrimary}"/>
-                <Setter Property="Background" Value="Transparent"/>
-                <Setter Property="BorderThickness" Value="0"/>
-            </Style>
+            <!-- CheckBox, ComboBox, ComboBoxItem, RadioButton, and Expander styles now live in Controls.xaml
+                 (hand-rolled templates covering focus/hover/pressed/checked/disabled states — see that file's
+                 header comment). -->
             <Style TargetType="TabControl">
                 <Setter Property="Background" Value="Transparent"/>
                 <Setter Property="BorderThickness" Value="0"/>
@@ -103,11 +85,7 @@
                 <Setter Property="Foreground" Value="{DynamicResource TextPrimary}"/>
                 <Setter Property="BorderBrush" Value="{DynamicResource BorderDim}"/>
             </Style>
-            <Style TargetType="ContextMenu">
-                <Setter Property="Background" Value="{DynamicResource FlyoutBg}"/>
-                <Setter Property="Foreground" Value="{DynamicResource TextPrimary}"/>
-                <Setter Property="BorderBrush" Value="{DynamicResource BorderDim}"/>
-            </Style>
+            <!-- ContextMenu (and MenuItem) styling now lives in Controls.xaml. -->
         </ResourceDictionary>
     </Application.Resources>
 </Application>
