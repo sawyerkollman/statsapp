@@ -57,6 +57,10 @@ public sealed partial class DashboardViewModel : ObservableObject
     /// <summary>Update now was clicked. All process/file/network work for the actual download + install happens
     /// in the composition root (App.xaml.cs) — this VM only owns the banner's display state.</summary>
     public event Action<UpdateInfo>? InstallUpdateRequested;
+    /// <summary>"What's new" was clicked on the update banner, carrying <see cref="UpdateInfo.ReleasePageUrl"/>.
+    /// The composition root opens it with the shell and reports a failure back through
+    /// <see cref="SetReleasePageError"/> — this VM never touches Process itself.</summary>
+    public event Action<string>? OpenReleasePageRequested;
     /// <summary>The Settings tab was opened (gear button or tray "Settings"). The composition root re-queries the
     /// "Stats" logon Scheduled Task so the Startup checkbox reflects current OS state rather than a stale value
     /// from the last time Settings was open.</summary>
@@ -82,6 +86,11 @@ public sealed partial class DashboardViewModel : ObservableObject
     [ObservableProperty] private string _updateNotice = "";
     [ObservableProperty] private bool _updateBusy;
     [ObservableProperty] private double _updateProgress;
+    /// <summary>Set from <see cref="UpdateInfo.ReleasePageUrl"/> whenever an update is offered; "" hides the
+    /// "What's new" button (e.g. an old release with no html_url).</summary>
+    [ObservableProperty] private string _updateReleasePageUrl = "";
+    /// <summary>"" = ok; set by the composition root when opening <see cref="UpdateReleasePageUrl"/> fails.</summary>
+    [ObservableProperty] private string _releasePageError = "";
 
     [RelayCommand] private void TogglePicker() => IsPickerOpen = !IsPickerOpen;
     [RelayCommand] private void ToggleOverlay() => OverlayToggleRequested?.Invoke();
@@ -107,15 +116,30 @@ public sealed partial class DashboardViewModel : ObservableObject
         UpdateAvailable = false; // dismisses for the session only
     }
 
-    /// <summary>Called by the composition root when a startup/24h check finds a newer release.</summary>
+    [RelayCommand]
+    private void OpenReleasePage()
+    {
+        if (string.IsNullOrEmpty(UpdateReleasePageUrl)) return;
+        ReleasePageError = "";
+        OpenReleasePageRequested?.Invoke(UpdateReleasePageUrl);
+    }
+
+    /// <summary>Called by the composition root when a startup/24h check — or a manual "Check for updates" from
+    /// Settings — finds a newer release.</summary>
     public void OfferUpdate(UpdateInfo info)
     {
         _pendingUpdate = info;
         UpdateNotice = $"Stats {info.TagName} is available";
         UpdateBusy = false;
         UpdateProgress = 0;
+        UpdateReleasePageUrl = info.ReleasePageUrl;
+        ReleasePageError = "";
         UpdateAvailable = true;
     }
+
+    /// <summary>Called by the composition root after a failed attempt to open <see cref="UpdateReleasePageUrl"/>
+    /// with the shell; the banner and its buttons stay intact so the user can just try again.</summary>
+    public void SetReleasePageError(string message) => ReleasePageError = message;
 
     /// <summary>Called by the composition root while the download is in progress (0..1).</summary>
     public void SetUpdateProgress(double progress)

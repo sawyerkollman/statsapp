@@ -18,10 +18,25 @@
                         Style="{StaticResource HeaderButton}" IsEnabled="{Binding UpdateBusy, Converter={StaticResource InverseBool}}"/>
                 <ProgressBar DockPanel.Dock="Right" Width="120" Height="14" Minimum="0" Maximum="1" Value="{Binding UpdateProgress, Mode=OneWay}"
                              Visibility="{Binding UpdateBusy, Converter={StaticResource BoolToVis}}" Margin="0,0,10,0" VerticalAlignment="Center"/>
+                <TextBlock DockPanel.Dock="Right" Margin="8,0,0,0" VerticalAlignment="Center">
+                    <TextBlock.Style>
+                        <Style TargetType="TextBlock">
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding UpdateReleasePageUrl}" Value="">
+                                    <Setter Property="Visibility" Value="Collapsed"/>
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </TextBlock.Style>
+                    <Hyperlink Command="{Binding OpenReleasePageCommand}" Foreground="{DynamicResource AccentBrush}">What's new</Hyperlink>
+                </TextBlock>
                 <TextBlock DockPanel.Dock="Left" Text="{Binding UpdateNotice}" Foreground="{DynamicResource TextPrimary}"
+                           VerticalAlignment="Center" TextWrapping="Wrap" Margin="0,0,10,0"/>
+                <TextBlock DockPanel.Dock="Left" Text="{Binding ReleasePageError}" Foreground="{DynamicResource CritBrush}"
                            VerticalAlignment="Center" TextWrapping="Wrap" Margin="0,0,10,0"/>
             </DockPanel>
         </Border>
+
 
         <Border DockPanel.Dock="Top" Background="#7A2D2D" Padding="10,6"
                 Visibility="{Binding IsDegraded, Converter={StaticResource BoolToVis}}">
@@ -326,7 +341,13 @@
                                     <TextBlock Text="Read motherboard fan headers and USB coolers (needed for fan control; restart to apply)"
                                                Foreground="{DynamicResource TextPrimary}" TextWrapping="Wrap"/>
                                 </CheckBox>
-                                <TextBlock Text="{Binding HardwareStatus}" Foreground="{DynamicResource WarnBrush}" FontSize="11"/>
+                                <DockPanel Margin="0,2,0,0">
+                                    <Button DockPanel.Dock="Left" Content="Restart now" Command="{Binding RestartNowCommand}"
+                                            Style="{StaticResource HeaderButton}" HorizontalAlignment="Left"/>
+                                    <TextBlock Text="{Binding HardwareStatus}" Foreground="{DynamicResource WarnBrush}" FontSize="11"
+                                               Margin="8,0,0,0" VerticalAlignment="Center" TextWrapping="Wrap"/>
+                                </DockPanel>
+                                <TextBlock Text="{Binding RestartError}" Foreground="{DynamicResource CritBrush}" FontSize="11" TextWrapping="Wrap"/>
 
                                 <TextBlock Text="Startup" Style="{StaticResource SettingsHeader}"/>
                                 <CheckBox IsChecked="{Binding StartupEnabled}" IsEnabled="{Binding StartupBusy, Converter={StaticResource InverseBool}}">
@@ -347,6 +368,32 @@
                                 <TextBlock Text="Crash and error details are written to %AppData%\Stats\logs (newest seven days kept)."
                                            Foreground="{DynamicResource TextSecondary}" FontSize="11" TextWrapping="Wrap"/>
                                 <TextBlock Text="{Binding DiagnosticsError}" Foreground="{DynamicResource CritBrush}" FontSize="11" TextWrapping="Wrap"/>
+
+                                <TextBlock Text="About" Style="{StaticResource SettingsHeader}"/>
+                                <TextBlock Text="{Binding AppVersionDisplay}" Foreground="{DynamicResource TextPrimary}"/>
+                                <TextBlock Text="Development build — update checks are disabled."
+                                           Foreground="{DynamicResource TextSecondary}" FontSize="11" TextWrapping="Wrap"
+                                           Visibility="{Binding IsDevBuild, Converter={StaticResource BoolToVis}}"/>
+                                <DockPanel Margin="0,4,0,0" Visibility="{Binding IsDevBuild, Converter={StaticResource InverseBoolToVis}}">
+                                    <Button DockPanel.Dock="Left" Content="Check for updates" Command="{Binding CheckForUpdatesCommand}"
+                                            Style="{StaticResource HeaderButton}" HorizontalAlignment="Left"
+                                            IsEnabled="{Binding UpdateCheckBusy, Converter={StaticResource InverseBool}}"/>
+                                    <TextBlock DockPanel.Dock="Left" Text="Checking…" Margin="8,0,0,0" VerticalAlignment="Center"
+                                               Foreground="{DynamicResource TextSecondary}" FontSize="11"
+                                               Visibility="{Binding UpdateCheckBusy, Converter={StaticResource BoolToVis}}"/>
+                                </DockPanel>
+                                <TextBlock Text="{Binding UpdateCheckResult}" FontSize="11" TextWrapping="Wrap">
+                                    <TextBlock.Style>
+                                        <Style TargetType="TextBlock">
+                                            <Setter Property="Foreground" Value="{DynamicResource TextSecondary}"/>
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding UpdateCheckFailed}" Value="True">
+                                                    <Setter Property="Foreground" Value="{DynamicResource CritBrush}"/>
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </TextBlock.Style>
+                                </TextBlock>
                             </StackPanel>
                         </ScrollViewer>
                     </TabItem>

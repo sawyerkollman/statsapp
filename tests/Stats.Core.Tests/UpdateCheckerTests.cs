@@ -199,4 +199,36 @@ public class UpdateCheckerTests
         Assert.NotNull(info);
         Assert.Equal("https://objects.githubusercontent.com/github-production-release-asset/Stats-Setup-1.4.2.exe", info!.AssetUrl);
     }
+
+    // ---- dev-build detection / About-section display (v1.7) ----
+
+    [Fact]
+    public void IsDevBuild_AllZeroFirstThreeComponents_IsTrue()
+    {
+        Assert.True(UpdateChecker.IsDevBuild(new Version(0, 0, 0)));
+        Assert.True(UpdateChecker.IsDevBuild(new Version(0, 0))); // unset Build (-1) normalizes the same as 0
+    }
+
+    [Theory]
+    [InlineData(1, 0, 0)]
+    [InlineData(0, 1, 0)]
+    [InlineData(0, 0, 1)]
+    [InlineData(1, 7, 0)]
+    public void IsDevBuild_AnyNonZeroFirstThreeComponents_IsFalse(int major, int minor, int build)
+    {
+        Assert.False(UpdateChecker.IsDevBuild(new Version(major, minor, build)));
+    }
+
+    [Fact]
+    public void FormatVersionDisplay_DevBuild_SaysDevelopmentBuild()
+    {
+        Assert.Equal("Development build", UpdateChecker.FormatVersionDisplay(new Version(0, 0, 0, 0)));
+    }
+
+    [Fact]
+    public void FormatVersionDisplay_ReleaseBuild_FormatsFirstThreeComponentsWithVPrefix()
+    {
+        Assert.Equal("v1.7.0", UpdateChecker.FormatVersionDisplay(new Version(1, 7, 0)));
+        Assert.Equal("v1.7.0", UpdateChecker.FormatVersionDisplay(new Version(1, 7, 0, 3))); // fourth field ignored
+    }
 }

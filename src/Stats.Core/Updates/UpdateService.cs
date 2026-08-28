@@ -21,20 +21,28 @@ public sealed class UpdateService : IDisposable
             _http.DefaultRequestHeaders.UserAgent.Add(new ProductInfoHeaderValue("Stats-updater", "1"));
     }
 
-    /// <summary>Checks GitHub for a newer release. Any failure at all — network error, timeout, non-2xx status,
-    /// malformed JSON, no qualifying asset — returns null; this must never surface a visible error to the user.</summary>
-    public async Task<UpdateInfo?> CheckAsync(Version current, CancellationToken cancellationToken = default)
+    /// <summary>Checks GitHub for a newer release. By default (<paramref name="throwOnFailure"/> false, the
+    /// automatic-check path) any failure at all — network error, timeout, non-2xx status, malformed JSON, no
+    /// qualifying asset — returns null and never surfaces a visible error to the user. A manual "Check for
+    /// updates" click passes <paramref name="throwOnFailure"/> true so it can tell a genuine failure apart from
+    /// a legitimate "no update" null and show an explicit inline error instead of silently reporting "Up to
+    /// date".</summary>
+    public async Task<UpdateInfo?> CheckAsync(Version current, CancellationToken cancellationToken = default, bool throwOnFailure = false)
     {
         try
         {
             using var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
             cts.CancelAfter(CheckTimeout);
             using var response = await _http.GetAsync(LatestReleaseUrl, cts.Token).ConfigureAwait(false);
-            if (!response.IsSuccessStatusCode) return null;
+            if (!response.IsSuccessStatusCode)
+            {
+                if (throwOnFailure) throw new InvalidOperationException($"GitHub returned {(int)response.StatusCode}.");
+                return null;
+            }
             var json = await response.Content.ReadAsStringAsync(cts.Token).ConfigureAwait(false);
             return UpdateChecker.Parse(json, current);
         }
-        catch (Exception)
+        catch (Exception) when (!throwOnFailure)
         {
             return null;
         }

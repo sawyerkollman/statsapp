@@ -62,6 +62,12 @@ public partial class App : Application
     private UpdateService? _updateService;
     private CancellationTokenSource? _updateCts;
     private StartupTaskService? _startupTaskService;
+    /// <summary>Entry-assembly version, resolved once at startup and reused by the automatic update-check loop,
+    /// the manual "Check for updates" button, and the About section's version display.</summary>
+    private Version _currentVersion = new(0, 0, 0, 0);
+    /// <summary>Cancelled by OnExit() so an in-flight manual "Check for updates" doesn't try to touch a
+    /// tearing-down SettingsViewModel.</summary>
+    private CancellationTokenSource? _manualCheckCts;
     /// <summary>True until the first ShowDashboard() call (tray click or Settings/Open dashboard) — that call
     /// performs one immediate RefreshAll() against already-polled data before showing, since a --minimized
     /// launch skipped the initial Show() and its first snapshot dispatch race.</summary>
@@ -88,6 +94,7 @@ public partial class App : Application
         base.OnStartup(e);
 
         bool startMinimized = StartupArgs.HasMinimizedFlag(e.Args); // case-insensitive: installer/shortcuts may pass any casing
+        _currentVersion = Assembly.GetEntryAssembly()?.GetName().Version ?? new Version(0, 0, 0, 0);
 
         var settingsDir = Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Stats");
@@ -165,6 +172,9 @@ public partial class App : Application
         _settingsVm.OverlayPositionResetRequested += ResetOverlayPosition;
         _settingsVm.OpenLogFolderRequested += OpenLogFolder;
         _settingsVm.StartupToggleRequested += OnStartupToggleRequested;
+        _settingsVm.CheckForUpdatesRequested += OnManualCheckForUpdatesRequested;
+        _settingsVm.RestartRequested += OnRestartNowRequested;
+        _settingsVm.SetVersionInfo(UpdateChecker.FormatVersionDisplay(_currentVersion), UpdateChecker.IsDevBuild(_currentVersion));
         _dashboardVm.SettingsOpened += () => _ = RefreshStartupTaskStateAsync();
         _startupTaskService = new StartupTaskService();
 
@@ -180,6 +190,7 @@ public partial class App : Application
         _dashboardVm.OpenFansRequested += ShowFans;
         _dashboardVm.DashboardMetricsChanged += () => { _peaksVm?.RebuildRows(); ApplyFrameTracing(); };
         _dashboardVm.InstallUpdateRequested += OnInstallUpdateRequested;
+        _dashboardVm.OpenReleasePageRequested += OnOpenReleasePageRequested;
         _updateService = new UpdateService();
 
         var cpuTemps = definitions.Where(d => d.Group == MetricGroup.Cpu && d.Unit == "°C").ToList();
@@ -238,6 +249,8 @@ public partial class App : Application
         _updateCts?.Dispose();
         _installCts?.Cancel();
         _installCts?.Dispose();
+        _manualCheckCts?.Cancel();
+        _manualCheckCts?.Dispose();
         _updateService?.Dispose();
         _hotkey?.Dispose();
         _fansVisible = false;
@@ -757,6 +770,32 @@ public partial class App : Application
         Shutdown();
     }
 
+    /// <summary>Settings Hardware "Restart now". Starts a brand-new instance of the running executable — with
+    /// <c>UseShellExecute = false</c> so the child directly inherits our elevated token instead of going through
+    /// the shell's elevation broker, which would otherwise re-prompt UAC even though we're already elevated —
+    /// and only then calls the existing <see cref="ExitApp"/> so the poller stops, fans restore, and settings
+    /// flush through the normal clean-exit path. A launch failure is surfaced inline; this process is left
+    /// running rather than exiting into nothing.</summary>
+    private void OnRestartNowRequested()
+    {
+        if (_settingsVm is null) return;
+        try
+        {
+            var exePath = Environment.ProcessPath;
+            if (string.IsNullOrEmpty(exePath))
+                throw new InvalidOperationException("Could not resolve the running executable's path.");
+            Process.Start(new ProcessStartInfo(exePath) { UseShellExecute = false });
+            _settingsVm.RestartError = "";
+        }
+        catch (Exception ex)
+        {
+            Trace.WriteLine("[Stats] restart now failed: " + ex.Message);
+            _settingsVm.RestartError = "Couldn't restart Stats: " + ex.Message;
+            return;
+        }
+        ExitApp();
+    }
+
     // ---- updater ----
 
     /// <summary>Starts (or, after a live settings toggle, restarts) the background update-check loop: a 15 s
@@ -769,15 +808,11 @@ public partial class App : Application
         if (_settings is null || _updateService is null) return;
         if (!_settings.CheckForUpdatesAutomatically) return;
         if (_updateCts is { IsCancellationRequested: false }) return; // already running
-
-        var current = Assembly.GetEntryAssembly()?.GetName().Version ?? new Version(0, 0, 0, 0);
-        if (IsDevBuild(current)) return;
+        if (UpdateChecker.IsDevBuild(_currentVersion)) return;
 
         _updateCts = new CancellationTokenSource();
-        _ = RunUpdateLoopAsync(current, _updateCts.Token);
+        _ = RunUpdateLoopAsync(_currentVersion, _updateCts.Token);
     }
-
-    private static bool IsDevBuild(Version v) => v.Major == 0 && v.Minor == 0 && v.Build <= 0;
 
     /// <summary>Runs entirely off the UI thread (Task.Delay/PeriodicTimer continuations); every step is wrapped
     /// so an updater failure can never take the app down.</summary>
@@ -813,6 +848,67 @@ public partial class App : Application
         {
             // CheckAsync already swallows its own failures and returns null; this is a last-resort net.
             Trace.WriteLine("[Stats] update check failed: " + ex.Message);
+        }
+    }
+
+    /// <summary>Settings About "Check for updates" was clicked. Reuses <see cref="UpdateService.CheckAsync"/>
+    /// exactly like the automatic loop, but with its manual (<c>throwOnFailure: true</c>) mode so a genuine
+    /// network/HTTP failure can be told apart from a legitimate "no update" null and shown as an explicit inline
+    /// error — unlike the automatic loop, which stays quiet either way. A found update is handed to the
+    /// dashboard banner, not duplicated in the About section's own status line. A dev build never reaches this
+    /// (the SettingsViewModel command itself guards it), but the guard is repeated here since App owns Process/
+    /// Assembly access and must never call GitHub for one regardless of how it's invoked.</summary>
+    private async void OnManualCheckForUpdatesRequested()
+    {
+        if (_settingsVm is null || _updateService is null) return;
+
+        if (UpdateChecker.IsDevBuild(_currentVersion))
+        {
+            _settingsVm.ApplyManualCheckResult("Development build — updates are not available.");
+            return;
+        }
+
+        _manualCheckCts?.Cancel();
+        _manualCheckCts?.Dispose();
+        var cts = _manualCheckCts = new CancellationTokenSource();
+        try
+        {
+            var info = await _updateService.CheckAsync(_currentVersion, cts.Token, throwOnFailure: true).ConfigureAwait(true);
+            if (info is null)
+                _settingsVm.ApplyManualCheckResult("Up to date");
+            else
+            {
+                _dashboardVm?.OfferUpdate(info);
+                _settingsVm.ApplyManualCheckResult(""); // the dashboard banner carries the news
+            }
+        }
+        catch (OperationCanceledException) when (cts.IsCancellationRequested)
+        {
+            // superseded by a newer click, or the app is exiting — leave whatever the newer call reports.
+        }
+        catch (Exception ex)
+        {
+            Trace.WriteLine("[Stats] manual update check failed: " + ex.Message);
+            _settingsVm.ApplyManualCheckResult("Couldn't check for updates — try again later.", failed: true);
+        }
+    }
+
+    /// <summary>Dashboard banner "What's new" was clicked. Opens <see cref="UpdateInfo.ReleasePageUrl"/> with the
+    /// shell; a launch failure is caught explicitly and surfaced next to the banner rather than left to throw.</summary>
+    private void OnOpenReleasePageRequested(string url)
+    {
+        try
+        {
+            if (!Uri.TryCreate(url, UriKind.Absolute, out var uri)
+                || uri.Scheme != Uri.UriSchemeHttps
+                || !string.Equals(uri.Host, "github.com", StringComparison.OrdinalIgnoreCase))
+                throw new InvalidOperationException("The release page URL is not a valid GitHub HTTPS URL.");
+            Process.Start(new ProcessStartInfo(uri.AbsoluteUri) { UseShellExecute = true });
+        }
+        catch (Exception ex)
+        {
+            Trace.WriteLine("[Stats] failed to open release page: " + ex.Message);
+            _dashboardVm?.SetReleasePageError("Couldn't open the release page.");
         }
     }
 

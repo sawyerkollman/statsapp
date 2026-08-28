@@ -1,6 +1,7 @@
 using Stats.Core.Metrics;
 using Stats.Core.Sensors;
 using Stats.Core.Settings;
+using Stats.Core.Updates;
 using Stats.Core.ViewModels;
 
 namespace Stats.Core.Tests;
@@ -315,5 +316,56 @@ public class DashboardViewModelTests
         Assert.False(vm.SensorHealthWarningVisible);
         Assert.Equal("", vm.SensorHealthNotice);
         Assert.True(vm.IsDegraded); // untouched by runtime recovery
+    }
+
+    // ---- update banner "What's new" (v1.7) ----
+
+    [Fact]
+    public void OfferUpdate_SetsReleasePageUrl_AndClearsAnyPriorLinkError()
+    {
+        var (vm, _, _, _) = Make();
+        vm.SetReleasePageError("stale error from a previous offer");
+
+        vm.OfferUpdate(new UpdateInfo(new Version(1, 4, 2), "v1.4.2", "https://example/asset.exe", 1, "https://github.com/sawyerkollman/statsapp/releases/tag/v1.4.2"));
+
+        Assert.True(vm.UpdateAvailable);
+        Assert.Equal("https://github.com/sawyerkollman/statsapp/releases/tag/v1.4.2", vm.UpdateReleasePageUrl);
+        Assert.Equal("", vm.ReleasePageError);
+    }
+
+    [Fact]
+    public void OfferUpdate_EmptyReleasePageUrl_LeavesItEmpty_ForXamlToHideTheButton()
+    {
+        var (vm, _, _, _) = Make();
+        vm.OfferUpdate(new UpdateInfo(new Version(1, 4, 2), "v1.4.2", "https://example/asset.exe", 1, ""));
+        Assert.Equal("", vm.UpdateReleasePageUrl);
+    }
+
+    [Fact]
+    public void OpenReleasePageCommand_RaisesEventWithUrl_NoUrl_IsNoOp()
+    {
+        var (vm, _, _, _) = Make();
+        var requested = new List<string>();
+        vm.OpenReleasePageRequested += requested.Add;
+
+        vm.OpenReleasePageCommand.Execute(null); // nothing pending yet
+        Assert.Empty(requested);
+
+        vm.OfferUpdate(new UpdateInfo(new Version(1, 4, 2), "v1.4.2", "https://example/asset.exe", 1, "https://github.com/x/y/releases/tag/v1.4.2"));
+        vm.OpenReleasePageCommand.Execute(null);
+
+        Assert.Equal(new[] { "https://github.com/x/y/releases/tag/v1.4.2" }, requested);
+    }
+
+    [Fact]
+    public void SetReleasePageError_SetsInlineError_WithoutDismissingTheBanner()
+    {
+        var (vm, _, _, _) = Make();
+        vm.OfferUpdate(new UpdateInfo(new Version(1, 4, 2), "v1.4.2", "https://example/asset.exe", 1, "https://github.com/x/y/releases/tag/v1.4.2"));
+
+        vm.SetReleasePageError("Couldn't open the release page.");
+
+        Assert.Equal("Couldn't open the release page.", vm.ReleasePageError);
+        Assert.True(vm.UpdateAvailable); // the failure to open a link never dismisses the update banner
     }
 }

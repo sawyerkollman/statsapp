@@ -70,6 +70,16 @@ public static class UpdateChecker
     private static Version NormalizeToThree(Version v) =>
         new(Math.Max(v.Major, 0), Math.Max(v.Minor, 0), Math.Max(v.Build, 0));
 
+    /// <summary>True when the first three version components are all zero — a local/dev build with no version
+    /// stamped by CI. Such a build never checks for updates (see <see cref="Parse"/>) and the About section
+    /// never offers a manual check for one either.</summary>
+    public static bool IsDevBuild(Version v) => v.Major == 0 && v.Minor == 0 && v.Build <= 0;
+
+    /// <summary>About-section display text: "Development build" for <see cref="IsDevBuild"/>, otherwise
+    /// "vMAJOR.MINOR.BUILD" (matching the three-field scheme <see cref="Parse"/> compares against).</summary>
+    public static string FormatVersionDisplay(Version v) =>
+        IsDevBuild(v) ? "Development build" : $"v{v.Major}.{v.Minor}.{v.Build}";
+
     /// <summary>Guards against a compromised/malformed API response pointing the installer download at an
     /// attacker-controlled host: only github.com, a github.com subdomain, or a githubusercontent.com subdomain
     /// (where release assets are actually served from) are accepted.</summary>

@@ -146,4 +146,72 @@ public class UpdateServiceTests
             if (File.Exists(destPath)) File.Delete(destPath);
         }
     }
+
+    // ---- CheckAsync: quiet (automatic) vs throwOnFailure (manual, v1.7 About section) ----
+
+    private const string NewerReleaseJson = """
+        {
+          "tag_name": "v1.4.2",
+          "html_url": "https://github.com/sawyerkollman/statsapp/releases/tag/v1.4.2",
+          "assets": [
+            { "name": "Stats-Setup-1.4.2.exe", "size": 12345, "browser_download_url": "https://github.com/sawyerkollman/statsapp/releases/download/v1.4.2/Stats-Setup-1.4.2.exe" }
+          ]
+        }
+        """;
+
+    private sealed class ThrowingHandler : HttpMessageHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken) =>
+            throw new HttpRequestException("simulated network failure");
+    }
+
+    [Fact]
+    public async Task CheckAsync_NewerRelease_ReturnsUpdateInfo()
+    {
+        var service = MakeService(_ => new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(NewerReleaseJson) });
+        var info = await service.CheckAsync(new Version(1, 4, 1));
+        Assert.NotNull(info);
+        Assert.Equal("v1.4.2", info!.TagName);
+    }
+
+    [Fact]
+    public async Task CheckAsync_NoUpdate_ReturnsNullQuietly_DefaultAndManualModeAgree()
+    {
+        var upToDateJson = NewerReleaseJson.Replace("v1.4.2", "v1.4.1"); // tag equals current → not offered
+        var service = MakeService(_ => new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(upToDateJson) });
+
+        Assert.Null(await service.CheckAsync(new Version(1, 4, 1)));
+        Assert.Null(await service.CheckAsync(new Version(1, 4, 1), throwOnFailure: true)); // still null, not an exception
+    }
+
+    [Fact]
+    public async Task CheckAsync_NetworkFailure_DefaultMode_ReturnsNullQuietly()
+    {
+        var service = new UpdateService(new HttpClient(new ThrowingHandler()));
+        var info = await service.CheckAsync(new Version(1, 4, 1));
+        Assert.Null(info);
+    }
+
+    [Fact]
+    public async Task CheckAsync_NetworkFailure_ThrowOnFailure_Throws()
+    {
+        var service = new UpdateService(new HttpClient(new ThrowingHandler()));
+        await Assert.ThrowsAsync<HttpRequestException>(() =>
+            service.CheckAsync(new Version(1, 4, 1), throwOnFailure: true));
+    }
+
+    [Fact]
+    public async Task CheckAsync_NonSuccessStatus_DefaultMode_ReturnsNullQuietly()
+    {
+        var service = MakeService(_ => new HttpResponseMessage(HttpStatusCode.InternalServerError));
+        Assert.Null(await service.CheckAsync(new Version(1, 4, 1)));
+    }
+
+    [Fact]
+    public async Task CheckAsync_NonSuccessStatus_ThrowOnFailure_Throws()
+    {
+        var service = MakeService(_ => new HttpResponseMessage(HttpStatusCode.InternalServerError));
+        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            service.CheckAsync(new Version(1, 4, 1), throwOnFailure: true));
+    }
 }
