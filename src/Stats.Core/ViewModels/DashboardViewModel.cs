@@ -3,6 +3,7 @@ using System.ComponentModel;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Stats.Core.Metrics;
+using Stats.Core.Sensors;
 using Stats.Core.Settings;
 using Stats.Core.Updates;
 
@@ -12,6 +13,10 @@ public sealed partial class DashboardViewModel : ObservableObject
 {
     private static readonly MetricGroup[] GroupOrder =
         { MetricGroup.Cpu, MetricGroup.Gpu, MetricGroup.Memory, MetricGroup.Storage, MetricGroup.Network, MetricGroup.Game, MetricGroup.Motherboard, MetricGroup.Cooler };
+
+    /// <summary>Consecutive unhealthy reads required before the runtime sensor-failure banner is shown; a single
+    /// hiccup should not alarm the user.</summary>
+    private const int SensorFailureBannerThreshold = 3;
 
     private readonly MetricStore _store;
     private readonly AppSettings _settings;
@@ -53,7 +58,13 @@ public sealed partial class DashboardViewModel : ObservableObject
     /// in the composition root (App.xaml.cs) — this VM only owns the banner's display state.</summary>
     public event Action<UpdateInfo>? InstallUpdateRequested;
 
+    /// <summary>Startup-only degraded status (e.g. PawnIO missing at launch). Distinct from — and never cleared
+    /// by — transient runtime sensor-read recovery below.</summary>
     [ObservableProperty] private bool _isDegraded;
+    /// <summary>Runtime sensor-read failure banner, shown only once SensorPoller reports three or more
+    /// consecutive unhealthy reads; auto-clears on the next fully healthy read. See <see cref="SetSensorHealth"/>.</summary>
+    [ObservableProperty] private bool _sensorHealthWarningVisible;
+    [ObservableProperty] private string _sensorHealthNotice = "";
     [ObservableProperty] private bool _isPickerOpen;
     [ObservableProperty] private int _flyoutTabIndex;
     [ObservableProperty] private string _pickerFilter = "";
@@ -251,6 +262,24 @@ public sealed partial class DashboardViewModel : ObservableObject
         // Kind/Size changes need new containers (template selection happens once per container), so rebuild.
         RebuildSections();
         _saveSettings();
+    }
+
+    // ---- runtime sensor health ----
+
+    /// <summary>Called by the composition root on every SensorPoller.HealthChanged tick (already marshaled to the
+    /// UI thread). Shows the banner only once three or more consecutive reads have failed, and compacts multiple
+    /// failing backends into one line. Never touches <see cref="IsDegraded"/> — that is startup-only status.</summary>
+    public void SetSensorHealth(SensorHealthState state)
+    {
+        if (state.IsHealthy || state.ConsecutiveFailures < SensorFailureBannerThreshold)
+        {
+            SensorHealthWarningVisible = false;
+            SensorHealthNotice = "";
+            return;
+        }
+        var backends = state.FailingBackends.Count > 0 ? string.Join(", ", state.FailingBackends) : "Sensors";
+        SensorHealthNotice = $"Sensor reads failing since {state.FirstFailureLocalTime:HH:mm} — {backends}: {state.LatestErrorFirstLine}";
+        SensorHealthWarningVisible = true;
     }
 
     // ---- sections ----

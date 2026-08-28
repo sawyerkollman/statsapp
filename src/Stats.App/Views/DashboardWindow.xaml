@@ -29,6 +29,13 @@
                        Text="CPU sensor driver (PawnIO) is not installed or could not load — degraded mode: CPU temperatures, clocks, power, and voltages read 0 or are missing. Install PawnIO (winget install namazso.PawnIO, or pawnio.eu), close other monitoring tools, and restart Stats."/>
         </Border>
 
+        <!-- Runtime sensor-read health: transient, independent of the startup-only degraded banner above.
+             Shown only once SensorPoller reports >=3 consecutive unhealthy reads; auto-clears on recovery. -->
+        <Border DockPanel.Dock="Top" Background="#6B4E12" Padding="10,6"
+                Visibility="{Binding SensorHealthWarningVisible, Converter={StaticResource BoolToVis}}">
+            <TextBlock Foreground="White" TextWrapping="Wrap" Text="{Binding SensorHealthNotice}"/>
+        </Border>
+
         <Border DockPanel.Dock="Top" Padding="14,10">
             <DockPanel>
                 <Button DockPanel.Dock="Right" Content="⚙  Settings" Command="{Binding OpenSettingsCommand}" Style="{StaticResource HeaderButton}"/>

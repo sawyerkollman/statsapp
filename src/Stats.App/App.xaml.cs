@@ -201,6 +201,9 @@ public partial class App : Application
             if (_peaks is { IsVisible: true }) _peaksVm?.Refresh();
             if (_fans is { IsVisible: true }) _fansVm?.Refresh();
         });
+        // HealthChanged fires on the poll thread (see SensorPoller); dispatch its already-immutable state to the
+        // dashboard VM the same way every other poll-thread → UI signal here is marshaled.
+        _poller.HealthChanged += state => Dispatcher.BeginInvoke(() => _dashboardVm.SetSensorHealth(state));
 
         _dashboard.AllowClose = false; // close button hides to tray; exit via tray menu
         _dashboard.LocationChanged += (_, _) => SaveWindowBounds();

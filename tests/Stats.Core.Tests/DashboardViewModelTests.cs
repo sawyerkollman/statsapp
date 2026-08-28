@@ -259,4 +259,51 @@ public class DashboardViewModelTests
         Assert.False(vm.Sections.Single(s => s.Group == MetricGroup.Game).HasStatus);
         vm.SetGroupStatus(MetricGroup.Storage, "ignored"); // no section → no throw
     }
+
+    // ---- runtime sensor health banner ----
+
+    [Fact]
+    public void SetSensorHealth_BelowThreshold_BannerStaysHidden()
+    {
+        var (vm, _, _, _) = Make();
+        var state = new SensorHealthState(false, 2, new DateTime(2026, 1, 1, 9, 30, 0), "boom", new[] { "LibreHardwareMonitor" });
+        vm.SetSensorHealth(state);
+        Assert.False(vm.SensorHealthWarningVisible);
+        Assert.Equal("", vm.SensorHealthNotice);
+    }
+
+    [Fact]
+    public void SetSensorHealth_AtThreshold_ShowsExactBannerText()
+    {
+        var (vm, _, _, _) = Make();
+        var state = new SensorHealthState(false, 3, new DateTime(2026, 1, 1, 9, 30, 0), "device unreachable", new[] { "LibreHardwareMonitor" });
+        vm.SetSensorHealth(state);
+        Assert.True(vm.SensorHealthWarningVisible);
+        Assert.Equal("Sensor reads failing since 09:30 — LibreHardwareMonitor: device unreachable", vm.SensorHealthNotice);
+    }
+
+    [Fact]
+    public void SetSensorHealth_MultipleFailingBackends_JoinedCompactly()
+    {
+        var (vm, _, _, _) = Make();
+        var state = new SensorHealthState(false, 4, new DateTime(2026, 1, 1, 14, 5, 0), "boom", new[] { "LibreHardwareMonitor", "PresentMon" });
+        vm.SetSensorHealth(state);
+        Assert.True(vm.SensorHealthWarningVisible);
+        Assert.Equal("Sensor reads failing since 14:05 — LibreHardwareMonitor, PresentMon: boom", vm.SensorHealthNotice);
+    }
+
+    [Fact]
+    public void SetSensorHealth_Recovery_ClearsBanner_WithoutTouchingStartupDegraded()
+    {
+        var (vm, _, _, _) = Make();
+        vm.IsDegraded = true; // startup-only status
+        vm.SetSensorHealth(new SensorHealthState(false, 3, new DateTime(2026, 1, 1, 9, 30, 0), "boom", new[] { "LibreHardwareMonitor" }));
+        Assert.True(vm.SensorHealthWarningVisible);
+
+        vm.SetSensorHealth(SensorHealthState.Healthy);
+
+        Assert.False(vm.SensorHealthWarningVisible);
+        Assert.Equal("", vm.SensorHealthNotice);
+        Assert.True(vm.IsDegraded); // untouched by runtime recovery
+    }
 }
