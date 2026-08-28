@@ -11,6 +11,7 @@ public sealed class PerfCounterSensorReader : ISensorReader, IFanControlBackend
     private readonly List<MetricDefinition> _definitions = new();
     private PerformanceCounter? _memAvailable;
     private MetricDefinition? _memUsedDef;
+    private bool _discovered;
     private readonly double _totalMemoryGb =
         GC.GetGCMemoryInfo().TotalAvailableMemoryBytes / 1_000_000_000.0;
 
@@ -23,6 +24,13 @@ public sealed class PerfCounterSensorReader : ISensorReader, IFanControlBackend
 
     public IReadOnlyList<MetricDefinition> Discover()
     {
+        if (_discovered)
+        {
+            Trace.WriteLine("[Stats.PerfCounterSensorReader] Discover() called again; returning the existing definitions");
+            return _definitions;
+        }
+        _discovered = true;
+
         TryAdd(() =>
         {
             Add(new MetricDefinition("cpu.perf.load.total", "CPU Total", MetricGroup.Cpu, "CPU", "%"),

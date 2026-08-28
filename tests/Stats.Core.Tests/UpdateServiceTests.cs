@@ -6,9 +6,6 @@ namespace Stats.Core.Tests;
 
 public class UpdateServiceTests
 {
-    /// <summary>Minimal stub transport: <paramref name="respond"/> builds the response for every request, or a
-    /// list of responses can be supplied in order via <see cref="Queue"/>. Keeps this test free of any real
-    /// network call and of any third-party mocking package (Stats.Core.Tests has none).</summary>
     private sealed class StubHandler : HttpMessageHandler
     {
         private readonly Func<HttpRequestMessage, HttpResponseMessage> _respond;
@@ -52,6 +49,97 @@ public class UpdateServiceTests
                 service.DownloadAsync(info, destPath, progress: null, CancellationToken.None));
 
             Assert.False(File.Exists(destPath)); // the partial file must be cleaned up, not left behind
+        }
+        finally
+        {
+            if (File.Exists(destPath)) File.Delete(destPath);
+        }
+    }
+
+    private sealed class SyncProgress : IProgress<double>
+    {
+        public readonly List<double> Reports = new();
+        public void Report(double value) => Reports.Add(value);
+    }
+
+    [Fact]
+    public async Task DownloadAsync_HappyPath_WritesFileAndReportsCompletion()
+    {
+        var bytes = new byte[200_000];
+        new Random(42).NextBytes(bytes);
+        var service = MakeService(_ => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new ByteArrayContent(bytes),
+        });
+        var info = new UpdateInfo(new Version(1, 4, 2), "v1.4.2", "https://github.com/sawyerkollman/statsapp/releases/download/v1.4.2/Stats-Setup-1.4.2.exe",
+            AssetSize: bytes.Length, ReleasePageUrl: "");
+        var destPath = Path.Combine(Path.GetTempPath(), $"stats-updateservice-test-{Guid.NewGuid():N}.exe");
+        var progress = new SyncProgress();
+
+        try
+        {
+            await service.DownloadAsync(info, destPath, progress, CancellationToken.None);
+
+            Assert.True(File.Exists(destPath));
+            Assert.Equal(bytes, await File.ReadAllBytesAsync(destPath));
+            Assert.NotEmpty(progress.Reports);
+            Assert.Equal(1.0, progress.Reports[^1]); // progress ends at 100% on success
+            Assert.All(progress.Reports, r => Assert.InRange(r, 0.0, 1.0));
+        }
+        finally
+        {
+            if (File.Exists(destPath)) File.Delete(destPath);
+        }
+    }
+
+    private sealed class CancelingStream : Stream
+    {
+        private readonly CancellationTokenSource _cts;
+        private bool _cancelled;
+        public CancelingStream(CancellationTokenSource cts) => _cts = cts;
+
+        public override ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken cancellationToken = default)
+        {
+            if (!_cancelled)
+            {
+                _cancelled = true;
+                _cts.Cancel();
+            }
+            cancellationToken.ThrowIfCancellationRequested();
+            return ValueTask.FromResult(0); // unreachable once cancelled, kept for completeness
+        }
+
+        public override bool CanRead => true;
+        public override bool CanSeek => false;
+        public override bool CanWrite => false;
+        public override long Length => throw new NotSupportedException();
+        public override long Position { get => throw new NotSupportedException(); set => throw new NotSupportedException(); }
+        public override void Flush() { }
+        public override int Read(byte[] buffer, int offset, int count) => throw new NotSupportedException();
+        public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
+        public override void SetLength(long value) => throw new NotSupportedException();
+        public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
+    }
+
+    [Fact]
+    public async Task DownloadAsync_Cancelled_ThrowsAndLeavesNoSuccessfulLookingFile()
+    {
+        using var cts = new CancellationTokenSource();
+        var service = MakeService(_ => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StreamContent(new CancelingStream(cts)),
+        });
+        var info = new UpdateInfo(new Version(1, 4, 2), "v1.4.2", "https://github.com/sawyerkollman/statsapp/releases/download/v1.4.2/Stats-Setup-1.4.2.exe",
+            AssetSize: 200_000, ReleasePageUrl: "");
+        var destPath = Path.Combine(Path.GetTempPath(), $"stats-updateservice-test-{Guid.NewGuid():N}.exe");
+
+        try
+        {
+            await Assert.ThrowsAnyAsync<OperationCanceledException>(() =>
+                service.DownloadAsync(info, destPath, progress: null, cts.Token));
+
+            if (File.Exists(destPath))
+                Assert.NotEqual(info.AssetSize, new FileInfo(destPath).Length);
         }
         finally
         {

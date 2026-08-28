@@ -85,4 +85,25 @@ public class SensorPollerTests
         poller.Stop();
         Assert.True(reader.ReadCount >= 2, $"loop should survive exceptions, got {reader.ReadCount} reads");
     }
+
+    [Fact]
+    public async Task ChangingInterval_WhileRunning_AffectsSubsequentWaits()
+    {
+        var reader = new FakeReader();
+        using var poller = new SensorPoller(reader) { Interval = TimeSpan.FromMilliseconds(20) };
+        int events = 0;
+        poller.SnapshotAvailable += _ => Interlocked.Increment(ref events);
+        poller.Start();
+        await Task.Delay(300);
+        int fastCount = events;
+        Assert.True(fastCount >= 3, $"expected several fast polls before the change, got {fastCount}");
+
+        poller.Interval = TimeSpan.FromSeconds(10);
+        await Task.Delay(300);
+        poller.Stop();
+        int slowCount = events;
+
+        Assert.True(slowCount - fastCount <= 1,
+            $"expected the longer Interval to suppress further polls, got {slowCount - fastCount} more (fast={fastCount}, slow={slowCount})");
+    }
 }
