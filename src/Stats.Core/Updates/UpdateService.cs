@@ -77,12 +77,11 @@ public sealed class UpdateService : IDisposable
                     createdDestination = true;
                     var buffer = new byte[81920];
                     long readTotal = 0;
-                    int read;
                     while ((read = await httpStream.ReadAsync(buffer, cancellationToken).ConfigureAwait(false)) > 0)
                     {
                         await fileStream.WriteAsync(buffer.AsMemory(0, read), cancellationToken).ConfigureAwait(false);
                         readTotal += read;
-                        if (total > 0) progress?.Report((double)readTotal / total);
+                        if (total > 0) progress?.Report(Math.Min(1.0, (double)readTotal / total));
                     }
                 }
             }
