@@ -76,6 +76,15 @@ public sealed class AppSettings
     /// <summary>Custom accent override as "#RRGGBB", or null to use the preset's own accent colour.</summary>
     public string? ThemeAccent { get; set; }
 
+    // ---- v1.8 alerts ----
+    /// <summary>Master switch for the alert engine (tray balloon + log); evaluated regardless of dashboard/overlay
+    /// visibility.</summary>
+    public bool AlertsEnabled { get; set; } = true;
+    /// <summary>Seconds a metric must hold Crit before an alert raises; clamped 1–120 at load.</summary>
+    public int AlertHoldSeconds { get; set; } = 10;
+    /// <summary>Play <see cref="System.Media.SystemSounds.Exclamation"/> alongside the tray balloon.</summary>
+    public bool AlertSoundEnabled { get; set; }
+
     /// <summary>Get-or-create the TilePref for a metric id.</summary>
     public TilePref PrefFor(string metricId)
     {

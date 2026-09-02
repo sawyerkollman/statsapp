@@ -4,13 +4,19 @@ namespace Stats.Core.Metrics;
 
 public static class ThresholdEvaluator
 {
+    /// <summary>Per-metric override → first (Group, Unit) rule → null. Shared by <see cref="Evaluate"/> and any
+    /// caller (e.g. <see cref="Alerts.AlertEngine"/> sample building) that needs the governing rule itself, not
+    /// just the severity it produces.</summary>
+    public static ThresholdRule? RuleFor(MetricDefinition def, AppSettings settings) =>
+        settings.ThresholdOverrides.TryGetValue(def.Id, out var o)
+            ? o
+            : settings.ThresholdRules.FirstOrDefault(r => r.Group == def.Group && r.Unit == def.Unit);
+
     /// <summary>Per-metric override → first (Group, Unit) rule → Normal. Null/NaN → Normal.</summary>
     public static Severity Evaluate(MetricDefinition def, float? value, AppSettings settings)
     {
         if (value is not float v || float.IsNaN(v)) return Severity.Normal;
-        var rule = settings.ThresholdOverrides.TryGetValue(def.Id, out var o)
-            ? o
-            : settings.ThresholdRules.FirstOrDefault(r => r.Group == def.Group && r.Unit == def.Unit);
+        var rule = RuleFor(def, settings);
         if (rule is null) return Severity.Normal;
         if (rule.LowerIsWorse)
         {

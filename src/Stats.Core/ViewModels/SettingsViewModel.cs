@@ -9,7 +9,7 @@ namespace Stats.Core.ViewModels;
 
 // No GameMode member: the game-mode controls live in the Fans window, which re-applies frame tracing through
 // FansViewModel.GameModeChanged. A member nothing raises only invites the next feature onto a dead channel.
-public enum SettingsChange { PollInterval, HistoryWindow, Thresholds, Limits, Overlay, Hotkey, CoreMatrix, Hardware, Updates, Theme }
+public enum SettingsChange { PollInterval, HistoryWindow, Thresholds, Limits, Overlay, Hotkey, CoreMatrix, Hardware, Updates, Theme, Alerts }
 
 /// <summary>One editable metric limit (PPT/TDC/EDC/GPU power). Empty text = no limit.</summary>
 public sealed partial class LimitItemViewModel : ObservableObject
@@ -77,6 +77,9 @@ public sealed partial class SettingsViewModel : ObservableObject
         _checkForUpdatesAutomatically = settings.CheckForUpdatesAutomatically;
         _selectedThemePreset = settings.ThemePreset;
         _accentHex = settings.ThemeAccent ?? "";
+        _alertsEnabled = settings.AlertsEnabled;
+        _alertHoldSeconds = settings.AlertHoldSeconds;
+        _alertSoundEnabled = settings.AlertSoundEnabled;
 
         foreach (var def in definitions.Where(IsLimitCandidate))
         {
@@ -151,6 +154,9 @@ public sealed partial class SettingsViewModel : ObservableObject
     /// <summary>"" = ok; set by App after "Restart now" fails to launch a new instance. Restart is not attempted
     /// again automatically — the user can just click again.</summary>
     [ObservableProperty] private string _restartError = "";
+    [ObservableProperty] private bool _alertsEnabled;
+    [ObservableProperty] private int _alertHoldSeconds;
+    [ObservableProperty] private bool _alertSoundEnabled;
 
     public IReadOnlyList<string> ThemePresetNames => ThemePresets.Names;
     public IReadOnlyList<string> AccentSwatches => ThemePresets.AccentSwatches;
@@ -283,6 +289,29 @@ public sealed partial class SettingsViewModel : ObservableObject
         if (!_loaded) return;
         _s.CheckForUpdatesAutomatically = value;
         Raise(SettingsChange.Updates);
+    }
+
+    partial void OnAlertsEnabledChanged(bool value)
+    {
+        if (!_loaded) return;
+        _s.AlertsEnabled = value;
+        Raise(SettingsChange.Alerts);
+    }
+
+    partial void OnAlertHoldSecondsChanged(int value)
+    {
+        if (!_loaded) return;
+        var clamped = Math.Clamp(value, 1, 120);
+        if (clamped != value) { AlertHoldSeconds = clamped; return; } // re-enters with clamped
+        _s.AlertHoldSeconds = clamped;
+        Raise(SettingsChange.Alerts);
+    }
+
+    partial void OnAlertSoundEnabledChanged(bool value)
+    {
+        if (!_loaded) return;
+        _s.AlertSoundEnabled = value;
+        Raise(SettingsChange.Alerts);
     }
 
     /// <summary>The checkbox is bound TwoWay, so a user click lands here first. Deliberately does not write to

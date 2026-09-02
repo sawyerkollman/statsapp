@@ -387,6 +387,37 @@ public class SettingsServiceTests : IDisposable
     }
 
     [Fact]
+    public void Load_MissingFile_AlertsDefaultOnWithTenSecondHoldAndSoundOff()
+    {
+        var s = new SettingsService(_dir).Load();
+        Assert.True(s.AlertsEnabled);
+        Assert.Equal(10, s.AlertHoldSeconds);
+        Assert.False(s.AlertSoundEnabled);
+    }
+
+    [Theory]
+    [InlineData(0, 1)]
+    [InlineData(-5, 1)]
+    [InlineData(200, 120)]
+    public void Load_ClampsAlertHoldSecondsToOneToOneTwenty(int stored, int expected)
+    {
+        var svc = new SettingsService(_dir);
+        svc.Save(new AppSettings { AlertHoldSeconds = stored });
+        Assert.Equal(expected, svc.Load().AlertHoldSeconds);
+    }
+
+    [Fact]
+    public void SaveThenLoad_AlertFields_RoundTrip()
+    {
+        var svc = new SettingsService(_dir);
+        svc.Save(new AppSettings { AlertsEnabled = false, AlertHoldSeconds = 45, AlertSoundEnabled = true });
+        var loaded = new SettingsService(_dir).Load();
+        Assert.False(loaded.AlertsEnabled);
+        Assert.Equal(45, loaded.AlertHoldSeconds);
+        Assert.True(loaded.AlertSoundEnabled);
+    }
+
+    [Fact]
     public void Load_UnknownThemePreset_FallsBackToDefault()
     {
         Write("""{ "ThemePreset": "Neon Pink" }""");

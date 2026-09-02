@@ -462,4 +462,56 @@ public class SettingsViewModelTests
 
         Assert.Equal("Couldn't restart Stats: access denied.", vm.RestartError);
     }
+
+    // ---- Alerts section (v1.8) ----
+
+    [Fact]
+    public void Ctor_LoadsAlertValuesFromSettings()
+    {
+        var s = new AppSettings { AlertsEnabled = false, AlertHoldSeconds = 30, AlertSoundEnabled = true };
+        var vm = new SettingsViewModel(s, Defs, () => { });
+        Assert.False(vm.AlertsEnabled);
+        Assert.Equal(30, vm.AlertHoldSeconds);
+        Assert.True(vm.AlertSoundEnabled);
+    }
+
+    [Fact]
+    public void AlertsEnabled_WritesThroughAndRaisesAlerts()
+    {
+        var (vm, s, changes, saves) = Make();
+        vm.AlertsEnabled = false;
+        Assert.False(s.AlertsEnabled);
+        Assert.Equal(new[] { SettingsChange.Alerts }, changes);
+        Assert.Equal(1, saves());
+    }
+
+    [Fact]
+    public void AlertHoldSeconds_WritesThroughAndRaisesAlerts()
+    {
+        var (vm, s, changes, _) = Make();
+        vm.AlertHoldSeconds = 45;
+        Assert.Equal(45, s.AlertHoldSeconds);
+        Assert.Contains(SettingsChange.Alerts, changes);
+    }
+
+    [Theory]
+    [InlineData(0, 1)]
+    [InlineData(-10, 1)]
+    [InlineData(500, 120)]
+    public void AlertHoldSeconds_ClampsBothSettingsAndViewModel(int input, int expected)
+    {
+        var (vm, s, _, _) = Make();
+        vm.AlertHoldSeconds = input;
+        Assert.Equal(expected, s.AlertHoldSeconds);
+        Assert.Equal(expected, vm.AlertHoldSeconds);
+    }
+
+    [Fact]
+    public void AlertSoundEnabled_WritesThroughAndRaisesAlerts()
+    {
+        var (vm, s, changes, _) = Make();
+        vm.AlertSoundEnabled = true;
+        Assert.True(s.AlertSoundEnabled);
+        Assert.Contains(SettingsChange.Alerts, changes);
+    }
 }

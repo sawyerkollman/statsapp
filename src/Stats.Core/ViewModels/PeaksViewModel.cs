@@ -32,12 +32,19 @@ public sealed partial class PeaksViewModel : ObservableObject
     private readonly MetricStore _store;
     private readonly AppSettings _settings;
 
-    public PeaksViewModel(MetricStore store, AppSettings settings)
+    public PeaksViewModel(MetricStore store, AppSettings settings, AlertLogViewModel? alertLog = null)
     {
         _store = store;
         _settings = settings;
+        AlertLog = alertLog ?? new AlertLogViewModel();
         RebuildRows();
     }
+
+    /// <summary>Backs the Peaks window's Alerts tab. The composition root passes its own long-lived instance
+    /// (created before the window, so early alerts raised while the window has never been opened are still
+    /// captured) — the parameterless fallback here only exists so tests and other callers aren't forced to wire
+    /// one up.</summary>
+    public AlertLogViewModel AlertLog { get; }
 
     public ObservableCollection<PeakRowViewModel> Rows { get; } = new();
 
