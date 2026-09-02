@@ -164,23 +164,13 @@ public partial class DashboardWindow : Window
     private void PromptThresholds(DashboardViewModel vm, MetricTileViewModel tile)
     {
         var settings = (Application.Current as App)?.Settings;
-        var current = settings is not null && settings.ThresholdOverrides.TryGetValue(tile.Definition.Id, out var o)
-            ? string.Create(CultureInfo.InvariantCulture, $"{o.Warn:0.##}/{o.Crit:0.##}") : "";
-        // Inverted metrics (FPS) want warn ABOVE crit; the same ordering SetTileThresholds enforces, so the
-        // example must match it or the user's natural "30/60" is rejected — and rejection deletes the override.
-        bool lowerIsWorse = settings is not null && settings.ThresholdRules
-            .FirstOrDefault(r => r.Group == tile.Definition.Group && r.Unit == tile.Definition.Unit)?.LowerIsWorse == true;
-        var example = lowerIsWorse ? "60/30 (higher warn, lower crit)" : "85/92";
-        var result = InputDialog.Show(this, "Thresholds for this tile",
-            $"Warn/Crit in {tile.Unit}, e.g. {example}. Blank = use the group rule.", current);
-        if (result is null) return;
-        if (result.Trim().Length == 0) { vm.SetTileThresholds(tile.Definition.Id, null, null); return; } // blank = clear
-        var parts = result.Split('/', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
-        if (parts.Length == 2
-            && float.TryParse(parts[0], NumberStyles.Float, CultureInfo.InvariantCulture, out var warn)
-            && float.TryParse(parts[1], NumberStyles.Float, CultureInfo.InvariantCulture, out var crit))
-            vm.SetTileThresholds(tile.Definition.Id, warn, crit);
-        // Unparseable: leave the existing override alone — a typo must not silently delete the user's thresholds.
+        if (settings is null) return;
+        var def = tile.Definition;
+        var groupRule = settings.ThresholdRules.FirstOrDefault(r => r.Group == def.Group && r.Unit == def.Unit);
+        settings.ThresholdOverrides.TryGetValue(def.Id, out var existing);
+        if (!ThresholdDialog.Show(this, tile.DisplayName, def.Unit, groupRule, existing, out var result, out var cleared))
+            return; // cancelled — no change
+        vm.SetTileThresholds(def.Id, cleared ? null : result);
     }
 
     // ---- picker group bulk ----

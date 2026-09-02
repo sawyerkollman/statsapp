@@ -201,29 +201,35 @@
                                 </StackPanel>
 
                                 <TextBlock Text="Thresholds (warn / crit)" Style="{StaticResource SettingsHeader}"/>
-                                <Grid>
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="120"/>
-                                        <ColumnDefinition Width="70"/>
-                                        <ColumnDefinition Width="70"/>
-                                    </Grid.ColumnDefinitions>
-                                    <Grid.RowDefinitions>
-                                        <RowDefinition/><RowDefinition/><RowDefinition/><RowDefinition/>
-                                    </Grid.RowDefinitions>
-                                    <TextBlock Text="CPU temp °C" Style="{StaticResource SettingsLabel}"/>
-                                    <TextBox Grid.Column="1" Margin="0,2,6,2" Text="{Binding CpuTempWarn, UpdateSourceTrigger=LostFocus}"/>
-                                    <TextBox Grid.Column="2" Margin="0,2,0,2" Text="{Binding CpuTempCrit, UpdateSourceTrigger=LostFocus}"/>
-                                    <TextBlock Grid.Row="1" Text="GPU temp °C" Style="{StaticResource SettingsLabel}"/>
-                                    <TextBox Grid.Row="1" Grid.Column="1" Margin="0,2,6,2" Text="{Binding GpuTempWarn, UpdateSourceTrigger=LostFocus}"/>
-                                    <TextBox Grid.Row="1" Grid.Column="2" Margin="0,2,0,2" Text="{Binding GpuTempCrit, UpdateSourceTrigger=LostFocus}"/>
-                                    <TextBlock Grid.Row="2" Text="Load %" Style="{StaticResource SettingsLabel}"/>
-                                    <TextBox Grid.Row="2" Grid.Column="1" Margin="0,2,6,2" Text="{Binding LoadWarn, UpdateSourceTrigger=LostFocus}"/>
-                                    <TextBox Grid.Row="2" Grid.Column="2" Margin="0,2,0,2" Text="{Binding LoadCrit, UpdateSourceTrigger=LostFocus}"/>
-                                    <TextBlock Grid.Row="3" Text="FPS (lower is worse)" Style="{StaticResource SettingsLabel}"/>
-                                    <TextBox Grid.Row="3" Grid.Column="1" Margin="0,2,6,2" Text="{Binding FpsWarn, UpdateSourceTrigger=LostFocus}"/>
-                                    <TextBox Grid.Row="3" Grid.Column="2" Margin="0,2,0,2" Text="{Binding FpsCrit, UpdateSourceTrigger=LostFocus}"/>
-                                </Grid>
-                                <TextBlock Text="{Binding ThresholdError}" Foreground="{DynamicResource CritBrush}" FontSize="11"/>
+                                <ItemsControl ItemsSource="{Binding ThresholdRuleItems}">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate>
+                                            <StackPanel Margin="0,2,0,4">
+                                                <Grid>
+                                                    <Grid.ColumnDefinitions>
+                                                        <ColumnDefinition Width="110"/>
+                                                        <ColumnDefinition Width="46"/>
+                                                        <ColumnDefinition Width="66"/>
+                                                        <ColumnDefinition Width="16"/>
+                                                        <ColumnDefinition Width="66"/>
+                                                        <ColumnDefinition Width="*"/>
+                                                    </Grid.ColumnDefinitions>
+                                                    <TextBlock Text="{Binding GroupName}" Style="{StaticResource SettingsLabel}" TextTrimming="CharacterEllipsis"/>
+                                                    <TextBlock Grid.Column="1" Text="{Binding Unit}" Style="{StaticResource SettingsLabel}"/>
+                                                    <TextBox Grid.Column="2" Margin="0,1,0,1" Text="{Binding Warn, UpdateSourceTrigger=LostFocus}"/>
+                                                    <TextBlock Grid.Column="3" Text="/" Style="{StaticResource SettingsLabel}" HorizontalAlignment="Center" Margin="0"/>
+                                                    <TextBox Grid.Column="4" Margin="0,1,6,1" Text="{Binding Crit, UpdateSourceTrigger=LostFocus}"/>
+                                                    <TextBlock Grid.Column="5" Text="{Binding DirectionText}" Style="{StaticResource SettingsLabel}" FontStyle="Italic" VerticalAlignment="Center"/>
+                                                </Grid>
+                                                <TextBlock Text="{Binding Error}" Foreground="{DynamicResource CritBrush}" FontSize="11"/>
+                                            </StackPanel>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                                <StackPanel Orientation="Horizontal" Margin="0,4,0,0" Visibility="{Binding HasAddableRulePairs, Converter={StaticResource BoolToVis}}">
+                                    <ComboBox ItemsSource="{Binding AddableRulePairs}" SelectedItem="{Binding SelectedAddablePair}" MinWidth="150" VerticalAlignment="Center"/>
+                                    <Button Content="Add rule…" Command="{Binding AddRuleCommand}" Style="{StaticResource HeaderButton}"/>
+                                </StackPanel>
 
                                 <TextBlock Text="Limits (for % of limit / gauges)" Style="{StaticResource SettingsHeader}"/>
                                 <TextBlock Text="Enter your PBO PPT/TDC/EDC or GPU power limit. Blank = none."
