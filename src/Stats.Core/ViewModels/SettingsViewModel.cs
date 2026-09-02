@@ -4,12 +4,13 @@ using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Stats.Core.Metrics;
 using Stats.Core.Settings;
+using Stats.Core.Tray;
 
 namespace Stats.Core.ViewModels;
 
 // No GameMode member: the game-mode controls live in the Fans window, which re-applies frame tracing through
 // FansViewModel.GameModeChanged. A member nothing raises only invites the next feature onto a dead channel.
-public enum SettingsChange { PollInterval, HistoryWindow, Thresholds, Limits, Overlay, Hotkey, CoreMatrix, Hardware, Updates, Theme, Alerts }
+public enum SettingsChange { PollInterval, HistoryWindow, Thresholds, Limits, Overlay, Hotkey, CoreMatrix, Hardware, Updates, Theme, Alerts, Tray }
 
 /// <summary>One editable metric limit (PPT/TDC/EDC/GPU power). Empty text = no limit.</summary>
 public sealed partial class LimitItemViewModel : ObservableObject
@@ -89,12 +90,18 @@ public sealed partial class SettingsViewModel : ObservableObject
         RebuildThresholdRuleItems();
         RefreshAddableRulePairs();
 
+        TrayMetricOptions.Add(new TrayMetricOption(null, "Auto"));
+        foreach (var def in TrayMetricSelector.Candidates(definitions))
+            TrayMetricOptions.Add(new TrayMetricOption(def.Id, $"{def.Group} · {def.DisplayName} ({def.Unit})"));
+        _selectedTrayMetric = TrayMetricOptions.FirstOrDefault(o => o.Id == settings.TrayMetricId) ?? TrayMetricOptions[0];
+
         _loaded = true;
     }
 
     public ObservableCollection<LimitItemViewModel> LimitItems { get; } = new();
     public ObservableCollection<ThresholdRuleItemViewModel> ThresholdRuleItems { get; } = new();
     public ObservableCollection<ThresholdRulePairOption> AddableRulePairs { get; } = new();
+    public ObservableCollection<TrayMetricOption> TrayMetricOptions { get; } = new();
 
     [ObservableProperty] private double _pollIntervalSeconds;
     [ObservableProperty] private int _historyWindowMinutes;
@@ -153,6 +160,8 @@ public sealed partial class SettingsViewModel : ObservableObject
     [ObservableProperty] private bool _alertsEnabled;
     [ObservableProperty] private int _alertHoldSeconds;
     [ObservableProperty] private bool _alertSoundEnabled;
+    /// <summary>Selected entry of <see cref="TrayMetricOptions"/>; the first entry (Id null) is "Auto".</summary>
+    [ObservableProperty] private TrayMetricOption _selectedTrayMetric;
 
     public IReadOnlyList<string> ThemePresetNames => ThemePresets.Names;
     public IReadOnlyList<string> AccentSwatches => ThemePresets.AccentSwatches;
@@ -295,6 +304,13 @@ public sealed partial class SettingsViewModel : ObservableObject
         if (!_loaded) return;
         _s.AlertSoundEnabled = value;
         Raise(SettingsChange.Alerts);
+    }
+
+    partial void OnSelectedTrayMetricChanged(TrayMetricOption value)
+    {
+        if (!_loaded) return;
+        _s.TrayMetricId = value.Id;
+        Raise(SettingsChange.Tray);
     }
 
     /// <summary>The checkbox is bound TwoWay, so a user click lands here first. Deliberately does not write to
@@ -444,4 +460,12 @@ public sealed partial class SettingsViewModel : ObservableObject
         _save();
         Changed?.Invoke(change);
     }
+}
+
+/// <summary>One entry of <see cref="SettingsViewModel.TrayMetricOptions"/>: <see cref="Id"/> null is "Auto" (App
+/// falls back to its CPU-temp heuristic); otherwise a discovered °C/% metric's id. <see cref="ToString"/> is the
+/// ComboBox's default display text.</summary>
+public sealed record TrayMetricOption(string? Id, string DisplayName)
+{
+    public override string ToString() => DisplayName;
 }

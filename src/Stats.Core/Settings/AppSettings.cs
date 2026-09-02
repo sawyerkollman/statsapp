@@ -85,6 +85,16 @@ public sealed class AppSettings
     /// <summary>Play <see cref="System.Media.SystemSounds.Exclamation"/> alongside the tray balloon.</summary>
     public bool AlertSoundEnabled { get; set; }
 
+    // ---- v1.8 tray picker ----
+    /// <summary>Metric id the tray icon renders; null = Auto (the CPU-temp heuristic in App). Resolved via
+    /// <see cref="Tray.TrayMetricSelector.Resolve"/>, which falls back to null (Auto) when the id is missing or no
+    /// longer discovered.</summary>
+    public string? TrayMetricId { get; set; }
+
+    // ---- v1.8 FPS hint ----
+    /// <summary>The dashboard's "Gaming? Add FPS…" hint banner was dismissed via Got it; persists across restarts.</summary>
+    public bool FpsHintDismissed { get; set; }
+
     /// <summary>Get-or-create the TilePref for a metric id.</summary>
     public TilePref PrefFor(string metricId)
     {

@@ -18,6 +18,7 @@ using Stats.Core.Metrics;
 using Stats.Core.Sensors;
 using Stats.Core.Settings;
 using Stats.Core.Startup;
+using Stats.Core.Tray;
 using Stats.Core.Updates;
 using Stats.Core.ViewModels;
 
@@ -41,6 +42,7 @@ public partial class App : Application
     private TaskbarIcon? _tray;
     private string? _trayCpuTempId;
     private string? _trayGpuTempId;
+    private MenuItem? _moveOverlayMenuItem;
     private SettingsViewModel? _settingsVm;
     private GlobalHotkey? _hotkey;
     private PeaksWindow? _peaks;
@@ -174,6 +176,7 @@ public partial class App : Application
             _settings.OverlayLeft = _overlay.Left;
             _settings.OverlayTop = _overlay.Top;
         };
+        _overlay.ExitMoveModeRequested += ExitMoveMode;
         _dashboardVm.OverlayMetricsChanged += () => { _overlayVm.Rebuild(); ApplyFrameTracing(); };
         _dashboardVm.OverlayToggleRequested += ToggleOverlay;
 
@@ -211,7 +214,8 @@ public partial class App : Application
                        ?? cpuTemps.FirstOrDefault())?.Id;
         _trayGpuTempId = definitions.FirstOrDefault(d =>
             d.Group == MetricGroup.Gpu && d.Unit == "°C")?.Id;
-        _trayCpuTempDef = definitions.FirstOrDefault(d => d.Id == _trayCpuTempId);
+        _trayCpuTempDef = TrayMetricSelector.Resolve(_settings.TrayMetricId, definitions)
+                       ?? definitions.FirstOrDefault(d => d.Id == _trayCpuTempId);
         _trayRenderer = new TrayIconRenderer();
         SetupTray();
 
@@ -454,6 +458,9 @@ public partial class App : Application
         open.Click += (_, _) => ShowDashboard();
         var overlay = new MenuItem { Header = "Toggle overlay" };
         overlay.Click += (_, _) => ToggleOverlay();
+        var moveOverlay = new MenuItem { Header = "Move overlay" };
+        moveOverlay.Click += (_, _) => ToggleMoveMode();
+        _moveOverlayMenuItem = moveOverlay;
         var peaks = new MenuItem { Header = "Session peaks" };
         peaks.Click += (_, _) => ShowPeaks();
         var fans = new MenuItem { Header = "Fans…" };
@@ -465,6 +472,7 @@ public partial class App : Application
 
         menu.Items.Add(open);
         menu.Items.Add(overlay);
+        menu.Items.Add(moveOverlay);
         menu.Items.Add(peaks);
         menu.Items.Add(fans);
         menu.Items.Add(settings);
@@ -557,8 +565,40 @@ public partial class App : Application
     private void ToggleOverlay()
     {
         if (_overlay is null) return;
-        if (_overlay.IsVisible) _overlay.Hide();
+        if (_overlay.IsVisible)
+        {
+            _overlay.Hide();
+            if (_overlayVm?.IsMoveMode == true) ExitMoveMode(); // hiding while moving must restore click-through
+        }
         else _overlay.Show();
+    }
+
+    /// <summary>Tray "Move overlay" — enters move mode (click-through off, overlay shown/activated, dashed
+    /// outline, header becomes "Done moving overlay") or exits it (menu clicked again). Esc on the overlay and
+    /// hiding it via <see cref="ToggleOverlay"/> exit through <see cref="ExitMoveMode"/> directly.</summary>
+    private void ToggleMoveMode()
+    {
+        if (_overlayVm is null) return;
+        if (_overlayVm.IsMoveMode) ExitMoveMode();
+        else EnterMoveMode();
+    }
+
+    private void EnterMoveMode()
+    {
+        if (_overlay is null || _overlayVm is null) return;
+        ClickThrough.Set(_overlay, false); // the persisted OverlayClickThrough setting is never touched
+        _overlay.Show();
+        _overlay.Activate();
+        _overlayVm.IsMoveMode = true;
+        if (_moveOverlayMenuItem is not null) _moveOverlayMenuItem.Header = "Done moving overlay";
+    }
+
+    private void ExitMoveMode()
+    {
+        if (_overlay is null || _overlayVm is null || _settings is null || !_overlayVm.IsMoveMode) return;
+        _overlayVm.IsMoveMode = false;
+        ClickThrough.Set(_overlay, _settings.OverlayClickThrough); // restores whatever the setting is now
+        if (_moveOverlayMenuItem is not null) _moveOverlayMenuItem.Header = "Move overlay";
     }
 
     private void ShowPeaks()
@@ -680,7 +720,9 @@ public partial class App : Application
                 if (_overlay is not null)
                 {
                     _overlay.Opacity = _settings.OverlayOpacity;
-                    ClickThrough.Set(_overlay, _settings.OverlayClickThrough);
+                    // Move mode owns click-through (forced off) until it exits — see ExitMoveMode, which applies
+                    // whatever the setting holds at that point.
+                    if (_overlayVm?.IsMoveMode != true) ClickThrough.Set(_overlay, _settings.OverlayClickThrough);
                 }
                 _overlayVm?.ApplyLayout();
                 break;
@@ -699,6 +741,11 @@ public partial class App : Application
                 break;
             case SettingsChange.Alerts:
                 if (_alertEngine is not null) _alertEngine.HoldSeconds = _settings.AlertHoldSeconds;
+                break;
+            case SettingsChange.Tray:
+                _trayCpuTempDef = TrayMetricSelector.Resolve(_settings.TrayMetricId, _definitions)
+                               ?? _definitions.FirstOrDefault(d => d.Id == _trayCpuTempId);
+                UpdateTrayTooltip();
                 break;
             case SettingsChange.Theme:
                 ThemeManager.Apply(_settings.ThemePreset, _settings.ThemeAccent);

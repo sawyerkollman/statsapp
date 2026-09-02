@@ -22,6 +22,10 @@ public sealed partial class OverlayViewModel : ObservableObject
 
     [ObservableProperty] private OverlayOrientation _orientation;
     [ObservableProperty] private double _fontScale = 1.0;
+    /// <summary>True while the tray's "Move overlay" mode is active — session only, never persisted. Draws the
+    /// dashed outline in <c>OverlayWindow</c>; the composition root owns entering/exiting it (click-through,
+    /// show/activate, tray menu header).</summary>
+    [ObservableProperty] private bool _isMoveMode;
 
     /// <summary>Re-read orientation/font scale from settings (called after Settings changes).</summary>
     public void ApplyLayout()

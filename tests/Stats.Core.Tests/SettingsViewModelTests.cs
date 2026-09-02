@@ -591,4 +591,65 @@ public class SettingsViewModelTests
         Assert.True(s.AlertSoundEnabled);
         Assert.Contains(SettingsChange.Alerts, changes);
     }
+
+    // ---- Tray metric picker (v1.8 §5) ----
+
+    [Fact]
+    public void Ctor_TrayMetricOptions_AutoFirst_ThenCandidatesInGroupOrder()
+    {
+        var (vm, _, _, _) = Make();
+        Assert.Equal("Auto", vm.TrayMetricOptions[0].DisplayName);
+        Assert.Null(vm.TrayMetricOptions[0].Id);
+        // cpu.temp, gpu.power (W, excluded), gpu.clock (MHz, excluded) — only °C/% metrics qualify.
+        Assert.Equal(new[] { "cpu.temp" }, vm.TrayMetricOptions.Skip(1).Select(o => o.Id));
+    }
+
+    [Fact]
+    public void Ctor_NoStoredTrayMetricId_SelectsAuto()
+    {
+        var (vm, _, _, _) = Make();
+        Assert.Null(vm.SelectedTrayMetric.Id);
+        Assert.Equal("Auto", vm.SelectedTrayMetric.DisplayName);
+    }
+
+    [Fact]
+    public void Ctor_StoredTrayMetricId_SelectsMatchingOption_WithoutRaisingChanged()
+    {
+        var s = new AppSettings { ThresholdRules = ThresholdDefaults.Rules(), TrayMetricId = "cpu.temp" };
+        var changes = new List<SettingsChange>();
+        var vm = new SettingsViewModel(s, Defs, () => { });
+        vm.Changed += c => changes.Add(c);
+        Assert.Equal("cpu.temp", vm.SelectedTrayMetric.Id);
+        Assert.Empty(changes);
+    }
+
+    [Fact]
+    public void Ctor_StoredTrayMetricId_NoLongerDiscovered_FallsBackToAuto()
+    {
+        var s = new AppSettings { ThresholdRules = ThresholdDefaults.Rules(), TrayMetricId = "cpu.removed" };
+        var vm = new SettingsViewModel(s, Defs, () => { });
+        Assert.Null(vm.SelectedTrayMetric.Id);
+    }
+
+    [Fact]
+    public void SelectedTrayMetric_WritesThroughAndRaisesTray()
+    {
+        var (vm, s, changes, saves) = Make();
+        var cpuTemp = vm.TrayMetricOptions.Single(o => o.Id == "cpu.temp");
+        vm.SelectedTrayMetric = cpuTemp;
+        Assert.Equal("cpu.temp", s.TrayMetricId);
+        Assert.Equal(new[] { SettingsChange.Tray }, changes);
+        Assert.Equal(1, saves());
+    }
+
+    [Fact]
+    public void SelectedTrayMetric_BackToAuto_ClearsStoredId()
+    {
+        var (vm, s, changes, _) = Make();
+        var cpuTemp = vm.TrayMetricOptions.Single(o => o.Id == "cpu.temp");
+        vm.SelectedTrayMetric = cpuTemp;
+        vm.SelectedTrayMetric = vm.TrayMetricOptions[0]; // Auto
+        Assert.Null(s.TrayMetricId);
+        Assert.Equal(new[] { SettingsChange.Tray, SettingsChange.Tray }, changes);
+    }
 }

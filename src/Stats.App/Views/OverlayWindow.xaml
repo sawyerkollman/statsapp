@@ -4,27 +4,34 @@
         WindowStyle="None" AllowsTransparency="True" Background="Transparent"
         Topmost="True" ShowInTaskbar="False" SizeToContent="WidthAndHeight"
         ResizeMode="NoResize">
-    <Border Background="#E01B1B1C" CornerRadius="8" Padding="12,8">
-        <Border.LayoutTransform>
-            <ScaleTransform ScaleX="{Binding FontScale}" ScaleY="{Binding FontScale}"/>
-        </Border.LayoutTransform>
-        <ItemsControl ItemsSource="{Binding Tiles}">
-            <ItemsControl.ItemsPanel>
-                <ItemsPanelTemplate>
-                    <StackPanel Orientation="{Binding DataContext.Orientation, RelativeSource={RelativeSource AncestorType=ItemsControl}, Converter={StaticResource OverlayOrientation}}"/>
-                </ItemsPanelTemplate>
-            </ItemsControl.ItemsPanel>
-            <ItemsControl.ItemTemplate>
-                <DataTemplate>
-                    <StackPanel Margin="10,2">
-                        <TextBlock Text="{Binding DisplayName}" FontSize="10"
-                                   Foreground="{StaticResource OverlayTextSecondary}"
-                                   TextTrimming="CharacterEllipsis" MaxWidth="140"/>
-                        <TextBlock Text="{Binding CurrentText}" FontSize="16" FontWeight="SemiBold"
-                                   Foreground="{Binding Severity, Converter={StaticResource SeverityToBrush}, ConverterParameter=Overlay}"/>
-                    </StackPanel>
-                </DataTemplate>
-            </ItemsControl.ItemTemplate>
-        </ItemsControl>
-    </Border>
+    <Grid>
+        <Border Background="#E01B1B1C" CornerRadius="8" Padding="12,8">
+            <Border.LayoutTransform>
+                <ScaleTransform ScaleX="{Binding FontScale}" ScaleY="{Binding FontScale}"/>
+            </Border.LayoutTransform>
+            <ItemsControl ItemsSource="{Binding Tiles}">
+                <ItemsControl.ItemsPanel>
+                    <ItemsPanelTemplate>
+                        <StackPanel Orientation="{Binding DataContext.Orientation, RelativeSource={RelativeSource AncestorType=ItemsControl}, Converter={StaticResource OverlayOrientation}}"/>
+                    </ItemsPanelTemplate>
+                </ItemsControl.ItemsPanel>
+                <ItemsControl.ItemTemplate>
+                    <DataTemplate>
+                        <StackPanel Margin="10,2">
+                            <TextBlock Text="{Binding DisplayName}" FontSize="10"
+                                       Foreground="{StaticResource OverlayTextSecondary}"
+                                       TextTrimming="CharacterEllipsis" MaxWidth="140"/>
+                            <TextBlock Text="{Binding CurrentText}" FontSize="16" FontWeight="SemiBold"
+                                       Foreground="{Binding Severity, Converter={StaticResource SeverityToBrush}, ConverterParameter=Overlay}"/>
+                        </StackPanel>
+                    </DataTemplate>
+                </ItemsControl.ItemTemplate>
+            </ItemsControl>
+        </Border>
+        <!-- Move-mode outline: dashed AccentBrush rectangle over the panel bounds, click-through so it never
+             steals the drag/click handling above. -->
+        <Rectangle IsHitTestVisible="False" RadiusX="8" RadiusY="8"
+                   Stroke="{DynamicResource AccentBrush}" StrokeThickness="2" StrokeDashArray="4,2"
+                   Visibility="{Binding IsMoveMode, Converter={StaticResource BoolToVis}}"/>
+    </Grid>
 </Window>

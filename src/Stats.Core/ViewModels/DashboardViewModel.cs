@@ -84,6 +84,26 @@ public sealed partial class DashboardViewModel : ObservableObject
     /// <summary>Set by the composition root once the SettingsViewModel exists; bound by the Settings tab.</summary>
     [ObservableProperty] private SettingsViewModel? _settingsPanel;
 
+    /// <summary>Dismissible "Gaming? Add FPS…" banner: shown while at least one Game-group metric was discovered,
+    /// none of them is currently on the dashboard or overlay, and the user hasn't dismissed it before. Recomputed
+    /// (via <see cref="RaiseFpsHintChanged"/>) on <see cref="RebuildSections"/> and overlay selection changes —
+    /// see <see cref="OnPickerItemChanged"/>.</summary>
+    public bool ShowFpsHint =>
+        !_settings.FpsHintDismissed
+        && _store.Definitions.Any(d => d.Group == MetricGroup.Game)
+        && !_store.Definitions.Where(d => d.Group == MetricGroup.Game)
+            .Any(d => _settings.DashboardMetrics.Contains(d.Id) || _settings.OverlayMetrics.Contains(d.Id));
+
+    [RelayCommand]
+    private void DismissFpsHint()
+    {
+        _settings.FpsHintDismissed = true;
+        RaiseFpsHintChanged();
+        _saveSettings();
+    }
+
+    private void RaiseFpsHintChanged() => OnPropertyChanged(nameof(ShowFpsHint));
+
     // ---- update banner ----
     private UpdateInfo? _pendingUpdate;
     [ObservableProperty] private bool _updateAvailable;
@@ -235,6 +255,7 @@ public sealed partial class DashboardViewModel : ObservableObject
                 _settings.OverlayMetrics.Add(item.Definition.Id);
             else if (!item.IsOnOverlay)
                 _settings.OverlayMetrics.Remove(item.Definition.Id);
+            RaiseFpsHintChanged();
             OverlayMetricsChanged?.Invoke();
             _saveSettings();
         }
@@ -359,6 +380,7 @@ public sealed partial class DashboardViewModel : ObservableObject
             }
             Sections.Add(section);
         }
+        RaiseFpsHintChanged();
     }
 
     private void OnSectionExpandedChanged(string name, bool expanded)

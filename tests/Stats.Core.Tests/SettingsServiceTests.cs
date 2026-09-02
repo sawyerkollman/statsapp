@@ -463,6 +463,32 @@ public class SettingsServiceTests : IDisposable
         Assert.Equal("#4A9EE0", new SettingsService(_dir).Load().ThemeAccent); // sanitized to uppercase
     }
 
+    // ---- Tray metric / FPS hint (v1.8 §5, §8) ----
+
+    [Fact]
+    public void Load_MissingFile_TrayMetricIdDefaultsToNull_AutoMode()
+    {
+        var s = new SettingsService(_dir).Load();
+        Assert.Null(s.TrayMetricId);
+    }
+
+    [Fact]
+    public void Load_MissingFile_FpsHintDismissedDefaultsToFalse()
+    {
+        var s = new SettingsService(_dir).Load();
+        Assert.False(s.FpsHintDismissed);
+    }
+
+    [Fact]
+    public void SaveThenLoad_TrayMetricIdAndFpsHintDismissed_RoundTrip()
+    {
+        var svc = new SettingsService(_dir);
+        svc.Save(new AppSettings { TrayMetricId = "cpu.temp.tctl", FpsHintDismissed = true });
+        var loaded = new SettingsService(_dir).Load();
+        Assert.Equal("cpu.temp.tctl", loaded.TrayMetricId);
+        Assert.True(loaded.FpsHintDismissed);
+    }
+
     private void Write(string json)
     {
         Directory.CreateDirectory(_dir);

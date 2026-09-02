@@ -366,4 +366,87 @@ public class DashboardViewModelTests
         Assert.Equal("Couldn't open the release page.", vm.ReleasePageError);
         Assert.True(vm.UpdateAvailable); // the failure to open a link never dismisses the update banner
     }
+
+    // ---- FPS discoverability hint (v1.8 §8) ----
+
+    private static (DashboardViewModel Vm, AppSettings S, Func<int> Saves) MakeWithGame(
+        List<string>? dashboard = null, List<string>? overlay = null, bool dismissed = false)
+    {
+        var defs = new List<MetricDefinition>
+        {
+            new("cpu.temp", "Tctl", MetricGroup.Cpu, "Ryzen", "°C", "F1"),
+            new("fps.avg", "FPS", MetricGroup.Game, "Foreground app", "fps", "F0"),
+            new("fps.low1", "1% Low", MetricGroup.Game, "Foreground app", "fps", "F0"),
+        };
+        var store = new MetricStore(defs);
+        var s = new AppSettings
+        {
+            DashboardMetrics = dashboard ?? new(),
+            OverlayMetrics = overlay ?? new(),
+            FpsHintDismissed = dismissed,
+        };
+        int saves = 0;
+        var vm = new DashboardViewModel(store, s, () => saves++);
+        return (vm, s, () => saves);
+    }
+
+    [Fact]
+    public void ShowFpsHint_GameMetricsDiscovered_NoneMonitored_NotDismissed_IsTrue()
+    {
+        var (vm, _, _) = MakeWithGame(dashboard: new() { "cpu.temp" });
+        Assert.True(vm.ShowFpsHint);
+    }
+
+    [Fact]
+    public void ShowFpsHint_NoGameMetricsDiscovered_IsFalse()
+    {
+        var (vm, _, _, _) = Make("cpu.temp"); // default Defs has no Game group metric
+        Assert.False(vm.ShowFpsHint);
+    }
+
+    [Fact]
+    public void ShowFpsHint_AGameMetricOnDashboard_IsFalse()
+    {
+        var (vm, _, _) = MakeWithGame(dashboard: new() { "fps.avg" });
+        Assert.False(vm.ShowFpsHint);
+    }
+
+    [Fact]
+    public void ShowFpsHint_AGameMetricOnOverlay_IsFalse()
+    {
+        var (vm, _, _) = MakeWithGame(overlay: new() { "fps.low1" });
+        Assert.False(vm.ShowFpsHint);
+    }
+
+    [Fact]
+    public void ShowFpsHint_PreviouslyDismissed_IsFalse()
+    {
+        var (vm, _, _) = MakeWithGame(dismissed: true);
+        Assert.False(vm.ShowFpsHint);
+    }
+
+    [Fact]
+    public void DismissFpsHintCommand_SetsFlag_HidesHint_SavesOnce()
+    {
+        var (vm, s, saves) = MakeWithGame();
+        Assert.True(vm.ShowFpsHint);
+
+        vm.DismissFpsHintCommand.Execute(null);
+
+        Assert.True(s.FpsHintDismissed);
+        Assert.False(vm.ShowFpsHint);
+        Assert.Equal(1, saves());
+    }
+
+    [Fact]
+    public void ShowFpsHint_RecomputesWhenPickerMovesGameMetricToOverlay()
+    {
+        var (vm, _, _) = MakeWithGame();
+        Assert.True(vm.ShowFpsHint);
+
+        var item = vm.PickerItems.Single(p => p.Definition.Id == "fps.avg");
+        item.IsOnOverlay = true;
+
+        Assert.False(vm.ShowFpsHint);
+    }
 }

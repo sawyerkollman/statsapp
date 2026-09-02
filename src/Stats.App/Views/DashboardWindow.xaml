@@ -51,6 +51,17 @@
             <TextBlock Foreground="White" TextWrapping="Wrap" Text="{Binding SensorHealthNotice}"/>
         </Border>
 
+        <!-- FPS discoverability hint (v1.8 §8): shown while Game-group metrics were discovered, none is selected
+             on the dashboard or overlay yet, and the user hasn't dismissed it before. -->
+        <Border DockPanel.Dock="Top" Background="{DynamicResource ControlBg}" BorderBrush="{DynamicResource AccentBrush}" BorderThickness="0,0,0,1" Padding="10,6"
+                Visibility="{Binding ShowFpsHint, Converter={StaticResource BoolToVis}}">
+            <DockPanel LastChildFill="False">
+                <Button DockPanel.Dock="Right" Content="Got it" Command="{Binding DismissFpsHintCommand}" Style="{StaticResource HeaderButton}"/>
+                <TextBlock DockPanel.Dock="Left" Text="Gaming? Add FPS, 1% lows and frame time from ☰ Metrics"
+                           Foreground="{DynamicResource TextPrimary}" VerticalAlignment="Center" TextWrapping="Wrap"/>
+            </DockPanel>
+        </Border>
+
         <Border DockPanel.Dock="Top" Padding="14,10">
             <DockPanel>
                 <Button DockPanel.Dock="Right" Content="⚙  Settings" Command="{Binding OpenSettingsCommand}" Style="{StaticResource HeaderButton}"/>
@@ -146,13 +157,30 @@
                                         <GroupStyle>
                                             <GroupStyle.HeaderTemplate>
                                                 <DataTemplate>
-                                                    <DockPanel Margin="0,10,0,2">
-                                                        <Button DockPanel.Dock="Right" Content="None" Tag="{Binding Name}" Click="PickerGroupNone_Click"
-                                                                Style="{StaticResource HeaderButton}" FontSize="10" Padding="6,1" Margin="4,0,0,0"/>
-                                                        <Button DockPanel.Dock="Right" Content="All" Tag="{Binding Name}" Click="PickerGroupAll_Click"
-                                                                Style="{StaticResource HeaderButton}" FontSize="10" Padding="6,1"/>
-                                                        <TextBlock Text="{Binding Name}" Style="{StaticResource GroupHeader}" Margin="0"/>
-                                                    </DockPanel>
+                                                    <StackPanel Margin="0,10,0,2">
+                                                        <DockPanel>
+                                                            <Button DockPanel.Dock="Right" Content="None" Tag="{Binding Name}" Click="PickerGroupNone_Click"
+                                                                    Style="{StaticResource HeaderButton}" FontSize="10" Padding="6,1" Margin="4,0,0,0"/>
+                                                            <Button DockPanel.Dock="Right" Content="All" Tag="{Binding Name}" Click="PickerGroupAll_Click"
+                                                                    Style="{StaticResource HeaderButton}" FontSize="10" Padding="6,1"/>
+                                                            <TextBlock Text="{Binding Name}" Style="{StaticResource GroupHeader}" Margin="0"/>
+                                                        </DockPanel>
+                                                        <!-- Game group only: PresentMon is bundled but only actually spawned while a Game
+                                                             metric is selected on the dashboard or overlay (v1.8 §8). -->
+                                                        <TextBlock Text="uses bundled PresentMon; runs only while selected"
+                                                                   Foreground="{DynamicResource TextSecondary}" FontSize="11" Margin="0,0,0,2">
+                                                            <TextBlock.Style>
+                                                                <Style TargetType="TextBlock">
+                                                                    <Setter Property="Visibility" Value="Collapsed"/>
+                                                                    <Style.Triggers>
+                                                                        <DataTrigger Binding="{Binding Name}" Value="Game — Foreground app">
+                                                                            <Setter Property="Visibility" Value="Visible"/>
+                                                                        </DataTrigger>
+                                                                    </Style.Triggers>
+                                                                </Style>
+                                                            </TextBlock.Style>
+                                                        </TextBlock>
+                                                    </StackPanel>
                                                 </DataTemplate>
                                             </GroupStyle.HeaderTemplate>
                                         </GroupStyle>
@@ -286,6 +314,13 @@
 
                                 <TextBlock Text="Dashboard" Style="{StaticResource SettingsHeader}"/>
                                 <CheckBox Content="Show CPU core matrix" IsChecked="{Binding ShowCoreMatrix}"/>
+
+                                <TextBlock Text="Tray" Style="{StaticResource SettingsHeader}"/>
+                                <DockPanel Margin="0,0,0,4">
+                                    <TextBlock Text="Icon shows" Width="90" Style="{StaticResource SettingsLabel}"/>
+                                    <ComboBox ItemsSource="{Binding TrayMetricOptions}" SelectedItem="{Binding SelectedTrayMetric}"
+                                              MinWidth="200" HorizontalAlignment="Left"/>
+                                </DockPanel>
 
                                 <TextBlock Text="Alerts" Style="{StaticResource SettingsHeader}"/>
                                 <CheckBox Content="Notify on sustained critical readings" IsChecked="{Binding AlertsEnabled}"/>
