@@ -108,7 +108,8 @@ internal static class RollingTraceLog
             {
                 try
                 {
-                    acquired = _writeMutex.WaitOne();
+                    acquired = _writeMutex.WaitOne(TimeSpan.FromSeconds(1));
+                    if (!acquired) return; // never block app execution on logging
                 }
                 catch (AbandonedMutexException)
                 {
