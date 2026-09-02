@@ -51,7 +51,6 @@ public sealed class CompositeSensorReader : ISensorReader, IFanControlBackend
             catch (Exception ex)
             {
                 // that reader's ids are absent this tick; others still report
-                System.Diagnostics.Trace.WriteLine($"[Stats.CompositeSensorReader] {r.Name} Read failed: {ex.Message}");
                 (failures ??= new List<SensorBackendFailure>()).Add(new SensorBackendFailure(r.Name, FirstLine(ex.Message)));
                 continue;
             }

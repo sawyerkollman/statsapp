@@ -44,8 +44,7 @@ public sealed class SensorPoller : IDisposable
         catch (Exception ex)
         {
             // transient sensor hiccup; next tick retries
-            Trace.WriteLine($"[Stats.SensorPoller] {_reader.Name} Read failed: {ex}");
-            RecordFailure(new[] { _reader.Name }, FirstLine(ex.Message));
+            RecordFailure(new[] { _reader.Name }, FirstLine(ex.Message), ex);
             return null;
         }
 
@@ -69,9 +68,19 @@ public sealed class SensorPoller : IDisposable
         return snapshot;
     }
 
-    private void RecordFailure(IReadOnlyList<string> backends, string errorFirstLine)
+    private void RecordFailure(
+        IReadOnlyList<string> backends,
+        string errorFirstLine,
+        Exception? exception = null)
     {
-        if (_consecutiveFailures == 0) _firstFailureLocalTime = _localClock(); // stable for the rest of the episode
+        if (_consecutiveFailures == 0)
+        {
+            _firstFailureLocalTime = _localClock();
+            var source = backends.Count > 0 ? string.Join(", ", backends) : _reader.Name;
+            Trace.WriteLine(exception is null
+                ? $"[Stats.SensorPoller] {source} Read failed: {errorFirstLine}"
+                : $"[Stats.SensorPoller] {source} Read failed: {exception}");
+        }
         _consecutiveFailures++;
         Health = new SensorHealthState(false, _consecutiveFailures, _firstFailureLocalTime, errorFirstLine, backends);
         RaiseHealthChanged();
@@ -79,6 +88,7 @@ public sealed class SensorPoller : IDisposable
 
     private void RecordRecovery()
     {
+        Trace.WriteLine($"[Stats.SensorPoller] sensor reads recovered after {_consecutiveFailures} failed poll(s)");
         _consecutiveFailures = 0;
         Health = SensorHealthState.Healthy;
         RaiseHealthChanged();

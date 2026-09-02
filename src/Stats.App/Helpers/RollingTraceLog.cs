@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.IO;
+using System.Text;
 using Stats.Core.Diagnostics;
 
 namespace Stats.App.Helpers;
@@ -24,9 +25,7 @@ internal static class RollingTraceLog
             Directory.CreateDirectory(dir);
 
             var path = Path.Combine(dir, $"stats-{DateTime.Now:yyyyMMdd}.log");
-            var stream = new FileStream(path, FileMode.Append, FileAccess.Write, FileShare.Read);
-            var writer = new StreamWriter(stream) { AutoFlush = true };
-            Trace.Listeners.Add(new TextWriterTraceListener(writer, "StatsRollingLog"));
+            Trace.Listeners.Add(new AtomicAppendTraceListener(path));
             Trace.AutoFlush = true;
 
             LogDirectory = dir; // only after the listener is live, so LogDirectory never points at an unwritten folder
@@ -52,6 +51,75 @@ internal static class RollingTraceLog
         catch (Exception ex)
         {
             Trace.WriteLine("[Stats] log prune enumeration failed: " + ex.Message);
+        }
+    }
+
+    private sealed class AtomicAppendTraceListener : TraceListener
+    {
+        private static readonly Encoding Utf8 = new UTF8Encoding(encoderShouldEmitUTF8Identifier: false);
+        private readonly FileStream _stream;
+        private readonly Mutex _writeMutex = new(false, @"Local\Stats.RollingTraceLog");
+
+        public AtomicAppendTraceListener(string path)
+            : base("StatsRollingLog")
+        {
+            _stream = new FileStream(path, FileMode.OpenOrCreate, FileAccess.Write, FileShare.ReadWrite);
+        }
+
+        public override void Write(string? message) => Append(message ?? "");
+
+        public override void WriteLine(string? message) => Append((message ?? "") + Environment.NewLine);
+
+        public override void Flush()
+        {
+            try { WithWriteLock(() => _stream.Flush()); }
+            catch (Exception) { /* logging must never disrupt the app */ }
+        }
+
+        public override void Close()
+        {
+            _stream.Dispose();
+            _writeMutex.Dispose();
+            base.Close();
+        }
+
+        private void Append(string text)
+        {
+            try
+            {
+                var bytes = Utf8.GetBytes(text);
+                WithWriteLock(() =>
+                {
+                    _stream.Seek(0, SeekOrigin.End);
+                    _stream.Write(bytes, 0, bytes.Length);
+                    _stream.Flush();
+                });
+            }
+            catch (Exception)
+            {
+                // Best-effort: disk, share, or mutex failures must not escape a Trace call.
+            }
+        }
+
+        private void WithWriteLock(Action action)
+        {
+            var acquired = false;
+            try
+            {
+                try
+                {
+                    acquired = _writeMutex.WaitOne();
+                }
+                catch (AbandonedMutexException)
+                {
+                    acquired = true;
+                }
+                action();
+            }
+            finally
+            {
+                if (acquired) _writeMutex.ReleaseMutex();
+            }
         }
     }
 }

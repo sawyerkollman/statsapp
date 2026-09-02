@@ -295,6 +295,16 @@ public partial class App : Application
         if (Interlocked.Exchange(ref _fatalCleanupDone, 1) != 0) return;
         try { Trace.WriteLine($"[Stats] FATAL ({source}): {ex}"); }
         catch (Exception) { /* logging must never block cleanup */ }
+        try
+        {
+            if (_poller?.Stop() == false)
+                Trace.WriteLine("[Stats] Fatal cleanup: poll loop did not stop before fan restore");
+        }
+        catch (Exception stopError)
+        {
+            try { Trace.WriteLine("[Stats] Fatal poller stop failed: " + stopError); }
+            catch (Exception) { /* logging must never block cleanup */ }
+        }
         try { _fanController?.RestoreAll(); }
         catch (Exception restoreError)
         {
@@ -770,21 +780,17 @@ public partial class App : Application
         Shutdown();
     }
 
-    /// <summary>Settings Hardware "Restart now". Starts a brand-new instance of the running executable — with
-    /// <c>UseShellExecute = false</c> so the child directly inherits our elevated token instead of going through
-    /// the shell's elevation broker, which would otherwise re-prompt UAC even though we're already elevated —
-    /// and only then calls the existing <see cref="ExitApp"/> so the poller stops, fans restore, and settings
-    /// flush through the normal clean-exit path. A launch failure is surfaced inline; this process is left
-    /// running rather than exiting into nothing.</summary>
+    /// <summary>Settings Hardware "Restart now". Starts a hidden helper that waits for this process to exit,
+    /// then relaunches the executable with the inherited elevated token. This prevents two fan controllers from
+    /// overlapping while still proving the relaunch path is available before <see cref="ExitApp"/> begins the
+    /// clean poller-stop/fan-restore shutdown. A helper launch failure is surfaced inline and leaves Stats
+    /// running.</summary>
     private void OnRestartNowRequested()
     {
         if (_settingsVm is null) return;
         try
         {
-            var exePath = Environment.ProcessPath;
-            if (string.IsNullOrEmpty(exePath))
-                throw new InvalidOperationException("Could not resolve the running executable's path.");
-            Process.Start(new ProcessStartInfo(exePath) { UseShellExecute = false });
+            LaunchRestartHelper();
             _settingsVm.RestartError = "";
         }
         catch (Exception ex)
@@ -794,6 +800,29 @@ public partial class App : Application
             return;
         }
         ExitApp();
+    }
+
+    private static void LaunchRestartHelper()
+    {
+        var exePath = Environment.ProcessPath;
+        if (string.IsNullOrEmpty(exePath))
+            throw new InvalidOperationException("Could not resolve the running executable's path.");
+
+        var stagingDir = CreateSecureStagingDirectory();
+        var scriptPath = Path.Combine(stagingDir, "stats-restart.cmd");
+        var scriptBytes = System.Text.Encoding.ASCII.GetBytes(BuildRestartScript(
+            Environment.ProcessId,
+            exePath));
+        using (var scriptStream = new FileStream(scriptPath, FileMode.CreateNew, FileAccess.Write, FileShare.None))
+            scriptStream.Write(scriptBytes, 0, scriptBytes.Length);
+
+        var psi = new ProcessStartInfo("cmd.exe", $"/c \"{scriptPath}\"")
+        {
+            CreateNoWindow = true,
+            UseShellExecute = false,
+            WindowStyle = ProcessWindowStyle.Hidden,
+        };
+        Process.Start(psi);
     }
 
     // ---- updater ----
@@ -1054,5 +1083,18 @@ public partial class App : Application
         "goto wait\r\n" +
         ":run\r\n" +
         $"\"{installerPath}\" /SILENT /NOCANCEL\r\n" +
+        $"start \"\" \"{exePath}\"\r\n";
+
+    private static string BuildRestartScript(int pid, string exePath) =>
+        "@echo off\r\n" +
+        "set n=0\r\n" +
+        ":wait\r\n" +
+        $"tasklist /FI \"PID eq {pid}\" | find \"{pid}\" >nul\r\n" +
+        "if errorlevel 1 goto run\r\n" +
+        "set /a n+=1\r\n" +
+        "if %n% gtr 120 exit /b\r\n" +
+        "ping -n 2 127.0.0.1 >nul\r\n" +
+        "goto wait\r\n" +
+        ":run\r\n" +
         $"start \"\" \"{exePath}\"\r\n";
 }
