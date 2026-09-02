@@ -1,0 +1,702 @@
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+    <!-- Hand-rolled implicit styles/templates for the controls Aero2 renders as light system chrome
+         regardless of the active palette (ScrollBar, Slider, ProgressBar, ComboBox + popup, ComboBoxItem,
+         ContextMenu/MenuItem + submenu popups, CheckBox/RadioButton glyphs, Expander toggle). Merged from
+         App.xaml immediately after Theme.xaml and before TileTemplates.xaml — see
+         docs/superpowers/specs/2026-08-27-v1.7-trust-polish-design.md ("Dark control templates").
+
+         Every palette reference below is DynamicResource against one of the eleven Theme.xaml brush keys
+         (WindowBg, TileBg, FlyoutBg, ControlBg, BorderDim, TextPrimary, TextSecondary, AccentBrush, WarnBrush,
+         CritBrush, GaugeTrack) so ThemeManager.Apply's brush-entry replacement (see ThemeManager.cs) repaints
+         every control here live, in every preset including Light — never StaticResource, and never a literal
+         color. Design rule followed throughout so Light's dark-on-light palette is correct by construction,
+         not by per-combination contrast tuning: AccentBrush is only ever used as a glyph/line/thumb-fill color
+         drawn ON TOP OF a neutral (ControlBg/FlyoutBg/GaugeTrack) surface — never as a filled background that
+         TextPrimary/TextSecondary text would need to sit on — so no state here depends on Accent-vs-text
+         contrast, which would vary per preset/custom accent.
+
+         Existing Button and TextBox styles stay in App.xaml. Keyboard focus uses a shared FocusVisualStyle
+         (StatsFocusVisual) instead of the system default dashed rectangle, which is barely visible on the
+         dark presets. -->
+
+    <Style x:Key="StatsFocusVisual">
+        <Setter Property="Control.Template">
+            <Setter.Value>
+                <ControlTemplate>
+                    <Rectangle Margin="1" StrokeThickness="1" StrokeDashArray="1,2"
+                               Stroke="{DynamicResource AccentBrush}" SnapsToDevicePixels="True"/>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <!-- ============================== ScrollBar ============================== -->
+    <!-- Slim (10px) track + thumb, no arrow buttons — Track's own Decrease/IncreaseRepeatButton still page
+         the view on a track click, they're just visually transparent. One Style with an Orientation trigger
+         swapping between the vertical/horizontal ControlTemplates below, which is also how ScrollViewer's
+         own PART_VerticalScrollBar/PART_HorizontalScrollBar pick this style up implicitly. -->
+
+    <Style x:Key="StatsScrollBarPageButton" TargetType="RepeatButton">
+        <Setter Property="Focusable" Value="False"/>
+        <Setter Property="IsTabStop" Value="False"/>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="RepeatButton">
+                    <Border Background="Transparent"/>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <Style x:Key="StatsScrollBarThumb" TargetType="Thumb">
+        <Setter Property="Focusable" Value="False"/>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="Thumb">
+                    <Border x:Name="ThumbBorder" Background="{DynamicResource TextSecondary}" Opacity="0.7" CornerRadius="3"/>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="ThumbBorder" Property="Opacity" Value="1"/>
+                        </Trigger>
+                        <Trigger Property="IsDragging" Value="True">
+                            <Setter TargetName="ThumbBorder" Property="Background" Value="{DynamicResource AccentBrush}"/>
+                            <Setter TargetName="ThumbBorder" Property="Opacity" Value="1"/>
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <ControlTemplate x:Key="StatsScrollBarVertical" TargetType="ScrollBar">
+        <Grid Background="{TemplateBinding Background}">
+            <Border Width="4" HorizontalAlignment="Center" CornerRadius="2" Background="{DynamicResource GaugeTrack}"/>
+            <Track x:Name="PART_Track" Orientation="{TemplateBinding Orientation}" IsDirectionReversed="True"
+                   Minimum="{TemplateBinding Minimum}" Maximum="{TemplateBinding Maximum}"
+                   Value="{Binding Value, RelativeSource={RelativeSource TemplatedParent}, Mode=TwoWay}"
+                   ViewportSize="{TemplateBinding ViewportSize}">
+                <Track.DecreaseRepeatButton>
+                    <RepeatButton Style="{StaticResource StatsScrollBarPageButton}" Command="ScrollBar.PageUpCommand"/>
+                </Track.DecreaseRepeatButton>
+                <Track.IncreaseRepeatButton>
+                    <RepeatButton Style="{StaticResource StatsScrollBarPageButton}" Command="ScrollBar.PageDownCommand"/>
+                </Track.IncreaseRepeatButton>
+                <Track.Thumb>
+                    <Thumb x:Name="Thumb" Style="{StaticResource StatsScrollBarThumb}" Width="6" MinHeight="20"/>
+                </Track.Thumb>
+            </Track>
+        </Grid>
+        <ControlTemplate.Triggers>
+            <Trigger Property="IsEnabled" Value="False">
+                <Setter TargetName="Thumb" Property="Opacity" Value="0.4"/>
+            </Trigger>
+        </ControlTemplate.Triggers>
+    </ControlTemplate>
+
+    <ControlTemplate x:Key="StatsScrollBarHorizontal" TargetType="ScrollBar">
+        <Grid Background="{TemplateBinding Background}">
+            <Border Height="4" VerticalAlignment="Center" CornerRadius="2" Background="{DynamicResource GaugeTrack}"/>
+            <Track x:Name="PART_Track" Orientation="{TemplateBinding Orientation}"
+                   Minimum="{TemplateBinding Minimum}" Maximum="{TemplateBinding Maximum}"
+                   Value="{Binding Value, RelativeSource={RelativeSource TemplatedParent}, Mode=TwoWay}"
+                   ViewportSize="{TemplateBinding ViewportSize}">
+                <Track.DecreaseRepeatButton>
+                    <RepeatButton Style="{StaticResource StatsScrollBarPageButton}" Command="ScrollBar.PageLeftCommand"/>
+                </Track.DecreaseRepeatButton>
+                <Track.IncreaseRepeatButton>
+                    <RepeatButton Style="{StaticResource StatsScrollBarPageButton}" Command="ScrollBar.PageRightCommand"/>
+                </Track.IncreaseRepeatButton>
+                <Track.Thumb>
+                    <Thumb x:Name="Thumb" Style="{StaticResource StatsScrollBarThumb}" Height="6" MinWidth="20"/>
+                </Track.Thumb>
+            </Track>
+        </Grid>
+        <ControlTemplate.Triggers>
+            <Trigger Property="IsEnabled" Value="False">
+                <Setter TargetName="Thumb" Property="Opacity" Value="0.4"/>
+            </Trigger>
+        </ControlTemplate.Triggers>
+    </ControlTemplate>
+
+    <Style TargetType="ScrollBar">
+        <Setter Property="Background" Value="Transparent"/>
+        <Setter Property="Width" Value="10"/>
+        <Setter Property="MinWidth" Value="10"/>
+        <Setter Property="Template" Value="{StaticResource StatsScrollBarVertical}"/>
+        <Style.Triggers>
+            <Trigger Property="Orientation" Value="Horizontal">
+                <Setter Property="Width" Value="Auto"/>
+                <Setter Property="Height" Value="10"/>
+                <Setter Property="MinWidth" Value="0"/>
+                <Setter Property="MinHeight" Value="10"/>
+                <Setter Property="Template" Value="{StaticResource StatsScrollBarHorizontal}"/>
+            </Trigger>
+        </Style.Triggers>
+    </Style>
+
+    <!-- ============================== Slider ============================== -->
+    <!-- All current usages are horizontal (poll interval, fan/overlay sliders), so only Horizontal is
+         templated; Track's required "PART_Track" name and Minimum/Maximum/Value bindings are wired so
+         dragging, click-to-page (Track's repeat buttons via Slider.IncreaseLarge/DecreaseLarge), keyboard
+         arrows, and TickPlacement/IsSnapToTickEnabled keep working exactly as before. -->
+
+    <Style x:Key="StatsSliderRepeatButton" TargetType="RepeatButton">
+        <Setter Property="Focusable" Value="False"/>
+        <Setter Property="IsTabStop" Value="False"/>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="RepeatButton">
+                    <Border Background="Transparent"/>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <Style x:Key="StatsSliderThumb" TargetType="Thumb">
+        <Setter Property="Height" Value="14"/>
+        <Setter Property="Width" Value="14"/>
+        <Setter Property="Focusable" Value="True"/>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="Thumb">
+                    <Ellipse x:Name="Knob" Fill="{DynamicResource AccentBrush}"
+                             Stroke="{DynamicResource BorderDim}" StrokeThickness="1"/>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="Knob" Property="Stroke" Value="{DynamicResource TextPrimary}"/>
+                            <Setter TargetName="Knob" Property="StrokeThickness" Value="2"/>
+                        </Trigger>
+                        <Trigger Property="IsDragging" Value="True">
+                            <Setter TargetName="Knob" Property="Stroke" Value="{DynamicResource TextPrimary}"/>
+                            <Setter TargetName="Knob" Property="StrokeThickness" Value="2"/>
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <ControlTemplate x:Key="StatsSliderHorizontal" TargetType="Slider">
+        <Grid>
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="Auto"/>
+            </Grid.RowDefinitions>
+            <TickBar x:Name="TopTick" Grid.Row="0" Height="4" Placement="Top" Visibility="Collapsed"
+                     Fill="{DynamicResource TextSecondary}"/>
+            <Border x:Name="TrackBackground" Grid.Row="1" Height="4" Margin="7,0" CornerRadius="2"
+                    VerticalAlignment="Center" Background="{DynamicResource GaugeTrack}"/>
+            <Track x:Name="PART_Track" Grid.Row="1" Orientation="Horizontal"
+                   Minimum="{TemplateBinding Minimum}" Maximum="{TemplateBinding Maximum}"
+                   Value="{Binding Value, RelativeSource={RelativeSource TemplatedParent}, Mode=TwoWay}">
+                <Track.DecreaseRepeatButton>
+                    <RepeatButton Style="{StaticResource StatsSliderRepeatButton}" Command="Slider.DecreaseLarge"/>
+                </Track.DecreaseRepeatButton>
+                <Track.IncreaseRepeatButton>
+                    <RepeatButton Style="{StaticResource StatsSliderRepeatButton}" Command="Slider.IncreaseLarge"/>
+                </Track.IncreaseRepeatButton>
+                <Track.Thumb>
+                    <Thumb x:Name="Thumb" Style="{StaticResource StatsSliderThumb}"/>
+                </Track.Thumb>
+            </Track>
+            <TickBar x:Name="BottomTick" Grid.Row="2" Height="4" Placement="Bottom" Visibility="Collapsed"
+                     Fill="{DynamicResource TextSecondary}"/>
+        </Grid>
+        <ControlTemplate.Triggers>
+            <Trigger Property="TickPlacement" Value="TopLeft">
+                <Setter TargetName="TopTick" Property="Visibility" Value="Visible"/>
+            </Trigger>
+            <Trigger Property="TickPlacement" Value="BottomRight">
+                <Setter TargetName="BottomTick" Property="Visibility" Value="Visible"/>
+            </Trigger>
+            <Trigger Property="TickPlacement" Value="Both">
+                <Setter TargetName="TopTick" Property="Visibility" Value="Visible"/>
+                <Setter TargetName="BottomTick" Property="Visibility" Value="Visible"/>
+            </Trigger>
+        </ControlTemplate.Triggers>
+    </ControlTemplate>
+
+    <Style TargetType="Slider">
+        <Setter Property="Height" Value="20"/>
+        <Setter Property="Focusable" Value="True"/>
+        <Setter Property="FocusVisualStyle" Value="{StaticResource StatsFocusVisual}"/>
+        <Setter Property="Template" Value="{StaticResource StatsSliderHorizontal}"/>
+        <Style.Triggers>
+            <Trigger Property="IsEnabled" Value="False">
+                <Setter Property="Opacity" Value="0.5"/>
+            </Trigger>
+        </Style.Triggers>
+    </Style>
+
+    <!-- ============================== ProgressBar ============================== -->
+    <!-- "PART_Track"/"PART_Indicator" are load-bearing: ProgressBar itself (not a binding in this template)
+         measures PART_Track and sets PART_Indicator's Width/Height directly, so the names must match exactly
+         for the determinate fill to render at all. IsIndeterminate gets a looping accent sweep, matching the
+         behavior of the system style even though the app currently only drives ProgressBar determinately. -->
+
+    <Style TargetType="ProgressBar">
+        <Setter Property="Height" Value="14"/>
+        <Setter Property="Background" Value="{DynamicResource GaugeTrack}"/>
+        <Setter Property="Foreground" Value="{DynamicResource AccentBrush}"/>
+        <Setter Property="BorderBrush" Value="{DynamicResource BorderDim}"/>
+        <Setter Property="BorderThickness" Value="1"/>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="ProgressBar">
+                    <Grid x:Name="TemplateRoot" MinHeight="{TemplateBinding Height}">
+                        <Border x:Name="PART_Track" Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}"
+                                CornerRadius="3"/>
+                        <Border x:Name="PART_Indicator" Background="{TemplateBinding Foreground}" CornerRadius="3"
+                                HorizontalAlignment="Left" Margin="1"/>
+                        <Border x:Name="GlowClip" CornerRadius="3" ClipToBounds="True" Margin="1" Visibility="Collapsed">
+                            <Rectangle x:Name="PART_GlowRect" Width="70" HorizontalAlignment="Left"
+                                       Fill="{TemplateBinding Foreground}" Opacity="0.55" RenderTransformOrigin="0,0">
+                                <Rectangle.RenderTransform>
+                                    <TranslateTransform X="-70"/>
+                                </Rectangle.RenderTransform>
+                            </Rectangle>
+                        </Border>
+                    </Grid>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsIndeterminate" Value="True">
+                            <Setter TargetName="PART_Indicator" Property="Visibility" Value="Collapsed"/>
+                            <Setter TargetName="GlowClip" Property="Visibility" Value="Visible"/>
+                            <!-- TranslateTransform is a Freezable (not a FrameworkElement), so it can't be a
+                                 named Storyboard target — the animation instead targets the named Rectangle
+                                 and reaches into its RenderTransform via a compound property path. -->
+                            <Trigger.EnterActions>
+                                <BeginStoryboard x:Name="StatsProgressBarMarquee">
+                                    <Storyboard>
+                                        <DoubleAnimation Storyboard.TargetName="PART_GlowRect"
+                                                         Storyboard.TargetProperty="(UIElement.RenderTransform).(TranslateTransform.X)"
+                                                         From="-70" To="400" Duration="0:0:1.6"
+                                                         RepeatBehavior="Forever"/>
+                                    </Storyboard>
+                                </BeginStoryboard>
+                            </Trigger.EnterActions>
+                            <Trigger.ExitActions>
+                                <StopStoryboard BeginStoryboardName="StatsProgressBarMarquee"/>
+                            </Trigger.ExitActions>
+                        </Trigger>
+                        <Trigger Property="IsEnabled" Value="False">
+                            <Setter Property="Opacity" Value="0.5"/>
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <!-- ============================== ComboBox / ComboBoxItem ============================== -->
+    <!-- "PART_Popup" and "PART_EditableTextBox" are the two ComboBox template parts the control looks up by
+         name; PART_EditableTextBox is only shown when IsEditable is set (unused today, kept for correctness).
+         The dropdown popup uses FlyoutBg/TextPrimary instead of light system Aero2 chrome, which is what lets
+         ComboBoxItem below use a plain DynamicResource TextPrimary foreground in every preset — no more fixed
+         dark-on-light patch needed. -->
+
+    <ControlTemplate x:Key="StatsComboBoxTemplate" TargetType="ComboBox">
+        <Grid x:Name="MainGrid">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="22"/>
+            </Grid.ColumnDefinitions>
+            <Border x:Name="Border" Grid.ColumnSpan="2" Background="{TemplateBinding Background}"
+                    BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}"
+                    CornerRadius="3"/>
+            <Path x:Name="Arrow" Grid.Column="1" Data="M0,0 L4,4 L8,0 Z" Fill="{DynamicResource TextSecondary}"
+                  HorizontalAlignment="Center" VerticalAlignment="Center" IsHitTestVisible="False"/>
+            <ToggleButton x:Name="ToggleButton" Grid.ColumnSpan="2" Background="Transparent" Focusable="False"
+                          ClickMode="Press" IsChecked="{Binding IsDropDownOpen, Mode=TwoWay, RelativeSource={RelativeSource TemplatedParent}}">
+                <ToggleButton.Template>
+                    <ControlTemplate TargetType="ToggleButton">
+                        <Border Background="Transparent"/>
+                    </ControlTemplate>
+                </ToggleButton.Template>
+            </ToggleButton>
+            <ContentPresenter x:Name="ContentSite" Grid.Column="0" IsHitTestVisible="False"
+                              Content="{TemplateBinding SelectionBoxItem}"
+                              ContentTemplate="{TemplateBinding SelectionBoxItemTemplate}"
+                              ContentTemplateSelector="{TemplateBinding ItemTemplateSelector}"
+                              Margin="{TemplateBinding Padding}"
+                              HorizontalAlignment="Left" VerticalAlignment="Center"/>
+            <TextBox x:Name="PART_EditableTextBox" Grid.Column="0" Style="{x:Null}" Visibility="Collapsed"
+                     Background="Transparent" Foreground="{DynamicResource TextPrimary}"
+                     CaretBrush="{DynamicResource TextPrimary}" BorderThickness="0"
+                     Margin="{TemplateBinding Padding}" HorizontalContentAlignment="Left" VerticalAlignment="Center"
+                     Focusable="True" IsReadOnly="{TemplateBinding IsReadOnly}"/>
+            <Popup x:Name="PART_Popup" Placement="Bottom" AllowsTransparency="True" Focusable="False"
+                   PopupAnimation="Slide" IsOpen="{TemplateBinding IsDropDownOpen}">
+                <Border x:Name="DropDownBorder" MinWidth="{Binding ActualWidth, ElementName=MainGrid}"
+                        MaxHeight="{TemplateBinding MaxDropDownHeight}" Margin="0,2,0,0"
+                        Background="{DynamicResource FlyoutBg}" BorderBrush="{DynamicResource BorderDim}" BorderThickness="1">
+                    <ScrollViewer SnapsToDevicePixels="True" Margin="2">
+                        <ItemsPresenter KeyboardNavigation.DirectionalNavigation="Contained"/>
+                    </ScrollViewer>
+                </Border>
+            </Popup>
+        </Grid>
+        <ControlTemplate.Triggers>
+            <Trigger Property="IsEditable" Value="True">
+                <Setter TargetName="ContentSite" Property="Visibility" Value="Collapsed"/>
+                <Setter TargetName="PART_EditableTextBox" Property="Visibility" Value="Visible"/>
+            </Trigger>
+            <Trigger Property="HasItems" Value="False">
+                <Setter TargetName="DropDownBorder" Property="MinHeight" Value="24"/>
+            </Trigger>
+            <Trigger Property="IsDropDownOpen" Value="True">
+                <Setter TargetName="Border" Property="BorderBrush" Value="{DynamicResource AccentBrush}"/>
+            </Trigger>
+            <Trigger SourceName="ToggleButton" Property="IsMouseOver" Value="True">
+                <Setter TargetName="Border" Property="BorderBrush" Value="{DynamicResource TextSecondary}"/>
+            </Trigger>
+            <Trigger SourceName="ToggleButton" Property="IsPressed" Value="True">
+                <Setter TargetName="Border" Property="Background" Value="{DynamicResource BorderDim}"/>
+            </Trigger>
+            <Trigger Property="IsKeyboardFocusWithin" Value="True">
+                <Setter TargetName="Border" Property="BorderBrush" Value="{DynamicResource AccentBrush}"/>
+            </Trigger>
+            <Trigger Property="IsEnabled" Value="False">
+                <Setter Property="Opacity" Value="0.5"/>
+            </Trigger>
+        </ControlTemplate.Triggers>
+    </ControlTemplate>
+
+    <Style TargetType="ComboBox">
+        <Setter Property="Background" Value="{DynamicResource ControlBg}"/>
+        <Setter Property="Foreground" Value="{DynamicResource TextPrimary}"/>
+        <Setter Property="BorderBrush" Value="{DynamicResource BorderDim}"/>
+        <Setter Property="BorderThickness" Value="1"/>
+        <Setter Property="Padding" Value="6,3"/>
+        <Setter Property="VerticalContentAlignment" Value="Center"/>
+        <Setter Property="FocusVisualStyle" Value="{StaticResource StatsFocusVisual}"/>
+        <Setter Property="Template" Value="{StaticResource StatsComboBoxTemplate}"/>
+    </Style>
+
+    <Style TargetType="ComboBoxItem">
+        <Setter Property="Padding" Value="8,5"/>
+        <Setter Property="Foreground" Value="{DynamicResource TextPrimary}"/>
+        <Setter Property="Background" Value="Transparent"/>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="ComboBoxItem">
+                    <Border x:Name="Bd" Background="{TemplateBinding Background}" SnapsToDevicePixels="True">
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="3"/>
+                                <ColumnDefinition Width="*"/>
+                            </Grid.ColumnDefinitions>
+                            <Border x:Name="SelectionBar" Background="Transparent"/>
+                            <ContentPresenter Grid.Column="1" Margin="{TemplateBinding Padding}"/>
+                        </Grid>
+                    </Border>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsHighlighted" Value="True">
+                            <Setter TargetName="Bd" Property="Background" Value="{DynamicResource ControlBg}"/>
+                        </Trigger>
+                        <Trigger Property="IsSelected" Value="True">
+                            <Setter TargetName="SelectionBar" Property="Background" Value="{DynamicResource AccentBrush}"/>
+                        </Trigger>
+                        <Trigger Property="IsEnabled" Value="False">
+                            <Setter Property="Opacity" Value="0.5"/>
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <!-- ============================== ContextMenu / MenuItem ============================== -->
+    <!-- A single implicit MenuItem style whose Template swaps by Role (TopLevelItem/TopLevelHeader/
+         SubmenuItem/SubmenuHeader), the same pattern the built-in Aero2 style uses. "PART_Popup" on the
+         header templates is load-bearing: MenuItem looks it up by name to open/close/position submenus. The
+         check glyph is a stroke drawn in AccentBrush over a neutral box, not a filled+text combination, so it
+         reads correctly against every preset without per-combination contrast tuning. -->
+
+    <Style x:Key="{x:Static MenuItem.SeparatorStyleKey}" TargetType="Separator">
+        <Setter Property="Margin" Value="4,4"/>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="Separator">
+                    <Border BorderBrush="{DynamicResource BorderDim}" BorderThickness="0,1,0,0" Height="1" Margin="26,0,4,0"/>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <ControlTemplate x:Key="StatsMenuItemLeaf" TargetType="MenuItem">
+        <Border x:Name="Bd" Background="{TemplateBinding Background}" SnapsToDevicePixels="True">
+            <Grid Margin="{TemplateBinding Padding}">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="24"/>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+                <Border x:Name="CheckBorder" Width="14" Height="14" HorizontalAlignment="Center" VerticalAlignment="Center"
+                        Visibility="Collapsed">
+                    <Path x:Name="CheckMark" Data="M0,4 L3,7 L8,0" Stroke="{DynamicResource AccentBrush}" StrokeThickness="1.6"
+                          StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeLineJoin="Round" Visibility="Hidden"/>
+                </Border>
+                <ContentPresenter Grid.Column="1" ContentSource="Header" RecognizesAccessKey="True"
+                                   VerticalAlignment="Center" Margin="6,4"/>
+                <TextBlock Grid.Column="2" Text="{TemplateBinding InputGestureText}" Foreground="{DynamicResource TextSecondary}"
+                           VerticalAlignment="Center" Margin="12,0,6,0"/>
+            </Grid>
+        </Border>
+        <ControlTemplate.Triggers>
+            <Trigger Property="IsHighlighted" Value="True">
+                <Setter TargetName="Bd" Property="Background" Value="{DynamicResource ControlBg}"/>
+            </Trigger>
+            <Trigger Property="IsCheckable" Value="True">
+                <Setter TargetName="CheckBorder" Property="Visibility" Value="Visible"/>
+            </Trigger>
+            <Trigger Property="IsChecked" Value="True">
+                <Setter TargetName="CheckMark" Property="Visibility" Value="Visible"/>
+            </Trigger>
+            <Trigger Property="IsEnabled" Value="False">
+                <Setter Property="Opacity" Value="0.5"/>
+            </Trigger>
+        </ControlTemplate.Triggers>
+    </ControlTemplate>
+
+    <ControlTemplate x:Key="StatsMenuItemHeader" TargetType="MenuItem">
+        <Border x:Name="Bd" Background="{TemplateBinding Background}" SnapsToDevicePixels="True">
+            <Grid Margin="{TemplateBinding Padding}">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="24"/>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+                <ContentPresenter Grid.Column="1" ContentSource="Header" RecognizesAccessKey="True"
+                                   VerticalAlignment="Center" Margin="6,4"/>
+                <Path Grid.Column="2" Data="M0,0 L4,4 L0,8 Z" Fill="{DynamicResource TextSecondary}"
+                      VerticalAlignment="Center" Margin="8,0,6,0"/>
+                <Popup x:Name="PART_Popup" Placement="Right" HorizontalOffset="-4" VerticalOffset="-4"
+                       AllowsTransparency="True" Focusable="False" PopupAnimation="Fade"
+                       IsOpen="{TemplateBinding IsSubmenuOpen}">
+                    <Border Background="{DynamicResource FlyoutBg}" BorderBrush="{DynamicResource BorderDim}" BorderThickness="1">
+                        <ScrollViewer CanContentScroll="True" Margin="2"
+                                      VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                            <ItemsPresenter KeyboardNavigation.DirectionalNavigation="Cycle"/>
+                        </ScrollViewer>
+                    </Border>
+                </Popup>
+            </Grid>
+        </Border>
+        <ControlTemplate.Triggers>
+            <Trigger Property="IsHighlighted" Value="True">
+                <Setter TargetName="Bd" Property="Background" Value="{DynamicResource ControlBg}"/>
+            </Trigger>
+            <Trigger Property="IsEnabled" Value="False">
+                <Setter Property="Opacity" Value="0.5"/>
+            </Trigger>
+        </ControlTemplate.Triggers>
+    </ControlTemplate>
+
+    <Style TargetType="MenuItem">
+        <Setter Property="Background" Value="Transparent"/>
+        <Setter Property="Foreground" Value="{DynamicResource TextPrimary}"/>
+        <Setter Property="Padding" Value="4,2"/>
+        <Setter Property="Template" Value="{StaticResource StatsMenuItemLeaf}"/>
+        <Style.Triggers>
+            <Trigger Property="Role" Value="TopLevelHeader">
+                <Setter Property="Template" Value="{StaticResource StatsMenuItemHeader}"/>
+            </Trigger>
+            <Trigger Property="Role" Value="SubmenuHeader">
+                <Setter Property="Template" Value="{StaticResource StatsMenuItemHeader}"/>
+            </Trigger>
+            <Trigger Property="Role" Value="SubmenuItem">
+                <Setter Property="Template" Value="{StaticResource StatsMenuItemLeaf}"/>
+            </Trigger>
+        </Style.Triggers>
+    </Style>
+
+    <Style TargetType="ContextMenu">
+        <Setter Property="Background" Value="{DynamicResource FlyoutBg}"/>
+        <Setter Property="Foreground" Value="{DynamicResource TextPrimary}"/>
+        <Setter Property="BorderBrush" Value="{DynamicResource BorderDim}"/>
+        <Setter Property="BorderThickness" Value="1"/>
+        <Setter Property="Padding" Value="2"/>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="ContextMenu">
+                    <Border Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}"
+                            BorderThickness="{TemplateBinding BorderThickness}" SnapsToDevicePixels="True">
+                        <ScrollViewer CanContentScroll="True"
+                                      VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                            <ItemsPresenter Margin="{TemplateBinding Padding}" KeyboardNavigation.DirectionalNavigation="Cycle"/>
+                        </ScrollViewer>
+                    </Border>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <!-- ============================== CheckBox / RadioButton ============================== -->
+    <!-- Glyph column is Grid Width="Auto" + a Star content column (not a horizontal StackPanel) so the
+         existing TextWrapping="Wrap" content (Game mode, motherboard/coolers, autostart checkboxes) keeps
+         wrapping within the available width instead of measuring infinite. -->
+
+    <Style TargetType="CheckBox">
+        <Setter Property="Foreground" Value="{DynamicResource TextPrimary}"/>
+        <Setter Property="VerticalContentAlignment" Value="Center"/>
+        <Setter Property="FocusVisualStyle" Value="{StaticResource StatsFocusVisual}"/>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="CheckBox">
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto"/>
+                            <ColumnDefinition Width="*"/>
+                        </Grid.ColumnDefinitions>
+                        <Grid Width="16" Height="16" VerticalAlignment="Center">
+                            <Border x:Name="Box" CornerRadius="3" BorderThickness="1"
+                                    Background="{DynamicResource ControlBg}" BorderBrush="{DynamicResource BorderDim}"/>
+                            <Rectangle x:Name="IndeterminateMark" Width="8" Height="2" Fill="{DynamicResource AccentBrush}"
+                                       HorizontalAlignment="Center" VerticalAlignment="Center" Visibility="Collapsed"/>
+                        <ContentPresenter Grid.Column="1" Margin="6,0,0,0" VerticalAlignment="Center" RecognizesAccessKey="True"/>
+                    </Grid>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsChecked" Value="True">
+                            <Setter TargetName="CheckMark" Property="Visibility" Value="Visible"/>
+                        </Trigger>
+                        <Trigger Property="IsChecked" Value="{x:Null}">
+                            <Setter TargetName="IndeterminateMark" Property="Visibility" Value="Visible"/>
+                        </Trigger>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="Box" Property="BorderBrush" Value="{DynamicResource AccentBrush}"/>
+                        </Trigger>
+                        <Trigger Property="IsPressed" Value="True">
+                            <Setter TargetName="Box" Property="Background" Value="{DynamicResource BorderDim}"/>
+                        </Trigger>
+                        <Trigger Property="IsEnabled" Value="False">
+                            <Setter Property="Opacity" Value="0.5"/>
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <Style TargetType="RadioButton">
+        <Setter Property="Foreground" Value="{DynamicResource TextPrimary}"/>
+        <Setter Property="Margin" Value="0,0,12,0"/>
+        <Setter Property="VerticalContentAlignment" Value="Center"/>
+        <Setter Property="FocusVisualStyle" Value="{StaticResource StatsFocusVisual}"/>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="RadioButton">
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto"/>
+                            <ColumnDefinition Width="*"/>
+                        </Grid.ColumnDefinitions>
+                        <Grid Width="16" Height="16" VerticalAlignment="Center">
+                            <Ellipse x:Name="Circle" StrokeThickness="1"
+                                     Fill="{DynamicResource ControlBg}" Stroke="{DynamicResource BorderDim}"/>
+                            <Ellipse x:Name="Dot" Width="8" Height="8" Fill="{DynamicResource AccentBrush}" Visibility="Collapsed"/>
+                        </Grid>
+                        <ContentPresenter Grid.Column="1" Margin="6,0,0,0" VerticalAlignment="Center" RecognizesAccessKey="True"/>
+                    </Grid>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsChecked" Value="True">
+                            <Setter TargetName="Dot" Property="Visibility" Value="Visible"/>
+                        </Trigger>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="Circle" Property="Stroke" Value="{DynamicResource AccentBrush}"/>
+                        </Trigger>
+                        <Trigger Property="IsPressed" Value="True">
+                            <Setter TargetName="Circle" Property="Fill" Value="{DynamicResource BorderDim}"/>
+                        </Trigger>
+                        <Trigger Property="IsEnabled" Value="False">
+                            <Setter Property="Opacity" Value="0.5"/>
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <!-- ============================== Expander ============================== -->
+    <!-- Header toggle draws its own arrow glyph (right when collapsed, rotated 90° down when expanded) rather
+         than relying on the system chevron chrome. ExpandDirection is fully handled so FansWindow's default
+         Down-direction Expander and any future Up/Left/Right usage keep working. -->
+
+    <ControlTemplate x:Key="StatsExpanderToggle" TargetType="ToggleButton">
+        <Border Background="Transparent" Padding="{TemplateBinding Padding}">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="*"/>
+                </Grid.ColumnDefinitions>
+                <Path x:Name="Arrow" Grid.Column="0" Data="M0,0 L6,6 L0,12" Fill="Transparent" StrokeThickness="1.6"
+                      Stroke="{DynamicResource TextSecondary}" StrokeStartLineCap="Round" StrokeEndLineCap="Round"
+                      StrokeLineJoin="Round" Width="8" Height="12" Margin="2,0,8,0" VerticalAlignment="Center"
+                      RenderTransformOrigin="0.5,0.5"/>
+                <ContentPresenter Grid.Column="1" ContentSource="Content" VerticalAlignment="Center" RecognizesAccessKey="True"/>
+            </Grid>
+        </Border>
+        <ControlTemplate.Triggers>
+            <!-- RotateTransform is a Freezable, not a FrameworkElement, so it can't be a named Trigger target
+                 (TargetName resolves through the template's element NameScope only) — the whole RenderTransform
+                 is swapped in as a new object instead of animating a named sub-property. -->
+            <Trigger Property="IsChecked" Value="True">
+                <Setter TargetName="Arrow" Property="RenderTransform">
+                    <Setter.Value>
+                        <RotateTransform Angle="90"/>
+                    </Setter.Value>
+                </Setter>
+            </Trigger>
+            <Trigger Property="IsMouseOver" Value="True">
+                <Setter TargetName="Arrow" Property="Stroke" Value="{DynamicResource AccentBrush}"/>
+            </Trigger>
+        </ControlTemplate.Triggers>
+    </ControlTemplate>
+
+    <ControlTemplate x:Key="StatsExpanderTemplate" TargetType="Expander">
+        <DockPanel>
+            <ToggleButton x:Name="HeaderSite" DockPanel.Dock="Top" Template="{StaticResource StatsExpanderToggle}"
+                          Content="{TemplateBinding Header}" ContentTemplate="{TemplateBinding HeaderTemplate}"
+                          Padding="{TemplateBinding Padding}" Foreground="{TemplateBinding Foreground}"
+                          FocusVisualStyle="{StaticResource StatsFocusVisual}"
+                          IsChecked="{Binding IsExpanded, Mode=TwoWay, RelativeSource={RelativeSource TemplatedParent}}"/>
+            <ContentPresenter x:Name="ExpandSite" DockPanel.Dock="Bottom" Focusable="False" Visibility="Collapsed"/>
+        </DockPanel>
+        <ControlTemplate.Triggers>
+            <Trigger Property="IsExpanded" Value="True">
+                <Setter TargetName="ExpandSite" Property="Visibility" Value="Visible"/>
+            </Trigger>
+            <Trigger Property="ExpandDirection" Value="Down">
+                <Setter TargetName="HeaderSite" Property="DockPanel.Dock" Value="Top"/>
+                <Setter TargetName="ExpandSite" Property="DockPanel.Dock" Value="Bottom"/>
+            </Trigger>
+            <Trigger Property="ExpandDirection" Value="Up">
+                <Setter TargetName="HeaderSite" Property="DockPanel.Dock" Value="Bottom"/>
+                <Setter TargetName="ExpandSite" Property="DockPanel.Dock" Value="Top"/>
+            </Trigger>
+            <Trigger Property="ExpandDirection" Value="Left">
+                <Setter TargetName="HeaderSite" Property="DockPanel.Dock" Value="Right"/>
+                <Setter TargetName="ExpandSite" Property="DockPanel.Dock" Value="Left"/>
+            </Trigger>
+            <Trigger Property="ExpandDirection" Value="Right">
+                <Setter TargetName="HeaderSite" Property="DockPanel.Dock" Value="Left"/>
+                <Setter TargetName="ExpandSite" Property="DockPanel.Dock" Value="Right"/>
+            </Trigger>
+            <Trigger Property="IsEnabled" Value="False">
+                <Setter Property="Opacity" Value="0.6"/>
+            </Trigger>
+        </ControlTemplate.Triggers>
+    </ControlTemplate>
+
+    <Style TargetType="Expander">
+        <Setter Property="Foreground" Value="{DynamicResource TextPrimary}"/>
+        <Setter Property="Background" Value="Transparent"/>
+        <Setter Property="BorderThickness" Value="0"/>
+        <Setter Property="Padding" Value="4,2"/>
+        <Setter Property="Template" Value="{StaticResource StatsExpanderTemplate}"/>
+    </Style>
+
+</ResourceDictionary>

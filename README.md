@@ -14,7 +14,9 @@ needs administrator rights and 64-bit Windows 10 1809 or later, puts Stats in `C
 installs the **PawnIO** kernel driver (https://pawnio.eu) if it is not already present —
 LibreHardwareMonitor reads CPU temperature/clock/power through PawnIO only, same as Core Temp
 or Ryzen Master. Without it the app shows a degraded-mode banner (loads/usage only).
-Optional checkbox: start Stats at sign-in (a Scheduled Task, so no UAC prompt each login).
+Optional checkbox: start Stats at sign-in (a Scheduled Task, so no UAC prompt each login);
+sign-in launches Stats minimized to the tray instead of opening the dashboard.
+Settings → Startup can create or remove the same task later and always reflects its actual state.
 Uninstall from Settings → Apps; PawnIO is left installed because other tools may use it.
 - **FPS counter** — select FPS / 1% Low FPS / Frame Time from the *Game* group. Stats runs the bundled
   Intel PresentMon helper only while one of them is selected or Game mode is on (*Fans* window). Launch
@@ -27,8 +29,9 @@ Uninstall from Settings → Apps; PawnIO is left installed because other tools m
   selected source). Off until you enable it;
   2 °C hysteresis, max 10 %/s change, falls back to device control if the source temperature
   disappears for 10 s, pumps never below 50 %; fans return to device control when you exit Stats.
-  Close MSI Center / Fan Control / Afterburner fan curves first. If Stats *crashes* (not exits),
-  fans keep their last speed until Stats runs again or you reboot.
+  Close MSI Center / Fan Control / Afterburner fan curves first. On a fatal error Stats makes a
+  best-effort attempt to return every fan to device control before terminating; the next-launch
+  recovery marker remains the fallback if that cleanup cannot complete.
   Stats now also reads the motherboard Super-I/O chip and USB fan/AIO controllers through
   LibreHardwareMonitor (new *Motherboard* and *Cooler* metric groups); if another vendor tool owns
   those devices you may see contention — close it or don't enable fan control. Game mode keeps the
@@ -47,9 +50,13 @@ Uninstall from Settings → Apps; PawnIO is left installed because other tools m
   control, every fan is returned to Auto on the next launch and the *Fans* window shows a dismissible
   notice explaining why (and says so if a fan could *not* be handed back — usually other fan software
   holding the device).
+- **Sensor health warning** — after three consecutive failed sensor reads, the dashboard identifies
+  the failing backend and when the failure episode started. Healthy backends continue updating, and
+  the warning clears automatically on the next fully healthy read.
 - **Hardware setting** — Settings → Hardware has a **Read motherboard fan headers and USB coolers**
   checkbox (on by default); **uncheck** it if another tool needs exclusive access to those devices —
-  fan control needs it on. Takes effect after restarting Stats.
+  fan control needs it on. Takes effect after restarting Stats; **Restart now** relaunches through
+  Stats' clean shutdown path so fans are released first.
 - **Inverted FPS thresholds** — FPS gets its own warn/crit pair in Settings where *lower* is worse
   (defaults: warn 60 fps, crit 30 fps), instead of the "higher is worse" rule used for temperatures
   and load. *1% Low FPS* starts on its own lower scale (warn 30, crit 15) so it isn't permanently
@@ -63,6 +70,8 @@ Uninstall from Settings → Apps; PawnIO is left installed because other tools m
 Requires administrator (UAC prompt) and PawnIO (`winget install namazso.PawnIO`).
 For FPS while running from source, run `installer\build.ps1` once (or download
 `PresentMon-2.5.1-x64.exe` into `installer\vendor\`); the app finds it there.
+Pass `--minimized` to create the dashboard and monitoring services without showing the
+dashboard until the first tray click.
 
 ## Build the installer
 
@@ -71,14 +80,23 @@ For FPS while running from source, run `installer\build.ps1` once (or download
 Needs Inno Setup 6.3+ (`winget install -e --id JRSoftware.InnoSetup`). The script publishes a
 self-contained single-file build, downloads and SHA-256-verifies the pinned PawnIO setup, and
 compiles `installer/Stats.iss`. Releases: `git tag v1.2.3 && git push --tags` — CI builds and
-attaches the installer to a GitHub Release.
+attaches the installer to a GitHub Release with a machine-readable SHA-256. Stats verifies that
+hash after downloading an update (older releases without a published hash retain size verification).
 
 ## Use
 
 - **☰ Metrics** — pick what shows on the dashboard (Dash) and the overlay (Overlay).
   Search box filters; per-group All/None; live value column. Persists to `%AppData%\Stats\settings.json`.
-- **⚙ Settings** — poll rate, history window (2/5/15/60 min), warn/crit thresholds, PPT/TDC/EDC/GPU-power
-  limits, overlay layout/opacity/font scale/click-through/hotkey, core matrix toggle. Applies live.
+- **⚙ Settings** — poll rate, history window (2/5/15/60 min), warn/crit thresholds,
+  PPT/TDC/EDC/GPU-power limits, overlay layout/opacity/font scale/click-through/hotkey,
+  core matrix toggle, startup task, diagnostics, and About. Applies live. About shows the installed
+  version and can check for updates manually; development builds identify themselves and skip checks.
+- **Themes and controls** — Dark Amber, Blue, Green, Purple, and Light presets apply live to native
+  controls and their popups, including scrollbars, sliders, combo boxes, menus, progress bars,
+  check/radio glyphs, and expanders.
+- **Diagnostics** — Trace output and crash details are written to
+  `%AppData%\Stats\logs\stats-YYYYMMDD.log`; the newest seven daily files are kept, and Settings can
+  open the folder.
 - **Tiles** — right-click: kind (Sparkline/Gauge/Bar/Value), size (S/M/L), rename, gauge max, remove.
   Drag a tile onto another in the same group to reorder. Group headers collapse; Collapse/Expand all in the header.
   Values turn amber/red past thresholds.
@@ -88,6 +106,8 @@ attaches the installer to a GitHub Release.
   mode lets mouse pass through (turn off in Settings to drag it); "Reset overlay position" if it gets lost.
 - **Tray** — icon shows CPU temp, tinted by severity; close button hides to tray; left-click reopens;
   right-click: dashboard / overlay / peaks / settings / exit.
+- **Updates** — the dashboard banner includes **What's new**, download progress, SHA-256 verification,
+  retry on failure, and an explicit **Update now** action; updates never install without a click.
 
 ## Test
 

@@ -41,6 +41,20 @@ public sealed partial class SettingsViewModel : ObservableObject
 
     public event Action<SettingsChange>? Changed;
     public event Action? OverlayPositionResetRequested;
+    public event Action? OpenLogFolderRequested;
+    /// <summary>The Startup checkbox was toggled by the user (not by <see cref="ApplyStartupState"/>). The
+    /// composition root performs the actual schtasks /Create or /Delete asynchronously and reports the result
+    /// back through <see cref="ApplyStartupState"/> — this view model never touches Process or AppSettings for
+    /// this feature; it is live OS state, not a persisted preference.</summary>
+    public event Action<bool>? StartupToggleRequested;
+    /// <summary>"Check for updates" was clicked in the About section. The composition root runs
+    /// <c>UpdateService.CheckAsync</c> (with its manual, explicit-failure mode) and reports the outcome back
+    /// through <see cref="ApplyManualCheckResult"/>.</summary>
+    public event Action? CheckForUpdatesRequested;
+    /// <summary>"Restart now" was clicked in the Hardware section. The composition root starts a new instance of
+    /// the running executable and only then calls the existing ExitApp() so the poller stops, fans restore, and
+    /// settings flush through the normal clean-exit path.</summary>
+    public event Action? RestartRequested;
 
     public SettingsViewModel(AppSettings settings, IReadOnlyList<MetricDefinition> definitions, Action save)
     {
@@ -104,6 +118,39 @@ public sealed partial class SettingsViewModel : ObservableObject
     [ObservableProperty] private string _accentHex;
     /// <summary>True while the AccentHex TextBox holds text that isn't "" and isn't valid #RRGGBB — red outline.</summary>
     [ObservableProperty] private bool _isAccentInvalid;
+    /// <summary>"" = ok; set by App after Open log folder fails (folder create or shell-open error).</summary>
+    [ObservableProperty] private string _diagnosticsError = "";
+    /// <summary>Reflects the actual "Stats" logon Scheduled Task's existence, refreshed by the composition root
+    /// via <see cref="ApplyStartupState"/> — never backed by a persisted AppSettings field.</summary>
+    [ObservableProperty] private bool _startupEnabled;
+    /// <summary>True while a query or /Create /Delete is in flight; the checkbox is disabled in the XAML while
+    /// this is true.</summary>
+    [ObservableProperty] private bool _startupBusy;
+    /// <summary>"" = ok; set by App after a schtasks query/create/delete failure (non-zero exit code or a
+    /// process-launch error).</summary>
+    [ObservableProperty] private string _startupError = "";
+    /// <summary>Guards <see cref="OnStartupEnabledChanged"/> while <see cref="ApplyStartupState"/> is writing the
+    /// re-queried result back, so that write doesn't re-raise <see cref="StartupToggleRequested"/>.</summary>
+    private bool _suppressStartupToggle;
+    /// <summary>Entry-assembly product version display text (or "Development build"), set once by the
+    /// composition root via <see cref="SetVersionInfo"/> — Assembly access itself stays in App.</summary>
+    [ObservableProperty] private string _appVersionDisplay = "";
+    /// <summary>True for a build whose first three version components are all zero — the About section neither
+    /// offers "Check for updates" nor lets a click reach GitHub for such a build.</summary>
+    [ObservableProperty] private bool _isDevBuild;
+    /// <summary>True while a manual update check is in flight; the button is disabled in the XAML while this is
+    /// true.</summary>
+    [ObservableProperty] private bool _updateCheckBusy;
+    /// <summary>"" = no result yet; "Up to date"; or an explicit failure message (see <see cref="UpdateCheckFailed"/>
+    /// for which one). Cleared (left "") when a newer release is found — the dashboard banner (<see
+    /// cref="DashboardViewModel.OfferUpdate"/>) carries that news instead of duplicating it here.</summary>
+    [ObservableProperty] private string _updateCheckResult = "";
+    /// <summary>True when <see cref="UpdateCheckResult"/> holds an explicit failure message rather than "Up to
+    /// date" — the XAML uses this to show the text in the critical brush instead of the secondary one.</summary>
+    [ObservableProperty] private bool _updateCheckFailed;
+    /// <summary>"" = ok; set by App after "Restart now" fails to launch a new instance. Restart is not attempted
+    /// again automatically — the user can just click again.</summary>
+    [ObservableProperty] private string _restartError = "";
 
     public IReadOnlyList<string> ThemePresetNames => ThemePresets.Names;
     public IReadOnlyList<string> AccentSwatches => ThemePresets.AccentSwatches;
@@ -111,6 +158,19 @@ public sealed partial class SettingsViewModel : ObservableObject
     [RelayCommand] private void ResetOverlayPosition() => OverlayPositionResetRequested?.Invoke();
     [RelayCommand] private void ResetAccent() => AccentHex = "";
     [RelayCommand] private void SetAccent(string hex) => AccentHex = hex;
+    [RelayCommand] private void OpenLogFolder() => OpenLogFolderRequested?.Invoke();
+
+    [RelayCommand]
+    private void CheckForUpdates()
+    {
+        if (UpdateCheckBusy || IsDevBuild) return; // dev builds never reach GitHub, even from this button
+        UpdateCheckBusy = true;
+        UpdateCheckResult = "";
+        UpdateCheckFailed = false;
+        CheckForUpdatesRequested?.Invoke();
+    }
+
+    [RelayCommand] private void RestartNow() => RestartRequested?.Invoke();
 
     // ---- write-through ----
 
@@ -223,6 +283,45 @@ public sealed partial class SettingsViewModel : ObservableObject
         if (!_loaded) return;
         _s.CheckForUpdatesAutomatically = value;
         Raise(SettingsChange.Updates);
+    }
+
+    /// <summary>The checkbox is bound TwoWay, so a user click lands here first. Deliberately does not write to
+    /// AppSettings or call <see cref="Raise"/> — Startup is live OS state; the composition root performs the
+    /// actual schtasks mutation and reports the real result back through <see cref="ApplyStartupState"/>.</summary>
+    partial void OnStartupEnabledChanged(bool value)
+    {
+        if (!_loaded || _suppressStartupToggle) return;
+        StartupToggleRequested?.Invoke(value);
+    }
+
+    /// <summary>Called by the composition root after querying or mutating the "Stats" logon Scheduled Task.
+    /// Setting <see cref="StartupEnabled"/> here reflects the actual re-queried task state and must not re-raise
+    /// <see cref="StartupToggleRequested"/>, hence the suppression flag.</summary>
+    public void ApplyStartupState(bool enabled, bool busy, string error)
+    {
+        _suppressStartupToggle = true;
+        try { StartupEnabled = enabled; }
+        finally { _suppressStartupToggle = false; }
+        StartupBusy = busy;
+        StartupError = error;
+    }
+
+    /// <summary>Called once by the composition root, right after construction, with the entry assembly's version
+    /// already formatted/classified by the pure <c>UpdateChecker</c> helpers in Core.</summary>
+    public void SetVersionInfo(string appVersionDisplay, bool isDevBuild)
+    {
+        AppVersionDisplay = appVersionDisplay;
+        IsDevBuild = isDevBuild;
+    }
+
+    /// <summary>Called by the composition root after a manual check completes: "Up to date" for no result, or an
+    /// explicit failure message (<paramref name="failed"/> true). A found update is reported to the dashboard
+    /// banner instead, so callers pass "" here in that case.</summary>
+    public void ApplyManualCheckResult(string result, bool failed = false)
+    {
+        UpdateCheckBusy = false;
+        UpdateCheckResult = result;
+        UpdateCheckFailed = failed;
     }
 
     partial void OnSelectedThemePresetChanged(string value)

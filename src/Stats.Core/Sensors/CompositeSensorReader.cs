@@ -43,6 +43,7 @@ public sealed class CompositeSensorReader : ISensorReader, IFanControlBackend
     public SensorSnapshot Read()
     {
         var values = new Dictionary<string, float?>();
+        List<SensorBackendFailure>? failures = null;
         foreach (var r in _readers)
         {
             SensorSnapshot snap;
@@ -50,12 +51,20 @@ public sealed class CompositeSensorReader : ISensorReader, IFanControlBackend
             catch (Exception ex)
             {
                 // that reader's ids are absent this tick; others still report
-                System.Diagnostics.Trace.WriteLine($"[Stats.CompositeSensorReader] {r.Name} Read failed: {ex.Message}");
+                (failures ??= new List<SensorBackendFailure>()).Add(new SensorBackendFailure(r.Name, FirstLine(ex.Message)));
                 continue;
             }
             foreach (var (id, v) in snap.Values) values[id] = v;
+            // a nested composite child can itself report partial failures; keep those attributed too
+            if (snap.FailedBackends.Count > 0) (failures ??= new List<SensorBackendFailure>()).AddRange(snap.FailedBackends);
         }
-        return new SensorSnapshot(values, DateTime.UtcNow);
+        return new SensorSnapshot(values, DateTime.UtcNow, failures);
+    }
+
+    private static string FirstLine(string text)
+    {
+        int i = text.IndexOfAny(new[] { '\r', '\n' });
+        return i < 0 ? text : text[..i];
     }
 
     public void Dispose()

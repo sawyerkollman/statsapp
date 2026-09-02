@@ -6,6 +6,7 @@ using System.Security.Principal;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Resources;
+using System.Windows.Threading;
 using H.NotifyIcon;
 using Stats.App.Helpers;
 using Stats.App.Tray;
@@ -15,6 +16,7 @@ using Stats.Core.Frames;
 using Stats.Core.Metrics;
 using Stats.Core.Sensors;
 using Stats.Core.Settings;
+using Stats.Core.Startup;
 using Stats.Core.Updates;
 using Stats.Core.ViewModels;
 
@@ -59,13 +61,40 @@ public partial class App : Application
     private CompositeSensorReader? _composite;
     private UpdateService? _updateService;
     private CancellationTokenSource? _updateCts;
+    private StartupTaskService? _startupTaskService;
+    /// <summary>Entry-assembly version, resolved once at startup and reused by the automatic update-check loop,
+    /// the manual "Check for updates" button, and the About section's version display.</summary>
+    private Version _currentVersion = new(0, 0, 0, 0);
+    /// <summary>Cancelled by OnExit() so an in-flight manual "Check for updates" doesn't try to touch a
+    /// tearing-down SettingsViewModel.</summary>
+    private CancellationTokenSource? _manualCheckCts;
+    /// <summary>True until the first ShowDashboard() call (tray click or Settings/Open dashboard) — that call
+    /// performs one immediate RefreshAll() against already-polled data before showing, since a --minimized
+    /// launch skipped the initial Show() and its first snapshot dispatch race.</summary>
+    private bool _pendingFirstShowRefresh;
     /// <summary>Cancelled by ExitApp()/OnExit() so an in-flight install download bails out (and resets the busy
     /// state) instead of racing app shutdown; a fresh instance per "Update now" click.</summary>
     private CancellationTokenSource? _installCts;
+    /// <summary>0 = not run yet, 1 = fatal cleanup has run. Guards DispatcherUnhandledException and
+    /// AppDomain.UnhandledException so a race between the two (or a repeated fault) only restores fans and
+    /// flushes the log once.</summary>
+    private int _fatalCleanupDone;
+    /// <summary>Shared debounce for Dashboard/Peaks/Fans window-bounds persistence: coalesces bursts of drag/resize
+    /// events (each of which already mutated the in-memory AppSettings) into one SaveSettings() call about five
+    /// seconds after the last change. The explicit exit-time SaveSettings() in OnExit remains the final backstop
+    /// if the app closes before this timer fires.</summary>
+    private DispatcherTimer? _boundsSaveTimer;
 
     protected override void OnStartup(StartupEventArgs e)
     {
+        RollingTraceLog.Install();
+        DispatcherUnhandledException += OnDispatcherUnhandledException;
+        AppDomain.CurrentDomain.UnhandledException += OnAppDomainUnhandledException;
+        TaskScheduler.UnobservedTaskException += OnUnobservedTaskException;
         base.OnStartup(e);
+
+        bool startMinimized = StartupArgs.HasMinimizedFlag(e.Args); // case-insensitive: installer/shortcuts may pass any casing
+        _currentVersion = Assembly.GetEntryAssembly()?.GetName().Version ?? new Version(0, 0, 0, 0);
 
         var settingsDir = Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Stats");
@@ -141,6 +170,13 @@ public partial class App : Application
         _dashboardVm.SettingsPanel = _settingsVm;
         _settingsVm.Changed += OnSettingsChanged;
         _settingsVm.OverlayPositionResetRequested += ResetOverlayPosition;
+        _settingsVm.OpenLogFolderRequested += OpenLogFolder;
+        _settingsVm.StartupToggleRequested += OnStartupToggleRequested;
+        _settingsVm.CheckForUpdatesRequested += OnManualCheckForUpdatesRequested;
+        _settingsVm.RestartRequested += OnRestartNowRequested;
+        _settingsVm.SetVersionInfo(UpdateChecker.FormatVersionDisplay(_currentVersion), UpdateChecker.IsDevBuild(_currentVersion));
+        _dashboardVm.SettingsOpened += () => _ = RefreshStartupTaskStateAsync();
+        _startupTaskService = new StartupTaskService();
 
         ClickThrough.Set(_overlay, _settings.OverlayClickThrough);
 
@@ -154,6 +190,7 @@ public partial class App : Application
         _dashboardVm.OpenFansRequested += ShowFans;
         _dashboardVm.DashboardMetricsChanged += () => { _peaksVm?.RebuildRows(); ApplyFrameTracing(); };
         _dashboardVm.InstallUpdateRequested += OnInstallUpdateRequested;
+        _dashboardVm.OpenReleasePageRequested += OnOpenReleasePageRequested;
         _updateService = new UpdateService();
 
         var cpuTemps = definitions.Where(d => d.Group == MetricGroup.Cpu && d.Unit == "°C").ToList();
@@ -191,14 +228,19 @@ public partial class App : Application
             if (_peaks is { IsVisible: true }) _peaksVm?.Refresh();
             if (_fans is { IsVisible: true }) _fansVm?.Refresh();
         });
+        // HealthChanged fires on the poll thread (see SensorPoller); dispatch its already-immutable state to the
+        // dashboard VM the same way every other poll-thread → UI signal here is marshaled.
+        _poller.HealthChanged += state => Dispatcher.BeginInvoke(() => _dashboardVm.SetSensorHealth(state));
 
         _dashboard.AllowClose = false; // close button hides to tray; exit via tray menu
         _dashboard.LocationChanged += (_, _) => SaveWindowBounds();
         _dashboard.SizeChanged += (_, _) => SaveWindowBounds();
         SessionEnding += (_, _) => ExitApp();
-        _dashboard.Show();
+        _pendingFirstShowRefresh = true; // consumed by the first ShowDashboard() call, whether that's now or a later tray click
+        if (!startMinimized) _dashboard.Show(); // --minimized: dashboard/tray/services/poller are still fully constructed above, just not shown
         _poller.Start();
         StartUpdateChecks();
+        _ = RefreshStartupTaskStateAsync(); // settings load: reflect the actual "Stats" logon task state, not a persisted setting
     }
 
     protected override void OnExit(ExitEventArgs e)
@@ -207,6 +249,8 @@ public partial class App : Application
         _updateCts?.Dispose();
         _installCts?.Cancel();
         _installCts?.Dispose();
+        _manualCheckCts?.Cancel();
+        _manualCheckCts?.Dispose();
         _updateService?.Dispose();
         _hotkey?.Dispose();
         _fansVisible = false;
@@ -219,6 +263,61 @@ public partial class App : Application
         _trayRenderer?.Dispose();
         _appIcon?.Dispose();
         base.OnExit(e);
+    }
+
+    /// <summary>WPF's last-chance handler for an exception that reached the Dispatcher's message loop unhandled.
+    /// Deliberately never sets e.Handled — this is fatal-cleanup-then-terminate, not error recovery.</summary>
+    private void OnDispatcherUnhandledException(object sender, DispatcherUnhandledExceptionEventArgs e) =>
+        FatalCleanup("DispatcherUnhandledException", e.Exception);
+
+    /// <summary>Last-resort handler for an exception that unwound an entire thread (e.g. a background Task
+    /// continuation with no awaiter). There is no "mark handled" here — the CLR is already terminating the
+    /// process by the time this fires when e.IsTerminating is true.</summary>
+    private void OnAppDomainUnhandledException(object sender, UnhandledExceptionEventArgs e) =>
+        FatalCleanup("AppDomain.UnhandledException", e.ExceptionObject as Exception
+            ?? new Exception(e.ExceptionObject?.ToString() ?? "unknown non-Exception payload"));
+
+    /// <summary>A Task's exception was never observed (awaited/handled) before its finalizer ran. This is not
+    /// treated as fatal — the process keeps running — so it is only logged and flushed, and deliberately left
+    /// unobserved (not calling e.SetObserved()) so the condition stays visible rather than being silently hidden.</summary>
+    private void OnUnobservedTaskException(object? sender, UnobservedTaskExceptionEventArgs e)
+    {
+        Trace.WriteLine("[Stats] UnobservedTaskException: " + e.Exception);
+        FlushTraceListeners();
+    }
+
+    /// <summary>Runs once per process, however many fatal handlers race to call it. Traces the failure,
+    /// best-effort restores every fan to device control (the same release path OnExit uses — no second release
+    /// path), then flushes so the trace log survives process termination. Never swallows or converts the fault
+    /// into continued execution.</summary>
+    private void FatalCleanup(string source, Exception ex)
+    {
+        if (Interlocked.Exchange(ref _fatalCleanupDone, 1) != 0) return;
+        try { Trace.WriteLine($"[Stats] FATAL ({source}): {ex}"); }
+        catch (Exception) { /* logging must never block cleanup */ }
+        try
+        {
+            if (_poller?.Stop() == false)
+                Trace.WriteLine("[Stats] Fatal cleanup: poll loop did not stop before fan restore");
+        }
+        catch (Exception stopError)
+        {
+            try { Trace.WriteLine("[Stats] Fatal poller stop failed: " + stopError); }
+            catch (Exception) { /* logging must never block cleanup */ }
+        }
+        try { _fanController?.RestoreAll(); }
+        catch (Exception restoreError)
+        {
+            try { Trace.WriteLine("[Stats] Fatal fan restore failed: " + restoreError); }
+            catch (Exception) { /* logging must never block cleanup */ }
+        }
+        FlushTraceListeners();
+    }
+
+    private static void FlushTraceListeners()
+    {
+        try { Trace.Flush(); }
+        catch (Exception) { /* best-effort */ }
     }
 
     /// <summary>The UI thread owns every collection in the settings graph, so every save is serialized here, on
@@ -247,6 +346,25 @@ public partial class App : Application
     {
         if (Dispatcher.CheckAccess()) SaveSettings();
         else Dispatcher.BeginInvoke(SaveSettings);
+    }
+
+    /// <summary>Called after Dashboard/Peaks/Fans LocationChanged/SizeChanged already updated the in-memory
+    /// AppSettings bounds. Restarts a single shared ~5s timer so a drag or resize that fires many events only
+    /// persists once, shortly after the last one — window bounds are no longer left only to the exit-time save.
+    /// UI-thread only, like the window events that call it.</summary>
+    private void ScheduleBoundsSave()
+    {
+        if (_boundsSaveTimer is null)
+        {
+            _boundsSaveTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(5) };
+            _boundsSaveTimer.Tick += (_, _) =>
+            {
+                _boundsSaveTimer!.Stop();
+                SaveSettings();
+            };
+        }
+        _boundsSaveTimer.Stop();
+        _boundsSaveTimer.Start();
     }
 
     /// <summary>Background refresh of the running-process names the Fans window checks for competing fan tools.
@@ -297,6 +415,7 @@ public partial class App : Application
         _settings.WindowTop = _dashboard.Top;
         _settings.WindowWidth = _dashboard.Width;
         _settings.WindowHeight = _dashboard.Height;
+        ScheduleBoundsSave();
     }
 
     /// <summary>Keeps at least <paramref name="minVisible"/> px of the window inside the combined monitor area.</summary>
@@ -376,9 +495,18 @@ public partial class App : Application
         catch { /* keep previous icon */ }
     }
 
+    /// <summary>Tray icon left-click, "Open dashboard", and "Settings" all funnel through here. The very first
+    /// call refreshes the dashboard VM against the already-current MetricStore before showing/activating —
+    /// closes the gap between a --minimized launch's skipped initial Show() and whatever poll tick last ran.
+    /// </summary>
     private void ShowDashboard()
     {
         if (_dashboard is null) return;
+        if (_pendingFirstShowRefresh)
+        {
+            _pendingFirstShowRefresh = false;
+            _dashboardVm?.RefreshAll();
+        }
         _dashboard.Show();
         _dashboard.WindowState = WindowState.Normal;
         _dashboard.Activate();
@@ -420,6 +548,7 @@ public partial class App : Application
         _settings.PeaksTop = _peaks.Top;
         _settings.PeaksWidth = _peaks.Width;
         _settings.PeaksHeight = _peaks.Height;
+        ScheduleBoundsSave();
     }
 
     private void ShowFans()
@@ -461,6 +590,7 @@ public partial class App : Application
         _settings.FansTop = _fans.Top;
         _settings.FansWidth = _fans.Width;
         _settings.FansHeight = _fans.Height;
+        ScheduleBoundsSave();
     }
 
     private void OnSettingsChanged(SettingsChange change)
@@ -538,6 +668,108 @@ public partial class App : Application
         SaveSettings();
     }
 
+    /// <summary>Settings "Open log folder". Creates the folder if RollingTraceLog.Install() never got that far
+    /// (e.g. it failed before creating the directory) and opens it with the shell; a failure is surfaced inline
+    /// rather than silently ignored, per the Diagnostics section's explicit error state.</summary>
+    private void OpenLogFolder()
+    {
+        if (_settingsVm is null) return;
+        try
+        {
+            var dir = RollingTraceLog.LogDirectory ?? Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Stats", "logs");
+            Directory.CreateDirectory(dir);
+            Process.Start(new ProcessStartInfo(dir) { UseShellExecute = true });
+            _settingsVm.DiagnosticsError = "";
+        }
+        catch (Exception ex)
+        {
+            _settingsVm.DiagnosticsError = "Couldn't open log folder: " + ex.Message;
+        }
+    }
+
+    // ---- startup (autostart) ----
+
+    /// <summary>Settings checkbox toggled. Runs the same schtasks /Create the installer's Scheduled Task uses
+    /// (see StartupTaskCommands.Create) or /Delete, then re-queries so the checkbox always reflects actual OS
+    /// state rather than the click that requested it — a failed mutation snaps the checkbox back automatically.
+    /// </summary>
+    private async void OnStartupToggleRequested(bool enable)
+    {
+        if (_settingsVm is null || _startupTaskService is null) return;
+        _settingsVm.ApplyStartupState(enable, busy: true, error: "");
+
+        string error = "";
+        try
+        {
+            if (enable)
+            {
+                var exePath = Environment.ProcessPath;
+                if (string.IsNullOrEmpty(exePath))
+                    throw new InvalidOperationException("Could not resolve the running executable's path.");
+                var result = await _startupTaskService.CreateAsync(exePath).ConfigureAwait(true);
+                if (!result.Succeeded) error = FormatStartupTaskError("create", result);
+            }
+            else
+            {
+                var result = await _startupTaskService.DeleteAsync().ConfigureAwait(true);
+                if (!result.Succeeded) error = FormatStartupTaskError("remove", result);
+            }
+        }
+        catch (Exception ex)
+        {
+            error = $"Could not {(enable ? "enable" : "disable")} startup: {ex.Message}";
+        }
+
+        await RefreshStartupTaskStateAsync(error, desiredState: enable, allowWhileBusy: true).ConfigureAwait(true);
+    }
+
+    /// <summary>Re-queries the "Stats" logon Scheduled Task and pushes the actual result into the Settings VM.
+    /// <paramref name="pendingError"/> (from a just-completed /Create or /Delete) takes priority over a query
+    /// failure so the user sees why the mutation didn't take, not a generic "couldn't check" message.</summary>
+    private async Task RefreshStartupTaskStateAsync(
+        string pendingError = "",
+        bool? desiredState = null,
+        bool allowWhileBusy = false)
+    {
+        if (_settingsVm is null || _startupTaskService is null) return;
+        if (_settingsVm.StartupBusy && !allowWhileBusy) return;
+        _settingsVm.ApplyStartupState(_settingsVm.StartupEnabled, busy: true, error: "");
+
+        bool enabled;
+        string queryError = "";
+        try
+        {
+            var result = await _startupTaskService.QueryAsync().ConfigureAwait(true);
+            enabled = result.Succeeded;
+            if (!enabled && !StartupTaskIsMissing(result))
+                queryError = FormatStartupTaskError("check", result);
+        }
+        catch (Exception ex)
+        {
+            enabled = false;
+            queryError = "Could not check startup status: " + ex.Message;
+        }
+
+        if (queryError.Length == 0 && desiredState == enabled) pendingError = "";
+        _settingsVm.ApplyStartupState(enabled, busy: false, pendingError.Length > 0 ? pendingError : queryError);
+    }
+
+    private static bool StartupTaskIsMissing(StartupTaskResult result)
+    {
+        var detail = result.StandardError + "\n" + result.StandardOutput;
+        return detail.Contains("cannot find the file specified", StringComparison.OrdinalIgnoreCase)
+            || detail.Contains("does not exist", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static string FormatStartupTaskError(string verb, StartupTaskResult result)
+    {
+        var detail = !string.IsNullOrWhiteSpace(result.StandardError) ? result.StandardError
+            : !string.IsNullOrWhiteSpace(result.StandardOutput) ? result.StandardOutput
+            : $"exit code {result.ExitCode}";
+        return $"Could not {verb} the startup task ({detail}).";
+    }
+
     private void ExitApp()
     {
         if (_dashboard is not null) _dashboard.AllowClose = true;
@@ -546,6 +778,51 @@ public partial class App : Application
         _tray?.Dispose();
         SaveWindowBounds();
         Shutdown();
+    }
+
+    /// <summary>Settings Hardware "Restart now". Starts a hidden helper that waits for this process to exit,
+    /// then relaunches the executable with the inherited elevated token. This prevents two fan controllers from
+    /// overlapping while still proving the relaunch path is available before <see cref="ExitApp"/> begins the
+    /// clean poller-stop/fan-restore shutdown. A helper launch failure is surfaced inline and leaves Stats
+    /// running.</summary>
+    private void OnRestartNowRequested()
+    {
+        if (_settingsVm is null) return;
+        try
+        {
+            LaunchRestartHelper();
+            _settingsVm.RestartError = "";
+        }
+        catch (Exception ex)
+        {
+            Trace.WriteLine("[Stats] restart now failed: " + ex.Message);
+            _settingsVm.RestartError = "Couldn't restart Stats: " + ex.Message;
+            return;
+        }
+        ExitApp();
+    }
+
+    private static void LaunchRestartHelper()
+    {
+        var exePath = Environment.ProcessPath;
+        if (string.IsNullOrEmpty(exePath))
+            throw new InvalidOperationException("Could not resolve the running executable's path.");
+
+        var stagingDir = CreateSecureStagingDirectory();
+        var scriptPath = Path.Combine(stagingDir, "stats-restart.cmd");
+        var scriptBytes = System.Text.Encoding.ASCII.GetBytes(BuildRestartScript(
+            Environment.ProcessId,
+            exePath));
+        using (var scriptStream = new FileStream(scriptPath, FileMode.CreateNew, FileAccess.Write, FileShare.None))
+            scriptStream.Write(scriptBytes, 0, scriptBytes.Length);
+
+        var psi = new ProcessStartInfo("cmd.exe", $"/c \"{scriptPath}\"")
+        {
+            CreateNoWindow = true,
+            UseShellExecute = false,
+            WindowStyle = ProcessWindowStyle.Hidden,
+        };
+        Process.Start(psi);
     }
 
     // ---- updater ----
@@ -560,15 +837,11 @@ public partial class App : Application
         if (_settings is null || _updateService is null) return;
         if (!_settings.CheckForUpdatesAutomatically) return;
         if (_updateCts is { IsCancellationRequested: false }) return; // already running
-
-        var current = Assembly.GetEntryAssembly()?.GetName().Version ?? new Version(0, 0, 0, 0);
-        if (IsDevBuild(current)) return;
+        if (UpdateChecker.IsDevBuild(_currentVersion)) return;
 
         _updateCts = new CancellationTokenSource();
-        _ = RunUpdateLoopAsync(current, _updateCts.Token);
+        _ = RunUpdateLoopAsync(_currentVersion, _updateCts.Token);
     }
-
-    private static bool IsDevBuild(Version v) => v.Major == 0 && v.Minor == 0 && v.Build <= 0;
 
     /// <summary>Runs entirely off the UI thread (Task.Delay/PeriodicTimer continuations); every step is wrapped
     /// so an updater failure can never take the app down.</summary>
@@ -604,6 +877,67 @@ public partial class App : Application
         {
             // CheckAsync already swallows its own failures and returns null; this is a last-resort net.
             Trace.WriteLine("[Stats] update check failed: " + ex.Message);
+        }
+    }
+
+    /// <summary>Settings About "Check for updates" was clicked. Reuses <see cref="UpdateService.CheckAsync"/>
+    /// exactly like the automatic loop, but with its manual (<c>throwOnFailure: true</c>) mode so a genuine
+    /// network/HTTP failure can be told apart from a legitimate "no update" null and shown as an explicit inline
+    /// error — unlike the automatic loop, which stays quiet either way. A found update is handed to the
+    /// dashboard banner, not duplicated in the About section's own status line. A dev build never reaches this
+    /// (the SettingsViewModel command itself guards it), but the guard is repeated here since App owns Process/
+    /// Assembly access and must never call GitHub for one regardless of how it's invoked.</summary>
+    private async void OnManualCheckForUpdatesRequested()
+    {
+        if (_settingsVm is null || _updateService is null) return;
+
+        if (UpdateChecker.IsDevBuild(_currentVersion))
+        {
+            _settingsVm.ApplyManualCheckResult("Development build — updates are not available.");
+            return;
+        }
+
+        _manualCheckCts?.Cancel();
+        _manualCheckCts?.Dispose();
+        var cts = _manualCheckCts = new CancellationTokenSource();
+        try
+        {
+            var info = await _updateService.CheckAsync(_currentVersion, cts.Token, throwOnFailure: true).ConfigureAwait(true);
+            if (info is null)
+                _settingsVm.ApplyManualCheckResult("Up to date");
+            else
+            {
+                _dashboardVm?.OfferUpdate(info);
+                _settingsVm.ApplyManualCheckResult(""); // the dashboard banner carries the news
+            }
+        }
+        catch (OperationCanceledException) when (cts.IsCancellationRequested)
+        {
+            // superseded by a newer click, or the app is exiting — leave whatever the newer call reports.
+        }
+        catch (Exception ex)
+        {
+            Trace.WriteLine("[Stats] manual update check failed: " + ex.Message);
+            _settingsVm.ApplyManualCheckResult("Couldn't check for updates — try again later.", failed: true);
+        }
+    }
+
+    /// <summary>Dashboard banner "What's new" was clicked. Opens <see cref="UpdateInfo.ReleasePageUrl"/> with the
+    /// shell; a launch failure is caught explicitly and surfaced next to the banner rather than left to throw.</summary>
+    private void OnOpenReleasePageRequested(string url)
+    {
+        try
+        {
+            if (!Uri.TryCreate(url, UriKind.Absolute, out var uri)
+                || uri.Scheme != Uri.UriSchemeHttps
+                || !string.Equals(uri.Host, "github.com", StringComparison.OrdinalIgnoreCase))
+                throw new InvalidOperationException("The release page URL is not a valid GitHub HTTPS URL.");
+            Process.Start(new ProcessStartInfo(uri.AbsoluteUri) { UseShellExecute = true });
+        }
+        catch (Exception ex)
+        {
+            Trace.WriteLine("[Stats] failed to open release page: " + ex.Message);
+            _dashboardVm?.SetReleasePageError("Couldn't open the release page.");
         }
     }
 
@@ -749,5 +1083,18 @@ public partial class App : Application
         "goto wait\r\n" +
         ":run\r\n" +
         $"\"{installerPath}\" /SILENT /NOCANCEL\r\n" +
+        $"start \"\" \"{exePath}\"\r\n";
+
+    private static string BuildRestartScript(int pid, string exePath) =>
+        "@echo off\r\n" +
+        "set n=0\r\n" +
+        ":wait\r\n" +
+        $"tasklist /FI \"PID eq {pid}\" | find \"{pid}\" >nul\r\n" +
+        "if errorlevel 1 goto run\r\n" +
+        "set /a n+=1\r\n" +
+        "if %n% gtr 120 exit /b\r\n" +
+        "ping -n 2 127.0.0.1 >nul\r\n" +
+        "goto wait\r\n" +
+        ":run\r\n" +
         $"start \"\" \"{exePath}\"\r\n";
 }

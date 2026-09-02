@@ -106,4 +106,16 @@ public class MetricHistoryTests
     [InlineData(5, 0.5, 600)]
     public void HistoryCapacity_Compute(int minutes, double poll, int expected) =>
         Assert.Equal(expected, HistoryCapacity.Compute(minutes, poll));
+
+    [Theory]
+    [InlineData(0, "0s")]
+    [InlineData(45, "45s")]
+    [InlineData(59, "59s")]
+    [InlineData(60, "1m")]
+    [InlineData(120, "2m")]
+    [InlineData(150, "2m30s")]
+    [InlineData(1800, "30m")]
+    [InlineData(3600, "60m")]
+    public void HistoryCapacity_FormatWindow(double totalSeconds, string expected) =>
+        Assert.Equal(expected, HistoryCapacity.FormatWindow(totalSeconds));
 }

@@ -76,7 +76,10 @@ Name: "{autodesktop}\{#AppName}"; Filename: "{app}\{#AppExe}"; Tasks: desktopico
 
 [Run]
 ; Scheduled Task at highest run level starts the requireAdministrator app at logon without a UAC prompt.
-Filename: "{sys}\schtasks.exe"; Parameters: "/Create /F /TN ""{#AppName}"" /TR ""\""{app}\{#AppExe}\"""" /SC ONLOGON /RL HIGHEST /IT"; StatusMsg: "Registering startup task..."; Flags: runhidden waituntilterminated; Tasks: autostart
+; --minimized: the app fully constructs (dashboard/tray/services/poller) but skips the initial dashboard Show(),
+; matching Stats.App's --minimized handling — first tray click shows it. /TR value (Win32 argv-parsed by
+; schtasks/Task Scheduler): "<installed exe>" --minimized — quoted only around the exe path.
+Filename: "{sys}\schtasks.exe"; Parameters: "/Create /F /TN ""{#AppName}"" /TR ""\""{app}\{#AppExe}\"" --minimized"" /SC ONLOGON /RL HIGHEST /IT"; StatusMsg: "Registering startup task..."; Flags: runhidden waituntilterminated; Tasks: autostart
 Filename: "{sys}\schtasks.exe"; Parameters: "/Delete /F /TN ""{#AppName}"""; StatusMsg: "Removing startup task..."; Flags: runhidden waituntilterminated; Tasks: not autostart
 Filename: "{app}\{#AppExe}"; Description: "{cm:LaunchProgram,{#AppName}}"; Flags: nowait postinstall skipifsilent
 

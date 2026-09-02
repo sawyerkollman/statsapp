@@ -3,6 +3,7 @@ using System.ComponentModel;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Stats.Core.Metrics;
+using Stats.Core.Sensors;
 using Stats.Core.Settings;
 using Stats.Core.Updates;
 
@@ -12,6 +13,10 @@ public sealed partial class DashboardViewModel : ObservableObject
 {
     private static readonly MetricGroup[] GroupOrder =
         { MetricGroup.Cpu, MetricGroup.Gpu, MetricGroup.Memory, MetricGroup.Storage, MetricGroup.Network, MetricGroup.Game, MetricGroup.Motherboard, MetricGroup.Cooler };
+
+    /// <summary>Consecutive unhealthy reads required before the runtime sensor-failure banner is shown; a single
+    /// hiccup should not alarm the user.</summary>
+    private const int SensorFailureBannerThreshold = 3;
 
     private readonly MetricStore _store;
     private readonly AppSettings _settings;
@@ -52,8 +57,22 @@ public sealed partial class DashboardViewModel : ObservableObject
     /// <summary>Update now was clicked. All process/file/network work for the actual download + install happens
     /// in the composition root (App.xaml.cs) — this VM only owns the banner's display state.</summary>
     public event Action<UpdateInfo>? InstallUpdateRequested;
+    /// <summary>"What's new" was clicked on the update banner, carrying <see cref="UpdateInfo.ReleasePageUrl"/>.
+    /// The composition root opens it with the shell and reports a failure back through
+    /// <see cref="SetReleasePageError"/> — this VM never touches Process itself.</summary>
+    public event Action<string>? OpenReleasePageRequested;
+    /// <summary>The Settings tab was opened (gear button or tray "Settings"). The composition root re-queries the
+    /// "Stats" logon Scheduled Task so the Startup checkbox reflects current OS state rather than a stale value
+    /// from the last time Settings was open.</summary>
+    public event Action? SettingsOpened;
 
+    /// <summary>Startup-only degraded status (e.g. PawnIO missing at launch). Distinct from — and never cleared
+    /// by — transient runtime sensor-read recovery below.</summary>
     [ObservableProperty] private bool _isDegraded;
+    /// <summary>Runtime sensor-read failure banner, shown only once SensorPoller reports three or more
+    /// consecutive unhealthy reads; auto-clears on the next fully healthy read. See <see cref="SetSensorHealth"/>.</summary>
+    [ObservableProperty] private bool _sensorHealthWarningVisible;
+    [ObservableProperty] private string _sensorHealthNotice = "";
     [ObservableProperty] private bool _isPickerOpen;
     [ObservableProperty] private int _flyoutTabIndex;
     [ObservableProperty] private string _pickerFilter = "";
@@ -67,12 +86,17 @@ public sealed partial class DashboardViewModel : ObservableObject
     [ObservableProperty] private string _updateNotice = "";
     [ObservableProperty] private bool _updateBusy;
     [ObservableProperty] private double _updateProgress;
+    /// <summary>Set from <see cref="UpdateInfo.ReleasePageUrl"/> whenever an update is offered; "" hides the
+    /// "What's new" button (e.g. an old release with no html_url).</summary>
+    [ObservableProperty] private string _updateReleasePageUrl = "";
+    /// <summary>"" = ok; set by the composition root when opening <see cref="UpdateReleasePageUrl"/> fails.</summary>
+    [ObservableProperty] private string _releasePageError = "";
 
     [RelayCommand] private void TogglePicker() => IsPickerOpen = !IsPickerOpen;
     [RelayCommand] private void ToggleOverlay() => OverlayToggleRequested?.Invoke();
     [RelayCommand] private void OpenPeaks() => OpenPeaksRequested?.Invoke();
     [RelayCommand] private void OpenFans() => OpenFansRequested?.Invoke();
-    [RelayCommand] private void OpenSettings() { FlyoutTabIndex = 1; IsPickerOpen = true; }
+    [RelayCommand] private void OpenSettings() { FlyoutTabIndex = 1; IsPickerOpen = true; SettingsOpened?.Invoke(); }
     [RelayCommand] private void CollapseAll() { foreach (var s in Sections) s.IsExpanded = false; }
     [RelayCommand] private void ExpandAll() { foreach (var s in Sections) s.IsExpanded = true; }
 
@@ -92,15 +116,30 @@ public sealed partial class DashboardViewModel : ObservableObject
         UpdateAvailable = false; // dismisses for the session only
     }
 
-    /// <summary>Called by the composition root when a startup/24h check finds a newer release.</summary>
+    [RelayCommand]
+    private void OpenReleasePage()
+    {
+        if (string.IsNullOrEmpty(UpdateReleasePageUrl)) return;
+        ReleasePageError = "";
+        OpenReleasePageRequested?.Invoke(UpdateReleasePageUrl);
+    }
+
+    /// <summary>Called by the composition root when a startup/24h check — or a manual "Check for updates" from
+    /// Settings — finds a newer release.</summary>
     public void OfferUpdate(UpdateInfo info)
     {
         _pendingUpdate = info;
         UpdateNotice = $"Stats {info.TagName} is available";
         UpdateBusy = false;
         UpdateProgress = 0;
+        UpdateReleasePageUrl = info.ReleasePageUrl;
+        ReleasePageError = "";
         UpdateAvailable = true;
     }
+
+    /// <summary>Called by the composition root after a failed attempt to open <see cref="UpdateReleasePageUrl"/>
+    /// with the shell; the banner and its buttons stay intact so the user can just try again.</summary>
+    public void SetReleasePageError(string message) => ReleasePageError = message;
 
     /// <summary>Called by the composition root while the download is in progress (0..1).</summary>
     public void SetUpdateProgress(double progress)
@@ -251,6 +290,24 @@ public sealed partial class DashboardViewModel : ObservableObject
         // Kind/Size changes need new containers (template selection happens once per container), so rebuild.
         RebuildSections();
         _saveSettings();
+    }
+
+    // ---- runtime sensor health ----
+
+    /// <summary>Called by the composition root on every SensorPoller.HealthChanged tick (already marshaled to the
+    /// UI thread). Shows the banner only once three or more consecutive reads have failed, and compacts multiple
+    /// failing backends into one line. Never touches <see cref="IsDegraded"/> — that is startup-only status.</summary>
+    public void SetSensorHealth(SensorHealthState state)
+    {
+        if (state.IsHealthy || state.ConsecutiveFailures < SensorFailureBannerThreshold)
+        {
+            SensorHealthWarningVisible = false;
+            SensorHealthNotice = "";
+            return;
+        }
+        var backends = state.FailingBackends.Count > 0 ? string.Join(", ", state.FailingBackends) : "Sensors";
+        SensorHealthNotice = $"Sensor reads failing since {state.FirstFailureLocalTime:HH:mm} — {backends}: {state.LatestErrorFirstLine}";
+        SensorHealthWarningVisible = true;
     }
 
     // ---- sections ----

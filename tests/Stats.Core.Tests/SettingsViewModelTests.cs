@@ -206,6 +206,48 @@ public class SettingsViewModelTests
     }
 
     [Fact]
+    public void StartupEnabled_UserToggle_RaisesRequest_NoSaveNoChanged()
+    {
+        var (vm, _, changes, saves) = Make();
+        var requests = new List<bool>();
+        vm.StartupToggleRequested += requests.Add;
+
+        vm.StartupEnabled = true;
+
+        Assert.Equal(new[] { true }, requests);
+        Assert.Empty(changes); // live OS state — never routed through SettingsChange
+        Assert.Equal(0, saves()); // — nor persisted to AppSettings
+    }
+
+    [Fact]
+    public void ApplyStartupState_UpdatesPropertiesWithoutRaisingToggleRequest()
+    {
+        var (vm, _, _, _) = Make();
+        int requests = 0;
+        vm.StartupToggleRequested += _ => requests++;
+
+        vm.ApplyStartupState(enabled: true, busy: false, error: "boom");
+
+        Assert.True(vm.StartupEnabled);
+        Assert.False(vm.StartupBusy);
+        Assert.Equal("boom", vm.StartupError);
+        Assert.Equal(0, requests); // the query/mutation result must not loop back as a user toggle
+    }
+
+    [Fact]
+    public void ApplyStartupState_ThenUserToggle_StillRaisesRequest()
+    {
+        var (vm, _, _, _) = Make();
+        var requests = new List<bool>();
+        vm.StartupToggleRequested += requests.Add;
+
+        vm.ApplyStartupState(enabled: true, busy: false, error: "");
+        vm.StartupEnabled = false; // a genuine user click after the suppressed write above
+
+        Assert.Equal(new[] { false }, requests);
+    }
+
+    [Fact]
     public void Ctor_LoadsThemeFromSettings()
     {
         var s = new AppSettings { ThemePreset = "Dark Blue", ThemeAccent = "#123456" };
@@ -297,5 +339,127 @@ public class SettingsViewModelTests
         var (vm, _, _, _) = Make();
         Assert.Equal(ThemePresets.Names, vm.ThemePresetNames);
         Assert.Equal(ThemePresets.AccentSwatches, vm.AccentSwatches);
+    }
+
+    // ---- About section: version display, dev-build detection, manual check-for-updates (v1.7) ----
+
+    [Fact]
+    public void SetVersionInfo_PopulatesDisplayAndDevBuildFlag()
+    {
+        var (vm, _, _, _) = Make();
+        vm.SetVersionInfo("v1.7.0", isDevBuild: false);
+        Assert.Equal("v1.7.0", vm.AppVersionDisplay);
+        Assert.False(vm.IsDevBuild);
+
+        vm.SetVersionInfo("Development build", isDevBuild: true);
+        Assert.Equal("Development build", vm.AppVersionDisplay);
+        Assert.True(vm.IsDevBuild);
+    }
+
+    [Fact]
+    public void CheckForUpdatesCommand_RaisesRequest_AndEntersBusyState_ClearingPriorResult()
+    {
+        var (vm, _, _, _) = Make();
+        vm.ApplyManualCheckResult("Up to date"); // simulate a prior completed check
+        var requests = 0;
+        vm.CheckForUpdatesRequested += () => requests++;
+
+        vm.CheckForUpdatesCommand.Execute(null);
+
+        Assert.Equal(1, requests);
+        Assert.True(vm.UpdateCheckBusy);
+        Assert.Equal("", vm.UpdateCheckResult);
+        Assert.False(vm.UpdateCheckFailed);
+    }
+
+    [Fact]
+    public void CheckForUpdatesCommand_AlreadyBusy_IsNoOp()
+    {
+        var (vm, _, _, _) = Make();
+        var requests = 0;
+        vm.CheckForUpdatesRequested += () => requests++;
+
+        vm.CheckForUpdatesCommand.Execute(null);
+        vm.CheckForUpdatesCommand.Execute(null); // second click while the first is still in flight
+
+        Assert.Equal(1, requests);
+    }
+
+    [Fact]
+    public void CheckForUpdatesCommand_DevBuild_NeverRaisesRequest_OrCallsGitHub()
+    {
+        var (vm, _, _, _) = Make();
+        vm.SetVersionInfo("Development build", isDevBuild: true);
+        var requests = 0;
+        vm.CheckForUpdatesRequested += () => requests++;
+
+        vm.CheckForUpdatesCommand.Execute(null);
+
+        Assert.Equal(0, requests);
+        Assert.False(vm.UpdateCheckBusy);
+    }
+
+    [Fact]
+    public void ApplyManualCheckResult_UpToDate_ClearsBusy_AndIsNotMarkedFailed()
+    {
+        var (vm, _, _, _) = Make();
+        vm.CheckForUpdatesCommand.Execute(null);
+
+        vm.ApplyManualCheckResult("Up to date");
+
+        Assert.False(vm.UpdateCheckBusy);
+        Assert.Equal("Up to date", vm.UpdateCheckResult);
+        Assert.False(vm.UpdateCheckFailed);
+    }
+
+    [Fact]
+    public void ApplyManualCheckResult_Failure_ClearsBusy_AndIsMarkedFailed()
+    {
+        var (vm, _, _, _) = Make();
+        vm.CheckForUpdatesCommand.Execute(null);
+
+        vm.ApplyManualCheckResult("Couldn't check for updates — try again later.", failed: true);
+
+        Assert.False(vm.UpdateCheckBusy);
+        Assert.Equal("Couldn't check for updates — try again later.", vm.UpdateCheckResult);
+        Assert.True(vm.UpdateCheckFailed);
+    }
+
+    [Fact]
+    public void ApplyManualCheckResult_UpdateFound_LeavesResultEmpty_SoBannerOwnsTheNews()
+    {
+        var (vm, _, _, _) = Make();
+        vm.CheckForUpdatesCommand.Execute(null);
+
+        vm.ApplyManualCheckResult(""); // a newer release was found; the dashboard banner carries the message
+
+        Assert.False(vm.UpdateCheckBusy);
+        Assert.Equal("", vm.UpdateCheckResult);
+        Assert.False(vm.UpdateCheckFailed);
+    }
+
+    // ---- Hardware section: Restart now (v1.7) ----
+
+    [Fact]
+    public void RestartNowCommand_RaisesRestartRequested()
+    {
+        var (vm, _, _, _) = Make();
+        var requests = 0;
+        vm.RestartRequested += () => requests++;
+
+        vm.RestartNowCommand.Execute(null);
+
+        Assert.Equal(1, requests);
+    }
+
+    [Fact]
+    public void RestartError_DefaultsEmpty_AndCanBeSetByComposerOnLaunchFailure()
+    {
+        var (vm, _, _, _) = Make();
+        Assert.Equal("", vm.RestartError);
+
+        vm.RestartError = "Couldn't restart Stats: access denied.";
+
+        Assert.Equal("Couldn't restart Stats: access denied.", vm.RestartError);
     }
 }

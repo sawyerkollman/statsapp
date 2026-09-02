@@ -1,6 +1,7 @@
 using Stats.Core.Metrics;
 using Stats.Core.Sensors;
 using Stats.Core.Settings;
+using Stats.Core.Updates;
 using Stats.Core.ViewModels;
 
 namespace Stats.Core.Tests;
@@ -198,6 +199,16 @@ public class DashboardViewModelTests
     }
 
     [Fact]
+    public void OpenSettings_RaisesSettingsOpened()
+    {
+        var (vm, _, _, _) = Make();
+        int opened = 0;
+        vm.SettingsOpened += () => opened++;
+        vm.OpenSettingsCommand.Execute(null);
+        Assert.Equal(1, opened);
+    }
+
+    [Fact]
     public void SetTileThresholds_WritesOverride_RemovesWhenNullOrInvalid()
     {
         var (vm, s, _, saves) = Make("cpu.temp");
@@ -258,5 +269,103 @@ public class DashboardViewModelTests
         vm.SetGroupStatus(MetricGroup.Game, null);
         Assert.False(vm.Sections.Single(s => s.Group == MetricGroup.Game).HasStatus);
         vm.SetGroupStatus(MetricGroup.Storage, "ignored"); // no section → no throw
+    }
+
+    // ---- runtime sensor health banner ----
+
+    [Fact]
+    public void SetSensorHealth_BelowThreshold_BannerStaysHidden()
+    {
+        var (vm, _, _, _) = Make();
+        var state = new SensorHealthState(false, 2, new DateTime(2026, 1, 1, 9, 30, 0), "boom", new[] { "LibreHardwareMonitor" });
+        vm.SetSensorHealth(state);
+        Assert.False(vm.SensorHealthWarningVisible);
+        Assert.Equal("", vm.SensorHealthNotice);
+    }
+
+    [Fact]
+    public void SetSensorHealth_AtThreshold_ShowsExactBannerText()
+    {
+        var (vm, _, _, _) = Make();
+        var state = new SensorHealthState(false, 3, new DateTime(2026, 1, 1, 9, 30, 0), "device unreachable", new[] { "LibreHardwareMonitor" });
+        vm.SetSensorHealth(state);
+        Assert.True(vm.SensorHealthWarningVisible);
+        Assert.Equal("Sensor reads failing since 09:30 — LibreHardwareMonitor: device unreachable", vm.SensorHealthNotice);
+    }
+
+    [Fact]
+    public void SetSensorHealth_MultipleFailingBackends_JoinedCompactly()
+    {
+        var (vm, _, _, _) = Make();
+        var state = new SensorHealthState(false, 4, new DateTime(2026, 1, 1, 14, 5, 0), "boom", new[] { "LibreHardwareMonitor", "PresentMon" });
+        vm.SetSensorHealth(state);
+        Assert.True(vm.SensorHealthWarningVisible);
+        Assert.Equal("Sensor reads failing since 14:05 — LibreHardwareMonitor, PresentMon: boom", vm.SensorHealthNotice);
+    }
+
+    [Fact]
+    public void SetSensorHealth_Recovery_ClearsBanner_WithoutTouchingStartupDegraded()
+    {
+        var (vm, _, _, _) = Make();
+        vm.IsDegraded = true; // startup-only status
+        vm.SetSensorHealth(new SensorHealthState(false, 3, new DateTime(2026, 1, 1, 9, 30, 0), "boom", new[] { "LibreHardwareMonitor" }));
+        Assert.True(vm.SensorHealthWarningVisible);
+
+        vm.SetSensorHealth(SensorHealthState.Healthy);
+
+        Assert.False(vm.SensorHealthWarningVisible);
+        Assert.Equal("", vm.SensorHealthNotice);
+        Assert.True(vm.IsDegraded); // untouched by runtime recovery
+    }
+
+    // ---- update banner "What's new" (v1.7) ----
+
+    [Fact]
+    public void OfferUpdate_SetsReleasePageUrl_AndClearsAnyPriorLinkError()
+    {
+        var (vm, _, _, _) = Make();
+        vm.SetReleasePageError("stale error from a previous offer");
+
+        vm.OfferUpdate(new UpdateInfo(new Version(1, 4, 2), "v1.4.2", "https://example/asset.exe", 1, "https://github.com/sawyerkollman/statsapp/releases/tag/v1.4.2"));
+
+        Assert.True(vm.UpdateAvailable);
+        Assert.Equal("https://github.com/sawyerkollman/statsapp/releases/tag/v1.4.2", vm.UpdateReleasePageUrl);
+        Assert.Equal("", vm.ReleasePageError);
+    }
+
+    [Fact]
+    public void OfferUpdate_EmptyReleasePageUrl_LeavesItEmpty_ForXamlToHideTheButton()
+    {
+        var (vm, _, _, _) = Make();
+        vm.OfferUpdate(new UpdateInfo(new Version(1, 4, 2), "v1.4.2", "https://example/asset.exe", 1, ""));
+        Assert.Equal("", vm.UpdateReleasePageUrl);
+    }
+
+    [Fact]
+    public void OpenReleasePageCommand_RaisesEventWithUrl_NoUrl_IsNoOp()
+    {
+        var (vm, _, _, _) = Make();
+        var requested = new List<string>();
+        vm.OpenReleasePageRequested += requested.Add;
+
+        vm.OpenReleasePageCommand.Execute(null); // nothing pending yet
+        Assert.Empty(requested);
+
+        vm.OfferUpdate(new UpdateInfo(new Version(1, 4, 2), "v1.4.2", "https://example/asset.exe", 1, "https://github.com/x/y/releases/tag/v1.4.2"));
+        vm.OpenReleasePageCommand.Execute(null);
+
+        Assert.Equal(new[] { "https://github.com/x/y/releases/tag/v1.4.2" }, requested);
+    }
+
+    [Fact]
+    public void SetReleasePageError_SetsInlineError_WithoutDismissingTheBanner()
+    {
+        var (vm, _, _, _) = Make();
+        vm.OfferUpdate(new UpdateInfo(new Version(1, 4, 2), "v1.4.2", "https://example/asset.exe", 1, "https://github.com/x/y/releases/tag/v1.4.2"));
+
+        vm.SetReleasePageError("Couldn't open the release page.");
+
+        Assert.Equal("Couldn't open the release page.", vm.ReleasePageError);
+        Assert.True(vm.UpdateAvailable); // the failure to open a link never dismisses the update banner
     }
 }

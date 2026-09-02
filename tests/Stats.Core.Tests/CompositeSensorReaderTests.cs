@@ -12,6 +12,7 @@ public class CompositeSensorReaderTests
         { Name = name; IsDegraded = degraded; _values = values; }
         private readonly (string Id, float? Value)[] _values;
         public bool ThrowOnRead;
+        public string ThrowMessage = "boom";
         public int DiscoverCalls, Disposed;
         public string Name { get; }
         public bool IsDegraded { get; }
@@ -27,7 +28,7 @@ public class CompositeSensorReaderTests
         }
         public SensorSnapshot Read()
         {
-            if (ThrowOnRead) throw new InvalidOperationException("boom");
+            if (ThrowOnRead) throw new InvalidOperationException(ThrowMessage);
             return new SensorSnapshot(_values.ToDictionary(v => v.Id, v => v.Value), DateTime.UtcNow);
         }
         public void Dispose() => Disposed++;
@@ -71,6 +72,35 @@ public class CompositeSensorReaderTests
         var s = new CompositeSensorReader(a, b).Read();
         Assert.False(s.Values.ContainsKey("a1"));
         Assert.Equal(2f, s.Values["b1"]);
+    }
+
+    [Fact]
+    public void Read_OneReaderThrowing_ReportsBackendNameAndFirstLineOfError()
+    {
+        var a = new Fake("LibreHardwareMonitor", false, ("a1", 1)) { ThrowOnRead = true, ThrowMessage = "boom\nstack trace line 2" };
+        var b = new Fake("PresentMon", false, ("b1", 2));
+        var s = new CompositeSensorReader(a, b).Read();
+        var failure = Assert.Single(s.FailedBackends);
+        Assert.Equal("LibreHardwareMonitor", failure.BackendName);
+        Assert.Equal("boom", failure.ErrorFirstLine); // first line only — no stack trace
+        Assert.Equal(2f, s.Values["b1"]); // the healthy child's values still merge in
+    }
+
+    [Fact]
+    public void Read_MultipleReadersThrowing_ReportsEachBackendSeparately()
+    {
+        var a = new Fake("A", false) { ThrowOnRead = true, ThrowMessage = "a failed" };
+        var b = new Fake("B", false) { ThrowOnRead = true, ThrowMessage = "b failed" };
+        var s = new CompositeSensorReader(a, b).Read();
+        Assert.Equal(new[] { "A", "B" }, s.FailedBackends.Select(f => f.BackendName));
+        Assert.Equal(new[] { "a failed", "b failed" }, s.FailedBackends.Select(f => f.ErrorFirstLine));
+    }
+
+    [Fact]
+    public void Read_AllReadersHealthy_FailedBackendsEmpty()
+    {
+        var s = new CompositeSensorReader(new Fake("A", false, ("a1", 1)), new Fake("B", false, ("b1", 2))).Read();
+        Assert.Empty(s.FailedBackends);
     }
 
     [Fact]
