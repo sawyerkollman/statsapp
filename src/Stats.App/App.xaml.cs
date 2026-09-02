@@ -11,6 +11,7 @@ using H.NotifyIcon;
 using Stats.App.Helpers;
 using Stats.App.Tray;
 using Stats.App.Views;
+using Stats.Core.Alerts;
 using Stats.Core.Fans;
 using Stats.Core.Frames;
 using Stats.Core.Metrics;
@@ -44,6 +45,8 @@ public partial class App : Application
     private GlobalHotkey? _hotkey;
     private PeaksWindow? _peaks;
     private PeaksViewModel? _peaksVm;
+    private AlertEngine? _alertEngine;
+    private AlertLogViewModel? _alertLog;
     private MetricDetailWindow? _detail;
     private MetricDetailViewModel? _detailVm;
     private TrayIconRenderer? _trayRenderer;
@@ -136,6 +139,12 @@ public partial class App : Application
         }
 
         _store = new MetricStore(definitions);
+        _alertLog = new AlertLogViewModel(); // created before any window so early alerts (Peaks not yet opened) are captured
+        _alertEngine = new AlertEngine { HoldSeconds = _settings.AlertHoldSeconds };
+        _alertEngine.EpisodeEnded += (metricId, raisedAtLocal, duration) =>
+        {
+            if (raisedAtLocal is not null) _alertLog.Complete(metricId, duration);
+        };
         _poller = new SensorPoller(_reader)
         {
             Interval = TimeSpan.FromSeconds(_settings.PollIntervalSeconds),
@@ -228,6 +237,7 @@ public partial class App : Application
             _dashboardVm.SetGroupStatus(MetricGroup.Game, FrameStatus());
             _overlayVm?.RefreshAll();
             UpdateTrayTooltip();
+            if (_settings.AlertsEnabled) EvaluateAlerts();
             if (_peaks is { IsVisible: true }) _peaksVm?.Refresh();
             if (_fans is { IsVisible: true }) _fansVm?.Refresh();
             if (_detail is { IsVisible: true }) _detailVm?.Refresh();
@@ -499,6 +509,34 @@ public partial class App : Application
         catch { /* keep previous icon */ }
     }
 
+    /// <summary>Builds one <see cref="AlertSample"/> per metric in the union of the dashboard and overlay
+    /// selections (evaluated regardless of whether either window is visible), ticks <see cref="_alertEngine"/>,
+    /// and surfaces any raised alert as a tray balloon (optionally with a chime) plus a log row. A balloon failure
+    /// (e.g. the shell not being ready) must never take the refresh path down with it.</summary>
+    private void EvaluateAlerts()
+    {
+        if (_store is null || _settings is null || _alertEngine is null || _alertLog is null) return;
+        var defsById = _store.Definitions.ToDictionary(d => d.Id);
+        var ids = _settings.DashboardMetrics.Concat(_settings.OverlayMetrics).Distinct();
+        var samples = new List<AlertSample>();
+        foreach (var id in ids)
+        {
+            if (!defsById.TryGetValue(id, out var def) || !_store.TryGet(id, out var history)) continue;
+            var rule = ThresholdEvaluator.RuleFor(def, _settings);
+            var severity = ThresholdEvaluator.Evaluate(def, history.Current, _settings);
+            samples.Add(new AlertSample(def, history.Current, severity, rule));
+        }
+
+        foreach (var evt in _alertEngine.Tick(samples, DateTime.UtcNow))
+        {
+            _alertLog.Add(evt);
+            try { _tray?.ShowNotification("Stats alert", evt.Message); }
+            catch (Exception ex) { System.Diagnostics.Trace.WriteLine("[Stats] alert balloon failed: " + ex.Message); }
+            if (_settings.AlertSoundEnabled)
+                try { System.Media.SystemSounds.Exclamation.Play(); } catch { /* audio device unavailable */ }
+        }
+    }
+
     /// <summary>Tray icon left-click, "Open dashboard", and "Settings" all funnel through here. The very first
     /// call refreshes the dashboard VM against the already-current MetricStore before showing/activating —
     /// closes the gap between a --minimized launch's skipped initial Show() and whatever poll tick last ran.
@@ -528,7 +566,7 @@ public partial class App : Application
         if (_store is null || _settings is null) return;
         if (_peaks is null)
         {
-            _peaksVm = new PeaksViewModel(_store, _settings);
+            _peaksVm = new PeaksViewModel(_store, _settings, _alertLog);
             _peaks = new PeaksWindow { DataContext = _peaksVm };
             if (_settings.PeaksWidth is double w) _peaks.Width = w;
             if (_settings.PeaksHeight is double h) _peaks.Height = h;
@@ -658,6 +696,9 @@ public partial class App : Application
             case SettingsChange.Updates:
                 if (_settings.CheckForUpdatesAutomatically) StartUpdateChecks();
                 else { _updateCts?.Cancel(); _updateCts?.Dispose(); _updateCts = null; }
+                break;
+            case SettingsChange.Alerts:
+                if (_alertEngine is not null) _alertEngine.HoldSeconds = _settings.AlertHoldSeconds;
                 break;
             case SettingsChange.Theme:
                 ThemeManager.Apply(_settings.ThemePreset, _settings.ThemeAccent);

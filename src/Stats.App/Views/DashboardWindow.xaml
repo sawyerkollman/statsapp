@@ -281,6 +281,17 @@
                                 <TextBlock Text="Dashboard" Style="{StaticResource SettingsHeader}"/>
                                 <CheckBox Content="Show CPU core matrix" IsChecked="{Binding ShowCoreMatrix}"/>
 
+                                <TextBlock Text="Alerts" Style="{StaticResource SettingsHeader}"/>
+                                <CheckBox Content="Notify on sustained critical readings" IsChecked="{Binding AlertsEnabled}"/>
+                                <DockPanel Margin="0,4,0,0">
+                                    <TextBlock Text="Hold time" Width="90" Style="{StaticResource SettingsLabel}"/>
+                                    <TextBlock DockPanel.Dock="Right" Width="34" TextAlignment="Right" Style="{StaticResource SettingsLabel}"
+                                               Text="{Binding AlertHoldSeconds, StringFormat='{}{0}s'}"/>
+                                    <Slider Minimum="1" Maximum="120" TickFrequency="1" IsSnapToTickEnabled="True"
+                                            Value="{Binding AlertHoldSeconds, Delay=250}"/>
+                                </DockPanel>
+                                <CheckBox Content="Play a sound with the notification" IsChecked="{Binding AlertSoundEnabled}" Margin="0,4,0,0"/>
+
                                 <TextBlock Text="Theme" Style="{StaticResource SettingsHeader}"/>
                                 <ComboBox ItemsSource="{Binding ThemePresetNames}" SelectedItem="{Binding SelectedThemePreset}"
                                           MinWidth="160" HorizontalAlignment="Left" Margin="0,0,0,8"/>
