@@ -23,7 +23,7 @@ public sealed class MetricStore
     public void Apply(SensorSnapshot snapshot)
     {
         foreach (var (id, history) in _histories)
-            history.Add(snapshot.Values.TryGetValue(id, out var v) ? v : null);
+            history.Add(snapshot.Values.TryGetValue(id, out var v) ? v : null, snapshot.TimestampUtc);
     }
 
     public void ResizeAll(int capacity)
