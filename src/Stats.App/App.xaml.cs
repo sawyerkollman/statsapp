@@ -44,6 +44,8 @@ public partial class App : Application
     private GlobalHotkey? _hotkey;
     private PeaksWindow? _peaks;
     private PeaksViewModel? _peaksVm;
+    private MetricDetailWindow? _detail;
+    private MetricDetailViewModel? _detailVm;
     private TrayIconRenderer? _trayRenderer;
     private System.Drawing.Icon? _appIcon;
     private MetricDefinition? _trayCpuTempDef;
@@ -188,6 +190,7 @@ public partial class App : Application
 
         _dashboardVm.OpenPeaksRequested += ShowPeaks;
         _dashboardVm.OpenFansRequested += ShowFans;
+        _dashboardVm.OpenTileDetailRequested += ShowMetricDetail;
         _dashboardVm.DashboardMetricsChanged += () => { _peaksVm?.RebuildRows(); ApplyFrameTracing(); };
         _dashboardVm.InstallUpdateRequested += OnInstallUpdateRequested;
         _dashboardVm.OpenReleasePageRequested += OnOpenReleasePageRequested;
@@ -227,6 +230,7 @@ public partial class App : Application
             UpdateTrayTooltip();
             if (_peaks is { IsVisible: true }) _peaksVm?.Refresh();
             if (_fans is { IsVisible: true }) _fansVm?.Refresh();
+            if (_detail is { IsVisible: true }) _detailVm?.Refresh();
         });
         // HealthChanged fires on the poll thread (see SensorPoller); dispatch its already-immutable state to the
         // dashboard VM the same way every other poll-thread → UI signal here is marshaled.
@@ -551,6 +555,26 @@ public partial class App : Application
         ScheduleBoundsSave();
     }
 
+    private void ShowMetricDetail(string metricId)
+    {
+        if (_store is null || _settings is null) return;
+        if (!_store.TryGet(metricId, out var history)) return;
+        var def = _store.Definitions.FirstOrDefault(d => d.Id == metricId);
+        if (def is null) return;
+        if (_detail is null)
+        {
+            _detailVm = new MetricDetailViewModel(def, history, _settings);
+            _detail = new MetricDetailWindow { DataContext = _detailVm };
+        }
+        else
+        {
+            _detailVm!.SetTarget(def, history);
+        }
+        _detail.Show();
+        _detail.WindowState = WindowState.Normal;
+        _detail.Activate();
+    }
+
     private void ShowFans()
     {
         if (_fanController is null || _settings is null) return;
@@ -643,6 +667,7 @@ public partial class App : Application
                 _dashboardVm?.RaiseSeverityRefresh();
                 _overlayVm?.RaiseSeverityRefresh();
                 _peaksVm?.RaiseSeverityRefresh();
+                _detailVm?.RaiseSeverityRefresh();
                 break;
         }
     }
@@ -775,6 +800,7 @@ public partial class App : Application
         if (_dashboard is not null) _dashboard.AllowClose = true;
         if (_peaks is not null) _peaks.AllowClose = true;
         if (_fans is not null) _fans.AllowClose = true;
+        if (_detail is not null) _detail.AllowClose = true;
         _tray?.Dispose();
         SaveWindowBounds();
         Shutdown();

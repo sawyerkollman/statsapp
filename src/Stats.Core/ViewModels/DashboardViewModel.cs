@@ -52,6 +52,9 @@ public sealed partial class DashboardViewModel : ObservableObject
     public event Action? OverlayToggleRequested;
     public event Action? OpenPeaksRequested;
     public event Action? OpenFansRequested;
+    /// <summary>A tile's double-click or "Details…" menu item was activated, carrying the metric id. The
+    /// composition root owns the single retargetable MetricDetailWindow (see App.ShowMetricDetail).</summary>
+    public event Action<string>? OpenTileDetailRequested;
     /// <summary>Dashboard selection or order changed (picker, move, remove).</summary>
     public event Action? DashboardMetricsChanged;
     /// <summary>Update now was clicked. All process/file/network work for the actual download + install happens
@@ -270,6 +273,10 @@ public sealed partial class DashboardViewModel : ObservableObject
         var picker = PickerItems.FirstOrDefault(p => p.Definition.Id == id);
         if (picker is not null) picker.IsChecked = false; // handler persists + rebuilds + saves
     }
+
+    /// <summary>Opens (or retargets) the detail chart window for a tile — double-click or the context menu's
+    /// "Details…" item.</summary>
+    public void OpenTileDetail(string id) => OpenTileDetailRequested?.Invoke(id);
 
     /// <summary>Per-metric threshold override. Both null = remove override (fall back to the group rule).</summary>
     public void SetTileThresholds(string id, float? warn, float? crit)

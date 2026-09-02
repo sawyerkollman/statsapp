@@ -4,11 +4,14 @@
         Title="Stats — Session peaks" Width="640" Height="480" MinWidth="480" MinHeight="240"
         Background="{DynamicResource WindowBg}">
     <DockPanel Margin="12">
-        <DockPanel DockPanel.Dock="Top" Margin="0,0,0,10">
+        <DockPanel DockPanel.Dock="Top" Margin="0,0,0,4">
             <Button DockPanel.Dock="Right" Content="Reset session" Command="{Binding ResetSessionCommand}" Style="{StaticResource HeaderButton}"/>
+            <Button DockPanel.Dock="Right" Content="Copy" Click="Copy_Click" Style="{StaticResource HeaderButton}" Margin="0,0,6,0"/>
             <CheckBox DockPanel.Dock="Right" Content="All metrics" IsChecked="{Binding IncludeAll}" VerticalAlignment="Center" Margin="0,0,8,0"/>
             <TextBlock Text="Session peaks" FontSize="18" FontWeight="Bold" Foreground="{DynamicResource TextPrimary}"/>
         </DockPanel>
+        <TextBlock DockPanel.Dock="Top" Text="{Binding CopyError}" Foreground="{DynamicResource CritBrush}" FontSize="11"
+                   Margin="0,0,0,6" Visibility="{Binding HasCopyError, Converter={StaticResource BoolToVis}}"/>
         <Grid DockPanel.Dock="Top" Margin="6,0,6,4">
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="*"/>
@@ -39,9 +42,9 @@
                                 <TextBlock Text="{Binding Name}" Foreground="{DynamicResource TextPrimary}" FontSize="12" TextTrimming="CharacterEllipsis" ToolTip="{Binding Definition.DisplayName}"/>
                                 <TextBlock Grid.Column="1" Text="{Binding NowText}" FontSize="12" FontWeight="SemiBold" TextAlignment="Right"
                                            Foreground="{Binding Severity, Converter={StaticResource SeverityToBrush}}"/>
-                                <TextBlock Grid.Column="2" Text="{Binding MinText}" Foreground="{DynamicResource TextSecondary}" FontSize="12" TextAlignment="Right"/>
+                                <TextBlock Grid.Column="2" Text="{Binding MinText}" Foreground="{DynamicResource TextSecondary}" FontSize="12" TextAlignment="Right" ToolTip="{Binding MinAtText}"/>
                                 <TextBlock Grid.Column="3" Text="{Binding AvgText}" Foreground="{DynamicResource TextSecondary}" FontSize="12" TextAlignment="Right"/>
-                                <TextBlock Grid.Column="4" Text="{Binding MaxText}" Foreground="{DynamicResource TextPrimary}" FontSize="12" TextAlignment="Right"/>
+                                <TextBlock Grid.Column="4" Text="{Binding MaxText}" Foreground="{DynamicResource TextPrimary}" FontSize="12" TextAlignment="Right" ToolTip="{Binding MaxAtText}"/>
                             </Grid>
                         </Border>
                     </DataTemplate>

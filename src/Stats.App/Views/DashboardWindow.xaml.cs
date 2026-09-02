@@ -54,8 +54,14 @@ public partial class DashboardWindow : Window
 
     private void Tile_PreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
     {
+        if (e.ClickCount == 2)
+        {
+            if ((sender as FrameworkElement)?.DataContext is MetricTileViewModel t) Vm?.OpenTileDetail(t.Definition.Id);
+            _dragTileId = null;
+            return;
+        }
         _dragStart = e.GetPosition(this);
-        _dragTileId = (sender as FrameworkElement)?.DataContext is MetricTileViewModel t ? t.Definition.Id : null;
+        _dragTileId = (sender as FrameworkElement)?.DataContext is MetricTileViewModel tile ? tile.Definition.Id : null;
     }
 
     private void Tile_PreviewMouseMove(object sender, MouseEventArgs e)
@@ -118,6 +124,8 @@ public partial class DashboardWindow : Window
         setMax.Click += (_, _) => PromptMax(vm, tile);
         var thresholds = new MenuItem { Header = "Set warn/crit thresholds…" };
         thresholds.Click += (_, _) => PromptThresholds(vm, tile);
+        var details = new MenuItem { Header = "Details…" };
+        details.Click += (_, _) => vm.OpenTileDetail(id);
         var remove = new MenuItem { Header = "Remove from dashboard" };
         remove.Click += (_, _) => vm.RemoveTile(id);
 
@@ -127,6 +135,7 @@ public partial class DashboardWindow : Window
         menu.Items.Add(rename);
         menu.Items.Add(setMax);
         menu.Items.Add(thresholds);
+        menu.Items.Add(details);
         menu.Items.Add(new Separator());
         menu.Items.Add(remove);
         menu.IsOpen = true;
