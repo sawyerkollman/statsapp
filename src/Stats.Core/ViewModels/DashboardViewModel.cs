@@ -11,7 +11,9 @@ namespace Stats.Core.ViewModels;
 
 public sealed partial class DashboardViewModel : ObservableObject
 {
-    private static readonly MetricGroup[] GroupOrder =
+    /// <summary>Public so <see cref="SettingsViewModel"/> can order its threshold rule grid and "Add rule…"
+    /// picker the same way the dashboard groups tiles.</summary>
+    public static readonly MetricGroup[] GroupOrder =
         { MetricGroup.Cpu, MetricGroup.Gpu, MetricGroup.Memory, MetricGroup.Storage, MetricGroup.Network, MetricGroup.Game, MetricGroup.Motherboard, MetricGroup.Cooler };
 
     /// <summary>Consecutive unhealthy reads required before the runtime sensor-failure banner is shown; a single
@@ -279,15 +281,13 @@ public sealed partial class DashboardViewModel : ObservableObject
     public void OpenTileDetail(string id) => OpenTileDetailRequested?.Invoke(id);
 
     /// <summary>Per-metric threshold override. Both null = remove override (fall back to the group rule).</summary>
-    public void SetTileThresholds(string id, float? warn, float? crit)
+    /// <summary>Stores <paramref name="rule"/> verbatim as the per-metric override (including its
+    /// <see cref="ThresholdRule.LowerIsWorse"/> flag — this method no longer guesses direction from a group rule
+    /// that may not exist), or removes the override when <paramref name="rule"/> is null.</summary>
+    public void SetTileThresholds(string id, ThresholdRule? rule)
     {
-        var def = _store.Definitions.FirstOrDefault(d => d.Id == id);
-        bool lowerIsWorse = def is not null && _settings.ThresholdRules.FirstOrDefault(r => r.Group == def.Group && r.Unit == def.Unit)?.LowerIsWorse == true;
-        bool ordered = warn is float w && crit is float c && (lowerIsWorse ? w > c : w < c);
-        if (ordered)
-            _settings.ThresholdOverrides[id] = new ThresholdRule { Warn = warn!.Value, Crit = crit!.Value, LowerIsWorse = lowerIsWorse };
-        else
-            _settings.ThresholdOverrides.Remove(id);
+        if (rule is null) _settings.ThresholdOverrides.Remove(id);
+        else _settings.ThresholdOverrides[id] = rule;
         RefreshAll();
         _saveSettings();
     }

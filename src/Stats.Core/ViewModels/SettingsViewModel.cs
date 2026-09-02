@@ -37,6 +37,7 @@ public sealed partial class SettingsViewModel : ObservableObject
 {
     private readonly AppSettings _s;
     private readonly Action _save;
+    private readonly IReadOnlyList<MetricDefinition> _definitions;
     private readonly bool _loaded;
 
     public event Action<SettingsChange>? Changed;
@@ -60,13 +61,10 @@ public sealed partial class SettingsViewModel : ObservableObject
     {
         _s = settings;
         _save = save;
+        _definitions = definitions;
 
         _pollIntervalSeconds = settings.PollIntervalSeconds;
         _historyWindowMinutes = settings.HistoryWindowMinutes;
-        _cpuTempWarn = Rule(MetricGroup.Cpu, "°C").Warn; _cpuTempCrit = Rule(MetricGroup.Cpu, "°C").Crit;
-        _gpuTempWarn = Rule(MetricGroup.Gpu, "°C").Warn; _gpuTempCrit = Rule(MetricGroup.Gpu, "°C").Crit;
-        _loadWarn = Rule(MetricGroup.Cpu, "%").Warn;     _loadCrit = Rule(MetricGroup.Cpu, "%").Crit;
-        _fpsWarn = Rule(MetricGroup.Game, "fps").Warn;   _fpsCrit = Rule(MetricGroup.Game, "fps").Crit;
         _overlayIsVertical = settings.OverlayOrientation == OverlayOrientation.Vertical;
         _overlayFontScale = settings.OverlayFontScale;
         _overlayOpacity = settings.OverlayOpacity;
@@ -88,22 +86,20 @@ public sealed partial class SettingsViewModel : ObservableObject
             LimitItems.Add(new LimitItemViewModel(def, text, ApplyLimit));
         }
 
+        RebuildThresholdRuleItems();
+        RefreshAddableRulePairs();
+
         _loaded = true;
     }
 
     public ObservableCollection<LimitItemViewModel> LimitItems { get; } = new();
+    public ObservableCollection<ThresholdRuleItemViewModel> ThresholdRuleItems { get; } = new();
+    public ObservableCollection<ThresholdRulePairOption> AddableRulePairs { get; } = new();
 
     [ObservableProperty] private double _pollIntervalSeconds;
     [ObservableProperty] private int _historyWindowMinutes;
-    [ObservableProperty] private float _cpuTempWarn;
-    [ObservableProperty] private float _cpuTempCrit;
-    [ObservableProperty] private float _gpuTempWarn;
-    [ObservableProperty] private float _gpuTempCrit;
-    [ObservableProperty] private float _loadWarn;
-    [ObservableProperty] private float _loadCrit;
-    [ObservableProperty] private float _fpsWarn;
-    [ObservableProperty] private float _fpsCrit;
-    [ObservableProperty] private string _thresholdError = "";
+    [ObservableProperty] private ThresholdRulePairOption? _selectedAddablePair;
+    [ObservableProperty] private bool _hasAddableRulePairs;
     [ObservableProperty] private bool _overlayIsVertical;
     [ObservableProperty] private double _overlayFontScale;
     [ObservableProperty] private double _overlayOpacity;
@@ -166,6 +162,20 @@ public sealed partial class SettingsViewModel : ObservableObject
     [RelayCommand] private void SetAccent(string hex) => AccentHex = hex;
     [RelayCommand] private void OpenLogFolder() => OpenLogFolderRequested?.Invoke();
 
+    /// <summary>Seeds a new (Group, Unit) rule at 0/0 (inactive — see <see cref="ThresholdEvaluator.Evaluate"/> —
+    /// so it colours nothing until the user fills in real values) for <see cref="SelectedAddablePair"/>. No-op
+    /// when nothing is selected (the "Add rule…" row is hidden whenever <see cref="AddableRulePairs"/> is empty,
+    /// but a stale selection could still reach here between a settings reload and the next refresh).</summary>
+    [RelayCommand]
+    private void AddRule()
+    {
+        if (SelectedAddablePair is not ThresholdRulePairOption pair) return;
+        _s.ThresholdRules.Add(new ThresholdRule { Group = pair.Group, Unit = pair.Unit, Warn = 0, Crit = 0, LowerIsWorse = false });
+        RebuildThresholdRuleItems();
+        RefreshAddableRulePairs();
+        Raise(SettingsChange.Thresholds);
+    }
+
     [RelayCommand]
     private void CheckForUpdates()
     {
@@ -196,33 +206,6 @@ public sealed partial class SettingsViewModel : ObservableObject
         if (snapped != value) { HistoryWindowMinutes = snapped; return; } // re-enters with snapped
         _s.HistoryWindowMinutes = snapped;
         Raise(SettingsChange.HistoryWindow);
-    }
-
-    partial void OnCpuTempWarnChanged(float value) => ApplyThresholds();
-    partial void OnCpuTempCritChanged(float value) => ApplyThresholds();
-    partial void OnGpuTempWarnChanged(float value) => ApplyThresholds();
-    partial void OnGpuTempCritChanged(float value) => ApplyThresholds();
-    partial void OnLoadWarnChanged(float value) => ApplyThresholds();
-    partial void OnLoadCritChanged(float value) => ApplyThresholds();
-    partial void OnFpsWarnChanged(float value) => ApplyThresholds();
-    partial void OnFpsCritChanged(float value) => ApplyThresholds();
-
-    private void ApplyThresholds()
-    {
-        if (!_loaded) return;
-        if (CpuTempWarn >= CpuTempCrit || GpuTempWarn >= GpuTempCrit || LoadWarn >= LoadCrit)
-        {
-            ThresholdError = "Warn must be below Crit";
-            return;
-        }
-        if (FpsWarn <= FpsCrit) { ThresholdError = "FPS: warn must be above crit"; return; }
-        ThresholdError = "";
-        Upsert(MetricGroup.Cpu, "°C", CpuTempWarn, CpuTempCrit);
-        Upsert(MetricGroup.Gpu, "°C", GpuTempWarn, GpuTempCrit);
-        Upsert(MetricGroup.Cpu, "%", LoadWarn, LoadCrit);
-        Upsert(MetricGroup.Gpu, "%", LoadWarn, LoadCrit);
-        Upsert(MetricGroup.Game, "fps", FpsWarn, FpsCrit, lowerIsWorse: true);
-        Raise(SettingsChange.Thresholds);
     }
 
     partial void OnOverlayIsVerticalChanged(bool value)
@@ -406,17 +389,54 @@ public sealed partial class SettingsViewModel : ObservableObject
     private static bool IsLimitCandidate(MetricDefinition d) =>
         (d.Group == MetricGroup.Cpu && d.Unit is "W" or "A") || (d.Group == MetricGroup.Gpu && d.Unit == "W");
 
-    private ThresholdRule Rule(MetricGroup group, string unit) =>
-        _s.ThresholdRules.FirstOrDefault(r => r.Group == group && r.Unit == unit)
-        ?? new ThresholdRule { Group = group, Unit = unit };
-
-    private void Upsert(MetricGroup group, string unit, float warn, float crit, bool? lowerIsWorse = null)
+    /// <summary>Rebuilds <see cref="ThresholdRuleItems"/> from <see cref="AppSettings.ThresholdRules"/>, ordered by
+    /// <see cref="DashboardViewModel.GroupOrder"/> then unit — the same order the dashboard groups tiles in.</summary>
+    private void RebuildThresholdRuleItems()
     {
-        var rule = _s.ThresholdRules.FirstOrDefault(r => r.Group == group && r.Unit == unit);
-        if (rule is null) { rule = new ThresholdRule { Group = group, Unit = unit }; _s.ThresholdRules.Add(rule); }
-        rule.Warn = warn;
-        rule.Crit = crit;
-        if (lowerIsWorse is bool low) rule.LowerIsWorse = low;
+        ThresholdRuleItems.Clear();
+        foreach (var rule in _s.ThresholdRules
+            .OrderBy(r => Array.IndexOf(DashboardViewModel.GroupOrder, r.Group))
+            .ThenBy(r => r.Unit, StringComparer.Ordinal))
+        {
+            ThresholdRuleItems.Add(new ThresholdRuleItemViewModel(rule, ApplyThresholdRuleItem));
+        }
+    }
+
+    /// <summary>Validates one row's edited Warn/Crit against its (fixed) direction. A valid pair writes through to
+    /// the underlying <see cref="ThresholdRule"/>, saves, and raises <see cref="SettingsChange.Thresholds"/>; an
+    /// invalid pair leaves the rule untouched and only sets the row's <see cref="ThresholdRuleItemViewModel.Error"/>.</summary>
+    private void ApplyThresholdRuleItem(ThresholdRuleItemViewModel item)
+    {
+        if (!_loaded) return;
+        bool ordered = item.LowerIsWorse ? item.Warn > item.Crit : item.Warn < item.Crit;
+        if (!ordered)
+        {
+            item.Error = item.LowerIsWorse ? "Warn must be above crit when lower is worse" : "Warn must be below crit";
+            return;
+        }
+        item.Error = "";
+        item.Rule.Warn = item.Warn;
+        item.Rule.Crit = item.Crit;
+        Raise(SettingsChange.Thresholds);
+    }
+
+    /// <summary>Recomputes the (Group, Unit) pairs discovered among <see cref="_definitions"/> that have no rule
+    /// yet, ordered the same way as <see cref="ThresholdRuleItems"/>, and resets <see cref="SelectedAddablePair"/>
+    /// to the first (or none, hiding the "Add rule…" row via <see cref="HasAddableRulePairs"/>).</summary>
+    private void RefreshAddableRulePairs()
+    {
+        var existing = _s.ThresholdRules.Select(r => (r.Group, r.Unit)).ToHashSet();
+        var discovered = _definitions
+            .Select(d => (d.Group, d.Unit))
+            .Distinct()
+            .Where(p => !existing.Contains(p))
+            .OrderBy(p => Array.IndexOf(DashboardViewModel.GroupOrder, p.Group))
+            .ThenBy(p => p.Unit, StringComparer.Ordinal);
+
+        AddableRulePairs.Clear();
+        foreach (var (group, unit) in discovered) AddableRulePairs.Add(new ThresholdRulePairOption(group, unit));
+        HasAddableRulePairs = AddableRulePairs.Count > 0;
+        SelectedAddablePair = AddableRulePairs.FirstOrDefault();
     }
 
     private void Raise(SettingsChange change)

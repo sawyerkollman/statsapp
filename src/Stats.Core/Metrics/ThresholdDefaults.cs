@@ -12,6 +12,7 @@ public static class ThresholdDefaults
         new() { Group = MetricGroup.Cpu, Unit = "%", Warn = 90, Crit = 98 },
         new() { Group = MetricGroup.Gpu, Unit = "%", Warn = 90, Crit = 98 },
         new() { Group = MetricGroup.Game, Unit = "fps", Warn = 60, Crit = 30, LowerIsWorse = true },
+        new() { Group = MetricGroup.Motherboard, Unit = "°C", Warn = 80, Crit = 95 },
     };
 
     /// <summary>Per-metric defaults for metrics the (Group, Unit) rules would otherwise colour wrongly.

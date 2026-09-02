@@ -78,7 +78,7 @@ public class SettingsServiceTests : IDisposable
     public void Load_SeedsThresholdRulesWhenEmpty()
     {
         var s = new SettingsService(_dir).Load();
-        Assert.Equal(5, s.ThresholdRules.Count);
+        Assert.Equal(Stats.Core.Metrics.ThresholdDefaults.Rules().Count, s.ThresholdRules.Count);
         var cpu = s.ThresholdRules.First(r => r.Group == Stats.Core.Metrics.MetricGroup.Cpu && r.Unit == "°C");
         Assert.Equal(85f, cpu.Warn);
         Assert.Equal(92f, cpu.Crit);
@@ -139,7 +139,7 @@ public class SettingsServiceTests : IDisposable
         Assert.Equal(2, l.HistoryWindowMinutes);
         Assert.True(l.ShowCoreMatrix);
         Assert.Equal("Ctrl+Shift+O", l.OverlayHotkey);
-        Assert.Equal(5, l.ThresholdRules.Count);
+        Assert.Equal(Stats.Core.Metrics.ThresholdDefaults.Rules().Count, l.ThresholdRules.Count);
     }
 
     [Theory]
@@ -202,7 +202,7 @@ public class SettingsServiceTests : IDisposable
         Assert.True(loaded.FanControlEnabled);
         Assert.NotNull(loaded.FanChannels);
         Assert.Empty(loaded.FanChannels);          // an explicit null must not blow up the fan loop
-        Assert.Equal(5, loaded.ThresholdRules.Count); // …and null rules still get the defaults
+        Assert.Equal(Stats.Core.Metrics.ThresholdDefaults.Rules().Count, loaded.ThresholdRules.Count); // …and null rules still get the defaults
     }
 
     [Fact]
@@ -348,7 +348,7 @@ public class SettingsServiceTests : IDisposable
         Assert.False(loaded.GameModeEnabled);                    // §6
         Assert.Null(loaded.GameModeGamingProfile);
         Assert.Null(loaded.GameModeDesktopProfile);
-        Assert.Equal(5, loaded.ThresholdRules.Count);            // §7: the fps rule was appended …
+        Assert.Equal(6, loaded.ThresholdRules.Count);            // §7: the fps and Motherboard rules were appended …
         Assert.All(loaded.ThresholdRules.Take(4), r => Assert.False(r.LowerIsWorse)); // … the four kept as they were
         Assert.Equal(85f, loaded.ThresholdRules[0].Warn);
         var fps = loaded.ThresholdRules.Single(r => r.Group == Stats.Core.Metrics.MetricGroup.Game && r.Unit == "fps");

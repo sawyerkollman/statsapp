@@ -209,24 +209,22 @@ public class DashboardViewModelTests
     }
 
     [Fact]
-    public void SetTileThresholds_WritesOverride_RemovesWhenNullOrInvalid()
+    public void SetTileThresholds_WritesOverride_RemovesWhenNull()
     {
         var (vm, s, _, saves) = Make("cpu.temp");
-        vm.SetTileThresholds("cpu.temp", 70f, 80f);
+        vm.SetTileThresholds("cpu.temp", new ThresholdRule { Warn = 70f, Crit = 80f });
         Assert.Equal(80f, s.ThresholdOverrides["cpu.temp"].Crit);
-        vm.SetTileThresholds("cpu.temp", 90f, 80f); // warn >= crit → remove
+        vm.SetTileThresholds("cpu.temp", null);
         Assert.False(s.ThresholdOverrides.ContainsKey("cpu.temp"));
-        vm.SetTileThresholds("cpu.temp", null, null);
-        Assert.False(s.ThresholdOverrides.ContainsKey("cpu.temp"));
-        Assert.Equal(3, saves());
+        Assert.Equal(2, saves());
     }
 
     [Fact]
-    public void SetTileThresholds_InvertedMetric_AcceptsWarnAboveCrit()
+    public void SetTileThresholds_StoresRuleVerbatim_NoDirectionGuessing()
     {
-        // For FPS the accepted ordering flips: 60/30 is the valid pair and the "natural" 30/60 is the one that
-        // gets rejected — which, in this method, means the override is REMOVED. The tile dialog's example text
-        // has to match this or a user typing the obvious thing silently loses their thresholds.
+        // The method no longer infers LowerIsWorse from any group rule — it stores exactly what it is given
+        // (including a direction that matches the fps group rule here), leaving parsing/validation and direction
+        // resolution entirely to the caller (ThresholdInput.TryParse / ThresholdDialog).
         var store = new MetricStore(new List<MetricDefinition>
         {
             new("fps.avg", "FPS", MetricGroup.Game, "Foreground app", "fps", "F0"),
@@ -234,12 +232,12 @@ public class DashboardViewModelTests
         var s = new AppSettings { DashboardMetrics = { "fps.avg" }, ThresholdRules = ThresholdDefaults.Rules() };
         var vm = new DashboardViewModel(store, s, () => { });
 
-        vm.SetTileThresholds("fps.avg", 60f, 30f);
+        vm.SetTileThresholds("fps.avg", new ThresholdRule { Warn = 60f, Crit = 30f, LowerIsWorse = true });
         Assert.Equal(60f, s.ThresholdOverrides["fps.avg"].Warn);
         Assert.Equal(30f, s.ThresholdOverrides["fps.avg"].Crit);
-        Assert.True(s.ThresholdOverrides["fps.avg"].LowerIsWorse);   // copied from the group rule
+        Assert.True(s.ThresholdOverrides["fps.avg"].LowerIsWorse);
 
-        vm.SetTileThresholds("fps.avg", 30f, 60f);
+        vm.SetTileThresholds("fps.avg", null);
         Assert.False(s.ThresholdOverrides.ContainsKey("fps.avg"));
     }
 
