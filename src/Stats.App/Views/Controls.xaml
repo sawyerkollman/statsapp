@@ -555,8 +555,11 @@
                         <Grid Width="16" Height="16" VerticalAlignment="Center">
                             <Border x:Name="Box" CornerRadius="3" BorderThickness="1"
                                     Background="{DynamicResource ControlBg}" BorderBrush="{DynamicResource BorderDim}"/>
+                            <Path x:Name="CheckMark" Data="M2,8 L6,12 L14,3" Stroke="{DynamicResource AccentBrush}" StrokeThickness="2"
+                                  StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeLineJoin="Round" Visibility="Collapsed"/>
                             <Rectangle x:Name="IndeterminateMark" Width="8" Height="2" Fill="{DynamicResource AccentBrush}"
                                        HorizontalAlignment="Center" VerticalAlignment="Center" Visibility="Collapsed"/>
+                        </Grid>
                         <ContentPresenter Grid.Column="1" Margin="6,0,0,0" VerticalAlignment="Center" RecognizesAccessKey="True"/>
                     </Grid>
                     <ControlTemplate.Triggers>
