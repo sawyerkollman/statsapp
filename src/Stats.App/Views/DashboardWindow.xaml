@@ -261,9 +261,9 @@
                                                     </Grid.ColumnDefinitions>
                                                     <TextBlock Text="{Binding GroupName}" Style="{StaticResource SettingsLabel}" TextTrimming="CharacterEllipsis"/>
                                                     <TextBlock Grid.Column="1" Text="{Binding Unit}" Style="{StaticResource SettingsLabel}"/>
-                                                    <TextBox Grid.Column="2" Margin="0,1,0,1" Text="{Binding Warn, UpdateSourceTrigger=LostFocus}"/>
+                                                    <TextBox Grid.Column="2" Margin="0,1,0,1" Text="{Binding WarnText, UpdateSourceTrigger=LostFocus}"/>
                                                     <TextBlock Grid.Column="3" Text="/" Style="{StaticResource SettingsLabel}" HorizontalAlignment="Center" Margin="0"/>
-                                                    <TextBox Grid.Column="4" Margin="0,1,6,1" Text="{Binding Crit, UpdateSourceTrigger=LostFocus}"/>
+                                                    <TextBox Grid.Column="4" Margin="0,1,6,1" Text="{Binding CritText, UpdateSourceTrigger=LostFocus}"/>
                                                     <TextBlock Grid.Column="5" Text="{Binding DirectionText}" Style="{StaticResource SettingsLabel}" FontStyle="Italic" VerticalAlignment="Center"/>
                                                 </Grid>
                                                 <TextBlock Text="{Binding Error}" Foreground="{DynamicResource CritBrush}" FontSize="11"/>

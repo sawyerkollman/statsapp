@@ -95,12 +95,26 @@ public sealed class AlertEngine
             }
         }
 
-        // Metrics that stopped being monitored entirely (absent from this tick) just drop their state — not the
-        // same as "left Crit", so no EpisodeEnded fires.
+        // Metrics that stopped being monitored entirely (absent from this tick) drop their state — not the same as
+        // "left Crit" — except that an episode which already raised has a live "ongoing" log row, so that one is
+        // finalized through EpisodeEnded rather than stranded.
         foreach (var id in _episodes.Keys.Where(id => !seen.Contains(id)).ToList())
-            _episodes.Remove(id);
+        {
+            var episode = _episodes[id];
+            if (episode.Raised) EndEpisode(id, episode, nowUtc);
+            else _episodes.Remove(id);
+        }
 
         return raised;
+    }
+
+    /// <summary>Ends every in-progress episode (firing <see cref="EpisodeEnded"/> for each, so raised log rows get
+    /// a final duration) and forgets all state. Called when alerts are switched off: otherwise a later re-enable
+    /// would replay a stale hold timer and raise instantly, and rows for metrics that recovered while alerts were
+    /// off would stay "ongoing" for the rest of the session.</summary>
+    public void Reset(DateTime nowUtc)
+    {
+        foreach (var (id, episode) in _episodes.ToList()) EndEpisode(id, episode, nowUtc);
     }
 
     private void EndEpisode(string id, Episode episode, DateTime nowUtc)

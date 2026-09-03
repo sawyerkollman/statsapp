@@ -334,6 +334,9 @@ public sealed partial class FansViewModel : ObservableObject
     /// back to null (Custom) — i.e. the user edited a channel after loading. Drives the Reload button.</summary>
     public bool IsModified => LastLoadedProfile is not null && _controller.ActiveProfile is null;
 
+    // Delete is bound to SelectedProfileName; since the selection now follows the active profile and blanks after an
+    // edit, the button greys out instead of sitting there inert (v1.8 review finding).
+    [NotifyCanExecuteChangedFor(nameof(DeleteProfileCommand))]
     [ObservableProperty] private string? _selectedProfileName;
     partial void OnSelectedProfileNameChanged(string? value)
     {

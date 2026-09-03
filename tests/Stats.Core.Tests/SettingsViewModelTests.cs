@@ -30,9 +30,9 @@ public class SettingsViewModelTests
     {
         var (vm, _, changes, saves) = Make();
         Assert.Equal(1.0, vm.PollIntervalSeconds);
-        Assert.Equal(85f, vm.ThresholdRuleItems.Single(i => i.Group == MetricGroup.Cpu && i.Unit == "°C").Warn);
-        Assert.Equal(88f, vm.ThresholdRuleItems.Single(i => i.Group == MetricGroup.Gpu && i.Unit == "°C").Crit);
-        Assert.Equal(90f, vm.ThresholdRuleItems.Single(i => i.Group == MetricGroup.Cpu && i.Unit == "%").Warn);
+        Assert.Equal("85", vm.ThresholdRuleItems.Single(i => i.Group == MetricGroup.Cpu && i.Unit == "°C").WarnText);
+        Assert.Equal("88", vm.ThresholdRuleItems.Single(i => i.Group == MetricGroup.Gpu && i.Unit == "°C").CritText);
+        Assert.Equal("90", vm.ThresholdRuleItems.Single(i => i.Group == MetricGroup.Cpu && i.Unit == "%").WarnText);
         Assert.Equal("Ctrl+Shift+O", vm.OverlayHotkey);
         Assert.Empty(changes);
         Assert.Equal(0, saves());
@@ -72,13 +72,15 @@ public class SettingsViewModelTests
     {
         var (vm, s, changes, _) = Make();
         var item = vm.ThresholdRuleItems.Single(i => i.Group == MetricGroup.Cpu && i.Unit == "°C");
-        item.Warn = 80f;
-        item.Crit = 90f;
+        // Each TextBox commits independently (LostFocus), so setting Warn=80 (still below the default Crit=92) is
+        // already a valid, ordered pair and applies on its own; setting Crit=90 afterward applies again.
+        item.WarnText = "80";
+        item.CritText = "90";
         var rule = s.ThresholdRules.Single(r => r.Group == MetricGroup.Cpu && r.Unit == "°C");
         Assert.Equal(80f, rule.Warn);
         Assert.Equal(90f, rule.Crit);
         Assert.Equal("", item.Error);
-        Assert.Contains(SettingsChange.Thresholds, changes);
+        Assert.Equal(2, changes.Count(c => c == SettingsChange.Thresholds));
     }
 
     [Fact]
@@ -86,14 +88,53 @@ public class SettingsViewModelTests
     {
         var (vm, s, _, _) = Make();
         var item = vm.ThresholdRuleItems.Single(i => i.Group == MetricGroup.Gpu && i.Unit == "°C");
-        item.Warn = 95f; // crit is 88
+        item.WarnText = "95"; // crit is 88
         var rule = s.ThresholdRules.Single(r => r.Group == MetricGroup.Gpu && r.Unit == "°C");
         Assert.Equal(80f, rule.Warn); // unchanged
-        Assert.NotEqual("", item.Error);
-        item.Crit = 99f; // now valid
+        Assert.Equal("Warn must be below crit", item.Error);
+        item.CritText = "99"; // now valid
         Assert.Equal(95f, rule.Warn);
         Assert.Equal(99f, rule.Crit);
         Assert.Equal("", item.Error);
+    }
+
+    [Fact]
+    public void ThresholdRuleItem_UnparseableText_SetsErrorAndDoesNotWriteThroughOrRaise()
+    {
+        var (vm, s, changes, _) = Make();
+        var item = vm.ThresholdRuleItems.Single(i => i.Group == MetricGroup.Cpu && i.Unit == "°C");
+        item.WarnText = "9O"; // letter O, not zero
+        var rule = s.ThresholdRules.Single(r => r.Group == MetricGroup.Cpu && r.Unit == "°C");
+        Assert.Equal("Warn must be a number", item.Error);
+        Assert.Equal(85f, rule.Warn); // unchanged
+        Assert.Equal(92f, rule.Crit); // unchanged
+        Assert.Empty(changes);
+        item.WarnText = "80"; // fixing the input clears the error and writes through
+        Assert.Equal("", item.Error);
+        Assert.Equal(80f, rule.Warn);
+        Assert.Contains(SettingsChange.Thresholds, changes);
+    }
+
+    [Fact]
+    public void ThresholdRuleItem_CommaDecimal_Parses()
+    {
+        var original = System.Globalization.CultureInfo.CurrentCulture;
+        try
+        {
+            System.Globalization.CultureInfo.CurrentCulture = new System.Globalization.CultureInfo("de-DE");
+            var (vm, s, _, _) = Make();
+            var item = vm.ThresholdRuleItems.Single(i => i.Group == MetricGroup.Cpu && i.Unit == "°C");
+            item.WarnText = "80,5";
+            item.CritText = "90,5";
+            var rule = s.ThresholdRules.Single(r => r.Group == MetricGroup.Cpu && r.Unit == "°C");
+            Assert.Equal(80.5f, rule.Warn);
+            Assert.Equal(90.5f, rule.Crit);
+            Assert.Equal("", item.Error);
+        }
+        finally
+        {
+            System.Globalization.CultureInfo.CurrentCulture = original;
+        }
     }
 
     [Fact]
@@ -104,10 +145,31 @@ public class SettingsViewModelTests
         var (vm, s, _, _) = Make();
         var cpuLoad = vm.ThresholdRuleItems.Single(i => i.Group == MetricGroup.Cpu && i.Unit == "%");
         var gpuLoad = vm.ThresholdRuleItems.Single(i => i.Group == MetricGroup.Gpu && i.Unit == "%");
-        cpuLoad.Warn = 70f;
+        cpuLoad.WarnText = "70";
         Assert.Equal(70f, s.ThresholdRules.Single(r => r.Group == MetricGroup.Cpu && r.Unit == "%").Warn);
         Assert.Equal(90f, s.ThresholdRules.Single(r => r.Group == MetricGroup.Gpu && r.Unit == "%").Warn); // untouched
-        Assert.Equal(90f, gpuLoad.Warn); // the row's own displayed value is also untouched
+        Assert.Equal("90", gpuLoad.WarnText); // the row's own displayed value is also untouched
+    }
+
+    [Fact]
+    public void ThresholdRuleItem_SeededZeroZeroRow_NoErrorUntilEdited()
+    {
+        var (vm, s, changes, _) = Make();
+        vm.SelectedAddablePair = vm.AddableRulePairs.Single(p => p.Group == MetricGroup.Cpu && p.Unit == "W");
+        vm.AddRuleCommand.Execute(null);
+        var item = vm.ThresholdRuleItems.Single(i => i.Group == MetricGroup.Cpu && i.Unit == "W");
+
+        Assert.Equal("", item.Error);
+        Assert.Equal("0", item.WarnText);
+        Assert.Equal("0", item.CritText);
+
+        item.WarnText = "20";
+        item.CritText = "40";
+        var rule = s.ThresholdRules.Single(r => r.Group == MetricGroup.Cpu && r.Unit == "W");
+        Assert.Equal(20f, rule.Warn);
+        Assert.Equal(40f, rule.Crit);
+        Assert.Equal("", item.Error);
+        Assert.Contains(SettingsChange.Thresholds, changes);
     }
 
     [Fact]
@@ -279,12 +341,12 @@ public class SettingsViewModelTests
         var vm = new SettingsViewModel(s, Array.Empty<MetricDefinition>(), () => saves++);
         var item = vm.ThresholdRuleItems.Single(i => i.Group == MetricGroup.Game && i.Unit == "fps");
         Assert.True(item.LowerIsWorse);
-        Assert.Equal(60f, item.Warn);
-        Assert.Equal(30f, item.Crit);
-        item.Warn = 20; // below crit → invalid (lower-is-worse wants warn above crit)
+        Assert.Equal("60", item.WarnText);
+        Assert.Equal("30", item.CritText);
+        item.WarnText = "20"; // below crit → invalid (lower-is-worse wants warn above crit)
         Assert.Equal("Warn must be above crit when lower is worse", item.Error);
         Assert.Equal(60f, s.ThresholdRules.Single(r => r.Group == MetricGroup.Game && r.Unit == "fps").Warn); // not applied
-        item.Warn = 75;
+        item.WarnText = "75";
         Assert.Equal("", item.Error);
         Assert.Equal(75f, s.ThresholdRules.Single(r => r.Group == MetricGroup.Game && r.Unit == "fps").Warn);
         Assert.True(s.ThresholdRules.Single(r => r.Group == MetricGroup.Game && r.Unit == "fps").LowerIsWorse);

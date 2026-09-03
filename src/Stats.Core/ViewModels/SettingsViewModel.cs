@@ -430,21 +430,23 @@ public sealed partial class SettingsViewModel : ObservableObject
         }
     }
 
-    /// <summary>Validates one row's edited Warn/Crit against its (fixed) direction. A valid pair writes through to
-    /// the underlying <see cref="ThresholdRule"/>, saves, and raises <see cref="SettingsChange.Thresholds"/>; an
-    /// invalid pair leaves the rule untouched and only sets the row's <see cref="ThresholdRuleItemViewModel.Error"/>.</summary>
+    /// <summary>Parses and validates one row's edited <see cref="ThresholdRuleItemViewModel.WarnText"/>/
+    /// <see cref="ThresholdRuleItemViewModel.CritText"/> with the same <see cref="ThresholdInput.TryParse"/> the
+    /// per-tile dialog uses, against the row's (fixed) direction. A valid, ordered pair writes through to the
+    /// underlying <see cref="ThresholdRule"/>, saves, and raises <see cref="SettingsChange.Thresholds"/>; anything
+    /// else — unparseable text or a bad ordering — leaves the rule untouched and only sets the row's
+    /// <see cref="ThresholdRuleItemViewModel.Error"/>, so bad input is never silently dropped.</summary>
     private void ApplyThresholdRuleItem(ThresholdRuleItemViewModel item)
     {
         if (!_loaded) return;
-        bool ordered = item.LowerIsWorse ? item.Warn > item.Crit : item.Warn < item.Crit;
-        if (!ordered)
+        if (!ThresholdInput.TryParse(item.WarnText, item.CritText, item.LowerIsWorse, out var parsed, out var error))
         {
-            item.Error = item.LowerIsWorse ? "Warn must be above crit when lower is worse" : "Warn must be below crit";
+            item.Error = error;
             return;
         }
         item.Error = "";
-        item.Rule.Warn = item.Warn;
-        item.Rule.Crit = item.Crit;
+        item.Rule.Warn = parsed.Warn;
+        item.Rule.Crit = parsed.Crit;
         Raise(SettingsChange.Thresholds);
     }
 

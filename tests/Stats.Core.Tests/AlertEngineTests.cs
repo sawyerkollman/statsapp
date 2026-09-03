@@ -195,4 +195,56 @@ public class AlertEngineTests
         var evt = new AlertEvent(T0, "fps.avg", "FPS", "fps", 20f, 30f, LowerIsWorse: true);
         Assert.Equal("FPS 20 fps — crit ≤ 30", evt.Message);
     }
+
+    [Fact]
+    public void Reset_EndsEveryEpisode_AndRearmsFromScratch()
+    {
+        var engine = new AlertEngine { HoldSeconds = 10 };
+        var ended = new List<(string Id, DateTime? RaisedAt, TimeSpan Duration)>();
+        engine.EpisodeEnded += (id, raisedAt, duration) => ended.Add((id, raisedAt, duration));
+        for (int t = 0; t <= 10; t++)
+        {
+            // CPU holds Crit from t=0 (raises at t=10); FPS only enters Crit at t=8 (never reaches the hold).
+            var samples = t < 8 ? new[] { Crit(CpuTemp, 96f, CritRule) } : new[] { Crit(CpuTemp, 96f, CritRule), Crit(Fps, 20f, FpsRule) };
+            engine.Tick(samples, T0.AddSeconds(t));
+        }
+
+        engine.Reset(T0.AddSeconds(12));
+
+        Assert.Equal(2, ended.Count);
+        var cpu = Assert.Single(ended, e => e.Id == "cpu.temp");
+        Assert.NotNull(cpu.RaisedAt);
+        Assert.Equal(TimeSpan.FromSeconds(12), cpu.Duration);
+        var fps = Assert.Single(ended, e => e.Id == "fps.avg");
+        Assert.Null(fps.RaisedAt);
+        Assert.Equal(TimeSpan.FromSeconds(4), fps.Duration);
+
+        // Re-enabled while the metric is still Crit: the hold restarts at the first post-reset tick — no instant
+        // replay of the stale timer.
+        for (int t = 13; t < 23; t++)
+            Assert.Empty(engine.Tick(new[] { Crit(CpuTemp, 96f, CritRule) }, T0.AddSeconds(t)));
+        Assert.Single(engine.Tick(new[] { Crit(CpuTemp, 96f, CritRule) }, T0.AddSeconds(23)));
+    }
+
+    [Fact]
+    public void UnmonitoredMetric_RaisedEpisodeIsFinalized_UnraisedIsDroppedSilently()
+    {
+        var engine = new AlertEngine { HoldSeconds = 10 };
+        var ended = new List<(string Id, DateTime? RaisedAt, TimeSpan Duration)>();
+        engine.EpisodeEnded += (id, raisedAt, duration) => ended.Add((id, raisedAt, duration));
+        for (int t = 0; t <= 10; t++)
+        {
+            var samples = t < 8 ? new[] { Crit(CpuTemp, 96f, CritRule) } : new[] { Crit(CpuTemp, 96f, CritRule), Crit(Fps, 20f, FpsRule) };
+            engine.Tick(samples, T0.AddSeconds(t));
+        }
+
+        // Both metrics removed from the dashboard/overlay: the raised CPU episode gets its log row finalized; the
+        // never-raised FPS episode has no row and is simply forgotten.
+        Assert.Empty(engine.Tick(Array.Empty<AlertSample>(), T0.AddSeconds(12)));
+
+        var only = Assert.Single(ended);
+        Assert.Equal("cpu.temp", only.Id);
+        Assert.NotNull(only.RaisedAt);
+        Assert.Equal(TimeSpan.FromSeconds(12), only.Duration);
+    }
 }
