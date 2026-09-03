@@ -95,6 +95,10 @@ public sealed class AppSettings
     /// <summary>The dashboard's "Gaming? Add FPS…" hint banner was dismissed via Got it; persists across restarts.</summary>
     public bool FpsHintDismissed { get; set; }
 
+    // ---- v1.8 accessibility floor ----
+    /// <summary>Dashboard-wide UI scale applied as a LayoutTransform on the content root; clamped 0.9–1.3 at load.</summary>
+    public double DashboardUiScale { get; set; } = 1.0;
+
     /// <summary>Get-or-create the TilePref for a metric id.</summary>
     public TilePref PrefFor(string metricId)
     {

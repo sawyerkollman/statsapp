@@ -160,6 +160,7 @@ public partial class App : Application
         _dashboardVm = new DashboardViewModel(_store, _settings, SaveSettings)
         {
             IsDegraded = degraded,
+            UiScale = _settings.DashboardUiScale,
         };
 
         _overlayVm = new OverlayViewModel(_store, _settings);
@@ -756,6 +757,9 @@ public partial class App : Application
                 _overlayVm?.RaiseSeverityRefresh();
                 _peaksVm?.RaiseSeverityRefresh();
                 _detailVm?.RaiseSeverityRefresh();
+                break;
+            case SettingsChange.UiScale:
+                if (_dashboardVm is not null) _dashboardVm.UiScale = _settings.DashboardUiScale;
                 break;
         }
     }

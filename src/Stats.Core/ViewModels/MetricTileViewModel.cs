@@ -35,6 +35,12 @@ public sealed partial class MetricTileViewModel : ObservableObject
     [ObservableProperty] private TileSize _size = TileSize.M;
     [ObservableProperty] private float? _max;
     [ObservableProperty] private float _fraction01;
+    /// <summary>Non-colour severity indicator shown next to the value: "" at Normal, "▲" at Warn, "‼" at Crit —
+    /// see the design's accessibility floor (§11). Colour alone (Severity's brush) must never be the only cue.</summary>
+    [ObservableProperty] private string _severityGlyph = "";
+    /// <summary>Screen-reader label for the whole tile: "&lt;DisplayName&gt;, &lt;CurrentText&gt;, &lt;Severity&gt;"
+    /// (e.g. "Tctl, 72.0 °C, Normal"), bound to AutomationProperties.Name in the tile templates.</summary>
+    [ObservableProperty] private string _automationLabel = "";
 
     public void Refresh()
     {
@@ -66,6 +72,9 @@ public sealed partial class MetricTileViewModel : ObservableObject
         // The requested window can be clamped (HistoryCapacity.Compute) to fit the [30, 3600]-sample buffer, so
         // the tag reports what the buffer actually covers — capacity × current poll interval — not the request.
         HistoryWindowTag = HistoryCapacity.FormatWindow(_history.Capacity * _settings.PollIntervalSeconds);
+
+        SeverityGlyph = Severity switch { Severity.Crit => "‼", Severity.Warn => "▲", _ => "" };
+        AutomationLabel = $"{DisplayName}, {CurrentText}, {Severity}";
     }
 
     /// <summary>Re-raises PropertyChanged(Severity) without changing the value — used after a live theme switch

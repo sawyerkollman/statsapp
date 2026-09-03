@@ -76,6 +76,9 @@
         </Border>
 
         <Grid>
+            <Grid.LayoutTransform>
+                <ScaleTransform ScaleX="{Binding UiScale}" ScaleY="{Binding UiScale}"/>
+            </Grid.LayoutTransform>
             <ScrollViewer VerticalScrollBarVisibility="Auto">
                 <ItemsControl ItemsSource="{Binding Sections}">
                     <ItemsControl.ItemTemplate>
@@ -112,12 +115,18 @@
                                         <ItemsControl.ItemContainerStyle>
                                             <Style TargetType="ContentPresenter">
                                                 <Setter Property="AllowDrop" Value="True"/>
+                                                <Setter Property="Focusable" Value="True"/>
+                                                <Setter Property="KeyboardNavigation.IsTabStop" Value="True"/>
+                                                <Setter Property="FocusVisualStyle" Value="{StaticResource StatsFocusVisual}"/>
                                                 <EventSetter Event="PreviewMouseLeftButtonDown" Handler="Tile_PreviewMouseLeftButtonDown"/>
                                                 <EventSetter Event="PreviewMouseMove" Handler="Tile_PreviewMouseMove"/>
                                                 <EventSetter Event="PreviewMouseLeftButtonUp" Handler="Tile_PreviewMouseLeftButtonUp"/>
                                                 <EventSetter Event="MouseRightButtonUp" Handler="Tile_MouseRightButtonUp"/>
                                                 <EventSetter Event="Drop" Handler="Tile_Drop"/>
                                                 <EventSetter Event="DragOver" Handler="Tile_DragOver"/>
+                                                <EventSetter Event="DragLeave" Handler="Tile_DragLeave"/>
+                                                <EventSetter Event="Button.Click" Handler="TileMenuButton_Click"/>
+                                                <EventSetter Event="PreviewKeyDown" Handler="Tile_PreviewKeyDown"/>
                                             </Style>
                                         </ItemsControl.ItemContainerStyle>
                                     </ItemsControl>
@@ -218,6 +227,14 @@
                                                Text="{Binding PollIntervalSeconds, StringFormat='{}{0:0.0} s'}"/>
                                     <Slider Minimum="0.5" Maximum="5" TickFrequency="0.5" IsSnapToTickEnabled="True"
                                             Value="{Binding PollIntervalSeconds, Delay=250}"/>
+                                </DockPanel>
+
+                                <TextBlock Text="Dashboard" Style="{StaticResource SettingsHeader}"/>
+                                <DockPanel Margin="0,2">
+                                    <TextBlock Text="UI scale" Width="90" Style="{StaticResource SettingsLabel}"/>
+                                    <TextBlock DockPanel.Dock="Right" Width="40" TextAlignment="Right" Style="{StaticResource SettingsLabel}"
+                                               Text="{Binding DashboardUiScale, StringFormat='{}{0:0.0}×'}"/>
+                                    <Slider Minimum="0.9" Maximum="1.3" TickFrequency="0.1" IsSnapToTickEnabled="True" Value="{Binding DashboardUiScale, Delay=250}"/>
                                 </DockPanel>
 
                                 <TextBlock Text="History window" Style="{StaticResource SettingsHeader}"/>

@@ -406,6 +406,17 @@ public class SettingsServiceTests : IDisposable
         Assert.Equal(expected, svc.Load().AlertHoldSeconds);
     }
 
+    [Theory]
+    [InlineData(0.5, 0.9)]
+    [InlineData(2.0, 1.3)]
+    [InlineData(1.1, 1.1)]
+    public void Load_ClampsDashboardUiScaleToSpecRange(double stored, double expected)
+    {
+        var svc = new SettingsService(_dir);
+        svc.Save(new AppSettings { DashboardUiScale = stored });
+        Assert.Equal(expected, svc.Load().DashboardUiScale);
+    }
+
     [Fact]
     public void SaveThenLoad_AlertFields_RoundTrip()
     {

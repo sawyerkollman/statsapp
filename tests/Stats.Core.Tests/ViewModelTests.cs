@@ -99,6 +99,44 @@ public class ViewModelTests
         Assert.Equal(Severity.Crit, tile.Severity);
     }
 
+    // ---- accessibility (v1.8 §11b) ----
+
+    [Fact]
+    public void Tile_AutomationLabel_And_SeverityGlyph_Normal()
+    {
+        var store = NewStore();
+        Push(store, 40f, 70f, 2400f);
+        var tile = new MetricTileViewModel(CpuTemp, store["cpu.temp"], Seeded());
+        tile.Refresh();
+        Assert.Equal(Severity.Normal, tile.Severity);
+        Assert.Equal("", tile.SeverityGlyph);
+        Assert.Equal("Tctl, 40.0 °C, Normal", tile.AutomationLabel);
+    }
+
+    [Fact]
+    public void Tile_AutomationLabel_And_SeverityGlyph_Warn()
+    {
+        var store = NewStore();
+        Push(store, 88f, 70f, 2400f); // between Warn(85) and Crit(92)
+        var tile = new MetricTileViewModel(CpuTemp, store["cpu.temp"], Seeded());
+        tile.Refresh();
+        Assert.Equal(Severity.Warn, tile.Severity);
+        Assert.Equal("▲", tile.SeverityGlyph);
+        Assert.Equal("Tctl, 88.0 °C, Warn", tile.AutomationLabel);
+    }
+
+    [Fact]
+    public void Tile_AutomationLabel_And_SeverityGlyph_Crit()
+    {
+        var store = NewStore();
+        Push(store, 93f, 70f, 2400f);
+        var tile = new MetricTileViewModel(CpuTemp, store["cpu.temp"], Seeded());
+        tile.Refresh();
+        Assert.Equal(Severity.Crit, tile.Severity);
+        Assert.Equal("‼", tile.SeverityGlyph);
+        Assert.Equal("Tctl, 93.0 °C, Crit", tile.AutomationLabel);
+    }
+
     [Fact]
     public void Tile_Kind_AutoRules()
     {

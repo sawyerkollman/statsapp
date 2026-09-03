@@ -449,4 +449,88 @@ public class DashboardViewModelTests
 
         Assert.False(vm.ShowFpsHint);
     }
+
+    // ---- tile edit [RelayCommand]s (v1.8 §7c) — same behavior as the underlying methods above, exercised via
+    // the generated *Command so DashboardWindow's menu/button/keyboard call sites stay covered. ----
+
+    [Fact]
+    public void GroupOf_ReturnsGroupForKnownId_NullForUnknown()
+    {
+        var (vm, _, _, _) = Make("cpu.temp");
+        Assert.Equal(MetricGroup.Cpu, vm.GroupOf("cpu.temp"));
+        Assert.Equal(MetricGroup.Gpu, vm.GroupOf("gpu.clock"));
+        Assert.Null(vm.GroupOf("nope"));
+    }
+
+    [Fact]
+    public void SetTileKindEditCommand_WritesThroughPrefs_SameAsSetTileKind()
+    {
+        var (vm, s, _, saves) = Make("gpu.clock");
+        vm.SetTileKindEditCommand.Execute(new TileKindEdit("gpu.clock", TileKind.Bar));
+        Assert.Equal(TileKind.Bar, s.TilePrefs["gpu.clock"].Kind);
+        Assert.Equal(TileKind.Bar, vm.Tiles.Single().Kind);
+        Assert.Equal(1, saves());
+    }
+
+    [Fact]
+    public void SetTileSizeEditCommand_WritesThroughPrefs_SameAsSetTileSize()
+    {
+        var (vm, s, _, saves) = Make("gpu.clock");
+        vm.SetTileSizeEditCommand.Execute(new TileSizeEdit("gpu.clock", TileSize.L));
+        Assert.Equal(TileSize.L, s.TilePrefs["gpu.clock"].Size);
+        Assert.Equal(TileSize.L, vm.Tiles.Single().Size);
+        Assert.Equal(1, saves());
+    }
+
+    [Fact]
+    public void SetTileMaxEditCommand_WritesThroughPrefs_SameAsSetTileMax()
+    {
+        var (vm, s, _, saves) = Make("gpu.clock");
+        vm.SetTileMaxEditCommand.Execute(new TileMaxEdit("gpu.clock", 3000f));
+        Assert.Equal(3000f, s.TilePrefs["gpu.clock"].Max);
+        Assert.Equal(1, saves());
+    }
+
+    [Fact]
+    public void RenameTileEditCommand_UpdatesDisplayName_SameAsRenameTile()
+    {
+        var (vm, s, _, _) = Make("cpu.temp");
+        vm.RenameTileEditCommand.Execute(new TileRenameEdit("cpu.temp", "CPU Temp"));
+        Assert.Equal("CPU Temp", vm.Tiles.Single().DisplayName);
+        vm.RenameTileEditCommand.Execute(new TileRenameEdit("cpu.temp", "   "));
+        Assert.Equal("Tctl", vm.Tiles.Single().DisplayName);
+        Assert.Null(s.TilePrefs["cpu.temp"].Name);
+    }
+
+    [Fact]
+    public void SetTileThresholdEditCommand_WritesOverride_RemovesWhenNull_SameAsSetTileThresholds()
+    {
+        var (vm, s, _, saves) = Make("cpu.temp");
+        vm.SetTileThresholdEditCommand.Execute(new TileThresholdEdit("cpu.temp", new ThresholdRule { Warn = 70f, Crit = 80f }));
+        Assert.Equal(80f, s.ThresholdOverrides["cpu.temp"].Crit);
+        vm.SetTileThresholdEditCommand.Execute(new TileThresholdEdit("cpu.temp", null));
+        Assert.False(s.ThresholdOverrides.ContainsKey("cpu.temp"));
+        Assert.Equal(2, saves());
+    }
+
+    [Fact]
+    public void RemoveTileCommand_UnchecksPickerAndDropsTile_SameAsRemoveTile()
+    {
+        var (vm, s, _, _) = Make("cpu.temp", "gpu.clock");
+        vm.RemoveTileCommand.Execute("cpu.temp");
+        Assert.False(vm.PickerItems.Single(p => p.Definition.Id == "cpu.temp").IsChecked);
+        Assert.DoesNotContain("cpu.temp", s.DashboardMetrics);
+        Assert.Single(vm.Tiles);
+    }
+
+    // ---- dashboard UI scale (v1.8 §11a) ----
+
+    [Fact]
+    public void UiScale_DefaultsToOne_AndIsSettableByCompositionRoot()
+    {
+        var (vm, _, _, _) = Make();
+        Assert.Equal(1.0, vm.UiScale);
+        vm.UiScale = 1.2;
+        Assert.Equal(1.2, vm.UiScale);
+    }
 }

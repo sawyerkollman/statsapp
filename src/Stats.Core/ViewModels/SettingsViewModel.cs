@@ -10,7 +10,7 @@ namespace Stats.Core.ViewModels;
 
 // No GameMode member: the game-mode controls live in the Fans window, which re-applies frame tracing through
 // FansViewModel.GameModeChanged. A member nothing raises only invites the next feature onto a dead channel.
-public enum SettingsChange { PollInterval, HistoryWindow, Thresholds, Limits, Overlay, Hotkey, CoreMatrix, Hardware, Updates, Theme, Alerts, Tray }
+public enum SettingsChange { PollInterval, HistoryWindow, Thresholds, Limits, Overlay, Hotkey, CoreMatrix, Hardware, Updates, Theme, Alerts, Tray, UiScale }
 
 /// <summary>One editable metric limit (PPT/TDC/EDC/GPU power). Empty text = no limit.</summary>
 public sealed partial class LimitItemViewModel : ObservableObject
@@ -79,6 +79,7 @@ public sealed partial class SettingsViewModel : ObservableObject
         _alertsEnabled = settings.AlertsEnabled;
         _alertHoldSeconds = settings.AlertHoldSeconds;
         _alertSoundEnabled = settings.AlertSoundEnabled;
+        _dashboardUiScale = settings.DashboardUiScale;
 
         foreach (var def in definitions.Where(IsLimitCandidate))
         {
@@ -160,6 +161,8 @@ public sealed partial class SettingsViewModel : ObservableObject
     [ObservableProperty] private bool _alertsEnabled;
     [ObservableProperty] private int _alertHoldSeconds;
     [ObservableProperty] private bool _alertSoundEnabled;
+    /// <summary>Dashboard-wide UI scale (see <see cref="AppSettings.DashboardUiScale"/>); clamped 0.9–1.3.</summary>
+    [ObservableProperty] private double _dashboardUiScale;
     /// <summary>Selected entry of <see cref="TrayMetricOptions"/>; the first entry (Id null) is "Auto".</summary>
     [ObservableProperty] private TrayMetricOption _selectedTrayMetric;
 
@@ -311,6 +314,15 @@ public sealed partial class SettingsViewModel : ObservableObject
         if (!_loaded) return;
         _s.TrayMetricId = value.Id;
         Raise(SettingsChange.Tray);
+    }
+
+    partial void OnDashboardUiScaleChanged(double value)
+    {
+        if (!_loaded) return;
+        var clamped = Math.Clamp(value, 0.9, 1.3);
+        if (clamped != value) { DashboardUiScale = clamped; return; } // re-enters with clamped
+        _s.DashboardUiScale = clamped;
+        Raise(SettingsChange.UiScale);
     }
 
     /// <summary>The checkbox is bound TwoWay, so a user click lands here first. Deliberately does not write to

@@ -83,6 +83,9 @@ public sealed partial class DashboardViewModel : ObservableObject
     [ObservableProperty] private string _pickerFilter = "";
     /// <summary>Set by the composition root once the SettingsViewModel exists; bound by the Settings tab.</summary>
     [ObservableProperty] private SettingsViewModel? _settingsPanel;
+    /// <summary>Dashboard-wide UI scale — set by the composition root (initial value, and again on every
+    /// <see cref="SettingsChange.UiScale"/>) and bound by <c>DashboardWindow</c>'s content-root LayoutTransform.</summary>
+    [ObservableProperty] private double _uiScale = 1.0;
 
     /// <summary>Dismissible "Gaming? Add FPS…" banner: shown while at least one Game-group metric was discovered,
     /// none of them is currently on the dashboard or overlay, and the user hasn't dismissed it before. Recomputed
@@ -291,6 +294,10 @@ public sealed partial class DashboardViewModel : ObservableObject
         DashboardMetricsChanged?.Invoke();
     }
 
+    /// <summary>Unchecks the picker item for <paramref name="id"/> — the picker's IsChecked handler persists,
+    /// rebuilds sections, and saves. Also a <see cref="RelayCommand"/> (see <see cref="RemoveTileCommand"/>) so
+    /// the tile context menu (right-click, hover "⋯" button, or Shift+F10/Apps key) can bind directly to it.</summary>
+    [RelayCommand]
     public void RemoveTile(string id)
     {
         var picker = PickerItems.FirstOrDefault(p => p.Definition.Id == id);
@@ -312,6 +319,19 @@ public sealed partial class DashboardViewModel : ObservableObject
         RefreshAll();
         _saveSettings();
     }
+
+    // ---- tile operation commands (v1.8 §7) ----
+    // Thin [RelayCommand] wrappers over the methods above — behavior is identical, the parameter records just
+    // pack (id, value) into a single argument so CommunityToolkit's generator can bind a command with one
+    // CommandParameter. DashboardWindow's context menu, hover "⋯" button, and keyboard menu all go through
+    // these; the plain methods above stay for direct callers (tests, drag-drop's MoveTile neighbour) so this
+    // promotion is zero-churn for existing call sites.
+
+    [RelayCommand] private void SetTileKindEdit(TileKindEdit edit) => SetTileKind(edit.Id, edit.Kind);
+    [RelayCommand] private void SetTileSizeEdit(TileSizeEdit edit) => SetTileSize(edit.Id, edit.Size);
+    [RelayCommand] private void SetTileMaxEdit(TileMaxEdit edit) => SetTileMax(edit.Id, edit.Max);
+    [RelayCommand] private void RenameTileEdit(TileRenameEdit edit) => RenameTile(edit.Id, edit.Name);
+    [RelayCommand] private void SetTileThresholdEdit(TileThresholdEdit edit) => SetTileThresholds(edit.Id, edit.Rule);
 
     private void AfterPrefChange()
     {
@@ -392,7 +412,9 @@ public sealed partial class DashboardViewModel : ObservableObject
         static bool Add(List<string> list, string v) { list.Add(v); return true; }
     }
 
-    private MetricGroup? GroupOf(string id) => _store.TryGet(id, out _) ? _store.Definitions.First(d => d.Id == id).Group : null;
+    /// <summary>Resolves a metric id's group, or null when unknown — public so <c>DashboardWindow</c>'s
+    /// Tile_DragOver can decide the no-drop cursor without re-implementing the lookup.</summary>
+    public MetricGroup? GroupOf(string id) => _store.TryGet(id, out _) ? _store.Definitions.First(d => d.Id == id).Group : null;
 
     private string FriendlyName(MetricDefinition def) =>
         _settings.TilePrefs.TryGetValue(def.Id, out var p) && !string.IsNullOrWhiteSpace(p.Name) ? p.Name! : def.DisplayName;

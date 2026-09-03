@@ -217,6 +217,26 @@ public class SettingsViewModelTests
     }
 
     [Fact]
+    public void DashboardUiScale_WritesThroughAndRaisesUiScale()
+    {
+        var (vm, s, changes, _) = Make();
+        vm.DashboardUiScale = 1.2;
+        Assert.Equal(1.2, s.DashboardUiScale);
+        Assert.Equal(1, changes.Count(c => c == SettingsChange.UiScale));
+    }
+
+    [Theory]
+    [InlineData(0.5, 0.9)]
+    [InlineData(2.0, 1.3)]
+    public void DashboardUiScale_ClampsOutOfRange(double set, double expected)
+    {
+        var (vm, s, _, _) = Make();
+        vm.DashboardUiScale = set;
+        Assert.Equal(expected, vm.DashboardUiScale);
+        Assert.Equal(expected, s.DashboardUiScale);
+    }
+
+    [Fact]
     public void Hotkey_ValidNormalizes_InvalidFlagged_EmptyDisables()
     {
         var (vm, s, changes, _) = Make();
