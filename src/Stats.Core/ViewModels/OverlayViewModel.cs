@@ -37,18 +37,21 @@ public sealed partial class OverlayViewModel : ObservableObject
     public void Rebuild()
     {
         Tiles.Clear();
+        var thresholds = ThresholdIndex.Build(_settings);
         var selected = _settings.OverlayMetrics.ToHashSet();
         foreach (var def in _store.Definitions.Where(d => selected.Contains(d.Id)))
         {
             var tile = new MetricTileViewModel(def, _store[def.Id], _settings);
-            tile.Refresh();
+            tile.Refresh(thresholds);
             Tiles.Add(tile);
         }
     }
 
     public void RefreshAll()
     {
-        foreach (var tile in Tiles) tile.Refresh();
+        // Built once per batch, not per tile — see DashboardViewModel.RefreshAll / v1.8 §10 "Cheap extras".
+        var thresholds = ThresholdIndex.Build(_settings);
+        foreach (var tile in Tiles) tile.Refresh(thresholds);
     }
 
     /// <summary>Nudges every overlay tile's Severity-bound Foreground to re-evaluate after a live theme switch —

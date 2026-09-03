@@ -9,6 +9,15 @@ public sealed partial class MetricTileViewModel : ObservableObject
 {
     private readonly MetricHistory _history;
     private readonly AppSettings _settings;
+    // Two alternating buffers for HistoryValues (v1.8 §10 "History arrays"): once the ring buffer is full every
+    // CopyTo(reuse) call writes into the *other* slot's same-length array, so HistoryValues changes reference
+    // every Refresh (WPF's binding sees a change) with zero steady-state allocation. Sparkline/HistoryChart never
+    // hold onto an old array past the Refresh that swaps it out — they re-read the Values DP fresh in every
+    // OnRender/OnMouseMove call — so mutating the idle buffer one tick later can never corrupt what either
+    // control is currently drawing or reporting on hover.
+    private float[]? _historyBufferA;
+    private float[]? _historyBufferB;
+    private bool _nextIsBufferA = true;
 
     public MetricTileViewModel(MetricDefinition definition, MetricHistory history, AppSettings settings)
     {
@@ -42,7 +51,12 @@ public sealed partial class MetricTileViewModel : ObservableObject
     /// (e.g. "Tctl, 72.0 °C, Normal"), bound to AutomationProperties.Name in the tile templates.</summary>
     [ObservableProperty] private string _automationLabel = "";
 
-    public void Refresh()
+    /// <summary>Recomputes every displayed field from the current <see cref="MetricHistory"/>/settings.
+    /// <paramref name="thresholds"/>, when supplied, is a pre-built (Group, Unit) index the caller (typically
+    /// <c>DashboardViewModel</c>/<c>OverlayViewModel</c>.RefreshAll, built once per batch — see v1.8 §10 "Cheap
+    /// extras") uses instead of a per-tile <see cref="ThresholdEvaluator"/> rule scan; omitting it (as every
+    /// existing direct/test caller does) falls back to that scan, with identical results.</summary>
+    public void Refresh(ThresholdIndex? thresholds = null)
     {
         _settings.TilePrefs.TryGetValue(Definition.Id, out var pref);
 
@@ -59,7 +73,7 @@ public sealed partial class MetricTileViewModel : ObservableObject
 
         var current = _history.Current;
         CurrentText = ValueFormatter.Format(Definition, current);
-        Severity = ThresholdEvaluator.Evaluate(Definition, current, _settings);
+        Severity = thresholds is not null ? thresholds.Evaluate(Definition, current) : ThresholdEvaluator.Evaluate(Definition, current, _settings);
         Fraction01 = current is float c && Max is float m && m > 0 ? Math.Clamp(c / m, 0f, 1f) : 0f;
         MaxText = Max is float mx ? ValueFormatter.Format(Definition, mx) : "";
         MinMaxText = float.IsNaN(_history.SessionMin)
@@ -68,7 +82,7 @@ public sealed partial class MetricTileViewModel : ObservableObject
         LimitText = limit is float lim && current is float cur
             ? string.Create(CultureInfo.InvariantCulture, $"{cur / lim * 100:F0}% of {ValueFormatter.Format(Definition, lim)}")
             : "";
-        HistoryValues = _history.ToArray();
+        HistoryValues = NextHistoryBuffer();
         // The requested window can be clamped (HistoryCapacity.Compute) to fit the [30, 3600]-sample buffer, so
         // the tag reports what the buffer actually covers — capacity × current poll interval — not the request.
         HistoryWindowTag = HistoryCapacity.FormatWindow(_history.Capacity * _settings.PollIntervalSeconds);
@@ -82,6 +96,19 @@ public sealed partial class MetricTileViewModel : ObservableObject
     /// Fill Bindings that route through SeverityToBrushConverter re-evaluate and pick up the new brush instance.
     /// Called from the composition root (App), never from Core itself, which stays WPF-free.</summary>
     public void RaiseSeverityRefresh() => OnPropertyChanged(nameof(Severity));
+
+    /// <summary>Copies the current history into whichever of the two buffers is next in rotation, reusing it when
+    /// its length still matches (steady state, buffer full) and allocating otherwise (warm-up, or a Resize). Never
+    /// returns the same array instance on two consecutive calls, so binding HistoryValues to the result always
+    /// raises PropertyChanged with a new reference.</summary>
+    private float[] NextHistoryBuffer()
+    {
+        var reuse = _nextIsBufferA ? _historyBufferA : _historyBufferB;
+        var buffer = _history.CopyTo(reuse);
+        if (_nextIsBufferA) _historyBufferA = buffer; else _historyBufferB = buffer;
+        _nextIsBufferA = !_nextIsBufferA;
+        return buffer;
+    }
 
     private TileKind ResolveKind(TileKind preferred, float? explicitMax)
     {

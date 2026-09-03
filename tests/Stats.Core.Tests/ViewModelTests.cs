@@ -249,4 +249,80 @@ public class ViewModelTests
         vm.ApplyLayout();
         Assert.Equal(OverlayOrientation.Horizontal, vm.Orientation);
     }
+
+    [Fact]
+    public void Overlay_RefreshAll_UsesThresholdIndex_SameSeverityAsDirectEvaluator()
+    {
+        var store = NewStore();
+        var settings = new AppSettings { OverlayMetrics = { "cpu.temp" }, ThresholdRules = ThresholdDefaults.Rules() };
+        Push(store, 93f, 70f, 2400f);
+        var vm = new OverlayViewModel(store, settings);
+        vm.RefreshAll();
+        Assert.Equal(Severity.Crit, vm.Tiles.Single().Severity);
+    }
+
+    // ---- history double-buffer (v1.8 §10 "History arrays") ----
+
+    [Fact]
+    public void Tile_HistoryValues_AlternatesReference_NeverSameTwiceInARow_OnceBufferIsFull()
+    {
+        var history = new MetricHistory(3);
+        var s = new AppSettings();
+        var tile = new MetricTileViewModel(CpuTemp, history, s);
+
+        history.Add(1f); history.Add(2f); history.Add(3f); // fills the 3-slot ring buffer
+        tile.Refresh();
+        var first = tile.HistoryValues;
+        history.Add(4f);
+        tile.Refresh();
+        var second = tile.HistoryValues;
+        history.Add(5f);
+        tile.Refresh();
+        var third = tile.HistoryValues;
+
+        Assert.NotSame(first, second);
+        Assert.NotSame(second, third);
+        Assert.Same(first, third); // alternates back to the same slot every other refresh
+        Assert.Equal(new[] { 2f, 3f, 4f }, second);
+        Assert.Equal(new[] { 3f, 4f, 5f }, third);
+    }
+
+    [Fact]
+    public void Tile_HistoryValues_ContentAlwaysMatchesHistory_EvenDuringWarmup()
+    {
+        var history = new MetricHistory(5);
+        var tile = new MetricTileViewModel(CpuTemp, history, new AppSettings());
+
+        history.Add(1f);
+        tile.Refresh();
+        Assert.Equal(new[] { 1f }, tile.HistoryValues);
+
+        history.Add(2f);
+        tile.Refresh();
+        Assert.Equal(new[] { 1f, 2f }, tile.HistoryValues);
+    }
+
+    // ---- picker CurrentText no-op (v1.8 §10 "Cheap extras") ----
+
+    [Fact]
+    public void Picker_CurrentText_UnchangedValue_DoesNotRaisePropertyChanged()
+    {
+        var store = NewStore();
+        Push(store, 55f, 70f, 2400f);
+        var settings = new AppSettings { DashboardMetrics = { "cpu.temp" } };
+        var vm = new DashboardViewModel(store, settings, () => { });
+        vm.IsPickerOpen = true;
+        vm.RefreshAll(); // sets CurrentText the first time ("55.0 °C")
+
+        var item = vm.PickerItems.Single(p => p.Definition.Id == "cpu.temp");
+        int raised = 0;
+        item.PropertyChanged += (_, e) => { if (e.PropertyName == nameof(MetricPickerItem.CurrentText)) raised++; };
+
+        vm.RefreshAll(); // same reading again — CurrentText string is identical
+        Assert.Equal(0, raised);
+
+        Push(store, 60f, 70f, 2400f);
+        vm.RefreshAll(); // a genuinely new reading still raises it
+        Assert.Equal(1, raised);
+    }
 }

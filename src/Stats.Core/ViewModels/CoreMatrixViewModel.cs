@@ -74,7 +74,10 @@ public sealed class CoreMatrixViewModel
     public bool HasCores => Cells.Count > 0;
     public int Columns { get; }
 
-    public void Refresh()
+    /// <summary><paramref name="thresholds"/>, when supplied, avoids a per-cell threshold-rule scan the same way
+    /// <see cref="MetricTileViewModel.Refresh"/>'s does — see v1.8 §10 "Cheap extras". Omitting it falls back to
+    /// <see cref="ThresholdEvaluator"/> directly, with identical results.</summary>
+    public void Refresh(ThresholdIndex? thresholds = null)
     {
         foreach (var (cell, src) in _map)
         {
@@ -93,12 +96,15 @@ public sealed class CoreMatrixViewModel
             {
                 var t = _store[src.Temp.Id].Current;
                 cell.TempText = ValueFormatter.Format(src.Temp, t);
-                cell.Severity = ThresholdEvaluator.Evaluate(src.Temp, t, _settings);
+                cell.Severity = Evaluate(thresholds, src.Temp, t);
             }
             if (src.Temp is null && src.Loads.Count > 0)
-                cell.Severity = ThresholdEvaluator.Evaluate(src.Loads[0], loads.Count > 0 ? loads.Average() : null, _settings);
+                cell.Severity = Evaluate(thresholds, src.Loads[0], loads.Count > 0 ? loads.Average() : null);
         }
     }
+
+    private Severity Evaluate(ThresholdIndex? thresholds, MetricDefinition def, float? value) =>
+        thresholds is not null ? thresholds.Evaluate(def, value) : ThresholdEvaluator.Evaluate(def, value, _settings);
 
     /// <summary>Nudges every cell's Severity-bound Foreground to re-evaluate after a live theme switch — see
     /// MetricTileViewModel.RaiseSeverityRefresh.</summary>

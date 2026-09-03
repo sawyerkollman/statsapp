@@ -189,12 +189,18 @@ public sealed partial class DashboardViewModel : ObservableObject
 
     public void RefreshAll()
     {
-        foreach (var tile in Tiles) tile.Refresh();
-        CoreMatrix?.Refresh();
+        // Built once per batch rather than once per tile (v1.8 §10 "Cheap extras") — every tile/matrix cell below
+        // looks up its governing rule in O(1) instead of scanning ThresholdRules itself.
+        var thresholds = ThresholdIndex.Build(_settings);
+        foreach (var tile in Tiles) tile.Refresh(thresholds);
+        CoreMatrix?.Refresh(thresholds);
         if (IsPickerOpen)
         {
             foreach (var item in PickerItems)
-                item.CurrentText = ValueFormatter.Format(item.Definition, _store[item.Definition.Id].Current);
+            {
+                var text = ValueFormatter.Format(item.Definition, _store[item.Definition.Id].Current);
+                if (item.CurrentText != text) item.CurrentText = text; // skip the no-op PropertyChanged
+            }
         }
     }
 
@@ -373,9 +379,11 @@ public sealed partial class DashboardViewModel : ObservableObject
         Tiles.Clear();
         Sections.Clear();
 
+        var thresholds = ThresholdIndex.Build(_settings);
+
         CoreMatrix = _settings.ShowCoreMatrix ? new CoreMatrixViewModel(_store, _settings) : null;
         if (CoreMatrix is { HasCores: false }) CoreMatrix = null;
-        CoreMatrix?.Refresh();
+        CoreMatrix?.Refresh(thresholds);
 
         var ordered = _settings.DashboardMetrics.Where(id => _store.TryGet(id, out _)).ToList();
         var defsById = _store.Definitions.ToDictionary(d => d.Id);
@@ -394,7 +402,7 @@ public sealed partial class DashboardViewModel : ObservableObject
             foreach (var id in ids)
             {
                 var tile = new MetricTileViewModel(defsById[id], _store[id], _settings);
-                tile.Refresh();
+                tile.Refresh(thresholds);
                 section.Tiles.Add(tile);
                 Tiles.Add(tile);
             }

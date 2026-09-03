@@ -14,6 +14,12 @@ public sealed partial class MetricDetailViewModel : ObservableObject
     private MetricDefinition _definition;
     private MetricHistory _history;
     private readonly AppSettings _settings;
+    // Same alternating-buffer scheme as MetricTileViewModel.HistoryValues (v1.8 §10) — safe for the same reason:
+    // HistoryChart re-reads the Values DP fresh in every OnRender/OnMouseMove, never holding an old array past
+    // the Refresh that swaps it out.
+    private float[]? _valuesBufferA;
+    private float[]? _valuesBufferB;
+    private bool _nextIsBufferA = true;
 
     public MetricDetailViewModel(MetricDefinition definition, MetricHistory history, AppSettings settings)
     {
@@ -54,6 +60,16 @@ public sealed partial class MetricDetailViewModel : ObservableObject
     /// itself.</summary>
     public void RaiseSeverityRefresh() => OnPropertyChanged(nameof(Severity));
 
+    /// <summary>See MetricTileViewModel.NextHistoryBuffer — same alternating-buffer scheme for Values.</summary>
+    private float[] NextValuesBuffer()
+    {
+        var reuse = _nextIsBufferA ? _valuesBufferA : _valuesBufferB;
+        var buffer = _history.CopyTo(reuse);
+        if (_nextIsBufferA) _valuesBufferA = buffer; else _valuesBufferB = buffer;
+        _nextIsBufferA = !_nextIsBufferA;
+        return buffer;
+    }
+
     /// <summary>Re-pulls everything from the (possibly just-updated) MetricHistory. Called once at construction
     /// and again by the composition root on every dashboard refresh while the window is visible.</summary>
     public void Refresh()
@@ -67,7 +83,7 @@ public sealed partial class MetricDetailViewModel : ObservableObject
         AvgText = ValueFormatter.Format(_definition, float.IsNaN(_history.SessionAvg) ? null : _history.SessionAvg);
         MaxText = ValueFormatter.Format(_definition, float.IsNaN(_history.SessionMax) ? null : _history.SessionMax);
 
-        Values = _history.ToArray();
+        Values = NextValuesBuffer();
         SecondsPerSample = _settings.PollIntervalSeconds;
 
         var rule = _settings.ThresholdOverrides.TryGetValue(_definition.Id, out var o)

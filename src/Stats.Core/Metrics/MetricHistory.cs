@@ -46,10 +46,17 @@ public sealed class MetricHistory
         if (float.IsNaN(SessionMax) || v > SessionMax) { SessionMax = v; SessionMaxAtUtc = timestampUtc; }
     }
 
-    /// <summary>Buffered samples, oldest first.</summary>
-    public float[] ToArray()
+    /// <summary>Buffered samples, oldest first. Always allocates — callers that refresh every tick and want to
+    /// avoid steady-state allocation should use <see cref="CopyTo"/> instead.</summary>
+    public float[] ToArray() => CopyTo(null);
+
+    /// <summary>Buffered samples, oldest first, written into <paramref name="reuse"/> when its length already
+    /// matches the current sample count (a fresh array is allocated otherwise — capacity not yet reached, just
+    /// resized, or <paramref name="reuse"/> is null). Content is identical to <see cref="ToArray"/>, NaN gaps
+    /// included.</summary>
+    public float[] CopyTo(float[]? reuse)
     {
-        var result = new float[_count];
+        var result = reuse is not null && reuse.Length == _count ? reuse : new float[_count];
         int start = (_next - _count + _buffer.Length) % _buffer.Length;
         for (int i = 0; i < _count; i++)
             result[i] = _buffer[(start + i) % _buffer.Length];

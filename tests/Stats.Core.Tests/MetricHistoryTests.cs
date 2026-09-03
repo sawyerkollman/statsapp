@@ -184,6 +184,69 @@ public class MetricHistoryTests
         Assert.Equal(30f, h.SessionMin);
     }
 
+    [Fact]
+    public void CopyTo_PartialBuffer_MatchesToArray()
+    {
+        var h = new MetricHistory(5);
+        h.Add(1f); h.Add(null); h.Add(3f);
+        Assert.Equal(h.ToArray(), h.CopyTo(null));
+    }
+
+    [Fact]
+    public void CopyTo_WrappedBuffer_MatchesToArray()
+    {
+        var h = new MetricHistory(3);
+        h.Add(1f); h.Add(2f); h.Add(3f); h.Add(4f); h.Add(null); // wraps past capacity, includes a gap
+        Assert.Equal(h.ToArray(), h.CopyTo(null));
+    }
+
+    [Fact]
+    public void CopyTo_ReuseSameLength_ReturnsSameInstance_WithFreshContent()
+    {
+        var h = new MetricHistory(3);
+        h.Add(1f); h.Add(2f); h.Add(3f);
+        var reuse = new float[3];
+        var result = h.CopyTo(reuse);
+        Assert.Same(reuse, result);
+        Assert.Equal(new[] { 1f, 2f, 3f }, result);
+
+        h.Add(4f); // buffer full — still 3 samples, so a same-length reuse array is reused again
+        var second = h.CopyTo(reuse);
+        Assert.Same(reuse, second);
+        Assert.Equal(new[] { 2f, 3f, 4f }, second);
+    }
+
+    [Fact]
+    public void CopyTo_ReuseWrongLength_AllocatesNewArray()
+    {
+        var h = new MetricHistory(5);
+        h.Add(1f); h.Add(2f); h.Add(3f);
+        var reuse = new float[2]; // wrong length for 3 buffered samples
+        var result = h.CopyTo(reuse);
+        Assert.NotSame(reuse, result);
+        Assert.Equal(new[] { 1f, 2f, 3f }, result);
+    }
+
+    [Fact]
+    public void CopyTo_NullReuse_Allocates()
+    {
+        var h = new MetricHistory(4);
+        h.Add(1f); h.Add(2f);
+        var result = h.CopyTo(null);
+        Assert.Equal(new[] { 1f, 2f }, result);
+    }
+
+    [Fact]
+    public void CopyTo_PreservesNaNGaps()
+    {
+        var h = new MetricHistory(4);
+        h.Add(1f); h.Add(null); h.Add(float.NaN);
+        var result = h.CopyTo(null);
+        Assert.Equal(1f, result[0]);
+        Assert.True(float.IsNaN(result[1]));
+        Assert.True(float.IsNaN(result[2]));
+    }
+
     [Theory]
     [InlineData(2, 1.0, 120)]
     [InlineData(60, 1.0, 3600)]
