@@ -12,6 +12,8 @@ public class MetricHistoryTests
         Assert.True(float.IsNaN(h.SessionMin));
         Assert.True(float.IsNaN(h.SessionMax));
         Assert.True(float.IsNaN(h.SessionAvg));
+        Assert.Null(h.SessionMinAtUtc);
+        Assert.Null(h.SessionMaxAtUtc);
         Assert.Empty(h.ToArray());
     }
 
@@ -40,7 +42,7 @@ public class MetricHistoryTests
     }
 
     [Fact]
-    public void Add_Null_SetsCurrentNull_DoesNotPolluteStatsOrBuffer()
+    public void Add_Null_AdvancesBufferWithNaNSlot_StatsUnaffected()
     {
         var h = new MetricHistory(4);
         h.Add(5f);
@@ -48,16 +50,100 @@ public class MetricHistoryTests
         Assert.Null(h.Current);
         Assert.Equal(5f, h.SessionMin);
         Assert.Equal(5f, h.SessionMax);
-        Assert.Equal(new[] { 5f }, h.ToArray());
+        var arr = h.ToArray();
+        Assert.Equal(2, arr.Length); // the gap still occupies a slot — x stays uniform in time
+        Assert.Equal(5f, arr[0]);
+        Assert.True(float.IsNaN(arr[1]));
     }
 
     [Fact]
-    public void Add_NaN_TreatedAsGap()
+    public void Add_NaN_TreatedAsGap_AdvancesBufferWithNaNSlot()
     {
         var h = new MetricHistory(4);
         h.Add(float.NaN);
+        Assert.Null(h.Current);
         Assert.True(float.IsNaN(h.SessionMin));
-        Assert.Empty(h.ToArray());
+        Assert.True(float.IsNaN(h.SessionMax));
+        var arr = h.ToArray();
+        Assert.Single(arr);
+        Assert.True(float.IsNaN(arr[0]));
+    }
+
+    [Fact]
+    public void Add_MultipleGaps_EachOccupiesOwnSlot_SessionStatsIgnoreThem()
+    {
+        var h = new MetricHistory(5);
+        h.Add(1f);
+        h.Add(null);
+        h.Add(float.NaN);
+        h.Add(2f);
+        var arr = h.ToArray();
+        Assert.Equal(new[] { 1f, float.NaN, float.NaN, 2f }, arr);
+        Assert.Equal(1f, h.SessionMin);
+        Assert.Equal(2f, h.SessionMax);
+        Assert.Equal(1.5f, h.SessionAvg);
+    }
+
+    [Fact]
+    public void Resize_PreservesNaNSlots()
+    {
+        var h = new MetricHistory(4);
+        h.Add(1f); h.Add(null); h.Add(3f);
+        h.Resize(5);
+        var arr = h.ToArray();
+        Assert.Equal(new[] { 1f, float.NaN, 3f }, arr);
+        Assert.Equal(1f, h.SessionMin); // session stats unaffected by the gap or the resize
+        Assert.Equal(3f, h.SessionMax);
+    }
+
+    [Fact]
+    public void Add_WithTimestamp_SetsSessionMinMaxAtUtc_OnlyForRealValues()
+    {
+        var h = new MetricHistory(4);
+        var t1 = new DateTime(2026, 1, 1, 10, 0, 0, DateTimeKind.Utc);
+        var t2 = t1.AddSeconds(5);
+        var t3 = t2.AddSeconds(5);
+        h.Add(10f, t1);
+        h.Add(20f, t2);
+        h.Add(null, t3); // gap must not move either timestamp
+        Assert.Equal(t1, h.SessionMinAtUtc);
+        Assert.Equal(t2, h.SessionMaxAtUtc);
+    }
+
+    [Fact]
+    public void Add_NewMinOrMax_UpdatesItsOwnTimestampOnly()
+    {
+        var h = new MetricHistory(4);
+        var t1 = new DateTime(2026, 1, 1, 10, 0, 0, DateTimeKind.Utc);
+        var t2 = t1.AddSeconds(5);
+        h.Add(20f, t1); // first sample sets both min and max at t1
+        h.Add(5f, t2);  // new min at t2; max (still 20) keeps its original timestamp
+        Assert.Equal(t2, h.SessionMinAtUtc);
+        Assert.Equal(t1, h.SessionMaxAtUtc);
+    }
+
+    [Fact]
+    public void ResetSession_ClearsSessionMinMaxAtUtc()
+    {
+        var h = new MetricHistory(4);
+        h.Add(10f, DateTime.UtcNow);
+        h.ResetSession();
+        Assert.Null(h.SessionMinAtUtc);
+        Assert.Null(h.SessionMaxAtUtc);
+        h.Add(30f, DateTime.UtcNow);
+        Assert.NotNull(h.SessionMinAtUtc);
+        Assert.NotNull(h.SessionMaxAtUtc);
+    }
+
+    [Fact]
+    public void Add_WithoutExplicitTimestamp_DefaultsToUtcNow()
+    {
+        var before = DateTime.UtcNow;
+        var h = new MetricHistory(4);
+        h.Add(10f);
+        var after = DateTime.UtcNow;
+        Assert.NotNull(h.SessionMinAtUtc);
+        Assert.InRange(h.SessionMinAtUtc!.Value, before, after);
     }
 
     [Fact]
@@ -96,6 +182,69 @@ public class MetricHistoryTests
         Assert.Equal(20f, h.Current);
         h.Add(30f);
         Assert.Equal(30f, h.SessionMin);
+    }
+
+    [Fact]
+    public void CopyTo_PartialBuffer_MatchesToArray()
+    {
+        var h = new MetricHistory(5);
+        h.Add(1f); h.Add(null); h.Add(3f);
+        Assert.Equal(h.ToArray(), h.CopyTo(null));
+    }
+
+    [Fact]
+    public void CopyTo_WrappedBuffer_MatchesToArray()
+    {
+        var h = new MetricHistory(3);
+        h.Add(1f); h.Add(2f); h.Add(3f); h.Add(4f); h.Add(null); // wraps past capacity, includes a gap
+        Assert.Equal(h.ToArray(), h.CopyTo(null));
+    }
+
+    [Fact]
+    public void CopyTo_ReuseSameLength_ReturnsSameInstance_WithFreshContent()
+    {
+        var h = new MetricHistory(3);
+        h.Add(1f); h.Add(2f); h.Add(3f);
+        var reuse = new float[3];
+        var result = h.CopyTo(reuse);
+        Assert.Same(reuse, result);
+        Assert.Equal(new[] { 1f, 2f, 3f }, result);
+
+        h.Add(4f); // buffer full — still 3 samples, so a same-length reuse array is reused again
+        var second = h.CopyTo(reuse);
+        Assert.Same(reuse, second);
+        Assert.Equal(new[] { 2f, 3f, 4f }, second);
+    }
+
+    [Fact]
+    public void CopyTo_ReuseWrongLength_AllocatesNewArray()
+    {
+        var h = new MetricHistory(5);
+        h.Add(1f); h.Add(2f); h.Add(3f);
+        var reuse = new float[2]; // wrong length for 3 buffered samples
+        var result = h.CopyTo(reuse);
+        Assert.NotSame(reuse, result);
+        Assert.Equal(new[] { 1f, 2f, 3f }, result);
+    }
+
+    [Fact]
+    public void CopyTo_NullReuse_Allocates()
+    {
+        var h = new MetricHistory(4);
+        h.Add(1f); h.Add(2f);
+        var result = h.CopyTo(null);
+        Assert.Equal(new[] { 1f, 2f }, result);
+    }
+
+    [Fact]
+    public void CopyTo_PreservesNaNGaps()
+    {
+        var h = new MetricHistory(4);
+        h.Add(1f); h.Add(null); h.Add(float.NaN);
+        var result = h.CopyTo(null);
+        Assert.Equal(1f, result[0]);
+        Assert.True(float.IsNaN(result[1]));
+        Assert.True(float.IsNaN(result[2]));
     }
 
     [Theory]

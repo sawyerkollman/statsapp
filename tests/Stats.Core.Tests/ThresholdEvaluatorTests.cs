@@ -71,6 +71,50 @@ public class ThresholdEvaluatorTests
         Assert.Equal(n, rules.Count); // idempotent
     }
 
+    [Fact]
+    public void Defaults_ContainMotherboardRule()
+    {
+        var r = ThresholdDefaults.Rules().Single(x => x.Group == MetricGroup.Motherboard && x.Unit == "°C");
+        Assert.False(r.LowerIsWorse);
+        Assert.Equal(80f, r.Warn);
+        Assert.Equal(95f, r.Crit);
+    }
+
+    [Fact]
+    public void EnsureDefaults_OldFileWithoutMotherboardRule_GainsIt()
+    {
+        // Simulates a pre-v1.8 settings.json: no Motherboard rule at all.
+        var rules = new List<ThresholdRule>
+        {
+            new() { Group = MetricGroup.Cpu, Unit = "°C", Warn = 85, Crit = 92 },
+            new() { Group = MetricGroup.Gpu, Unit = "°C", Warn = 80, Crit = 88 },
+            new() { Group = MetricGroup.Cpu, Unit = "%", Warn = 90, Crit = 98 },
+            new() { Group = MetricGroup.Gpu, Unit = "%", Warn = 90, Crit = 98 },
+        };
+        ThresholdDefaults.EnsureDefaults(rules);
+        var mobo = rules.Single(r => r.Group == MetricGroup.Motherboard && r.Unit == "°C");
+        Assert.Equal(80f, mobo.Warn);
+        Assert.Equal(95f, mobo.Crit);
+    }
+
+    [Fact]
+    public void Evaluate_WarnEqualsCrit_RuleIsInactive_Normal()
+    {
+        // A freshly "Add rule…"-ed rule seeds Warn = Crit = 0; without this guard every non-negative reading
+        // (i.e. almost every reading) would immediately show Crit before the user ever sets real thresholds.
+        var mobo = new MetricDefinition("mobo.temp", "Motherboard", MetricGroup.Motherboard, "Board", "°C", "F1");
+        var s = new AppSettings { ThresholdRules = { new ThresholdRule { Group = MetricGroup.Motherboard, Unit = "°C", Warn = 0, Crit = 0 } } };
+        Assert.Equal(Severity.Normal, ThresholdEvaluator.Evaluate(mobo, 0f, s));
+        Assert.Equal(Severity.Normal, ThresholdEvaluator.Evaluate(mobo, 50f, s));
+        Assert.Equal(Severity.Normal, ThresholdEvaluator.Evaluate(mobo, 500f, s));
+
+        // Also inactive for a lower-is-worse 0/0 rule (e.g. fps seeded blank).
+        var fps = new MetricDefinition("fps.avg", "FPS", MetricGroup.Game, "Foreground app", "fps", "F0");
+        var s2 = new AppSettings { ThresholdRules = { new ThresholdRule { Group = MetricGroup.Game, Unit = "fps", Warn = 0, Crit = 0, LowerIsWorse = true } } };
+        Assert.Equal(Severity.Normal, ThresholdEvaluator.Evaluate(fps, 0f, s2));
+        Assert.Equal(Severity.Normal, ThresholdEvaluator.Evaluate(fps, 100f, s2));
+    }
+
     private static readonly MetricDefinition FpsLow = new("fps.low1", "1% Low FPS", MetricGroup.Game, "Foreground app", "fps", "F0");
 
     [Fact]

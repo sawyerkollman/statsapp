@@ -11,7 +11,9 @@ namespace Stats.Core.ViewModels;
 
 public sealed partial class DashboardViewModel : ObservableObject
 {
-    private static readonly MetricGroup[] GroupOrder =
+    /// <summary>Public so <see cref="SettingsViewModel"/> can order its threshold rule grid and "Add rule…"
+    /// picker the same way the dashboard groups tiles.</summary>
+    public static readonly MetricGroup[] GroupOrder =
         { MetricGroup.Cpu, MetricGroup.Gpu, MetricGroup.Memory, MetricGroup.Storage, MetricGroup.Network, MetricGroup.Game, MetricGroup.Motherboard, MetricGroup.Cooler };
 
     /// <summary>Consecutive unhealthy reads required before the runtime sensor-failure banner is shown; a single
@@ -52,6 +54,9 @@ public sealed partial class DashboardViewModel : ObservableObject
     public event Action? OverlayToggleRequested;
     public event Action? OpenPeaksRequested;
     public event Action? OpenFansRequested;
+    /// <summary>A tile's double-click or "Details…" menu item was activated, carrying the metric id. The
+    /// composition root owns the single retargetable MetricDetailWindow (see App.ShowMetricDetail).</summary>
+    public event Action<string>? OpenTileDetailRequested;
     /// <summary>Dashboard selection or order changed (picker, move, remove).</summary>
     public event Action? DashboardMetricsChanged;
     /// <summary>Update now was clicked. All process/file/network work for the actual download + install happens
@@ -78,6 +83,29 @@ public sealed partial class DashboardViewModel : ObservableObject
     [ObservableProperty] private string _pickerFilter = "";
     /// <summary>Set by the composition root once the SettingsViewModel exists; bound by the Settings tab.</summary>
     [ObservableProperty] private SettingsViewModel? _settingsPanel;
+    /// <summary>Dashboard-wide UI scale — set by the composition root (initial value, and again on every
+    /// <see cref="SettingsChange.UiScale"/>) and bound by <c>DashboardWindow</c>'s content-root LayoutTransform.</summary>
+    [ObservableProperty] private double _uiScale = 1.0;
+
+    /// <summary>Dismissible "Gaming? Add FPS…" banner: shown while at least one Game-group metric was discovered,
+    /// none of them is currently on the dashboard or overlay, and the user hasn't dismissed it before. Recomputed
+    /// (via <see cref="RaiseFpsHintChanged"/>) on <see cref="RebuildSections"/> and overlay selection changes —
+    /// see <see cref="OnPickerItemChanged"/>.</summary>
+    public bool ShowFpsHint =>
+        !_settings.FpsHintDismissed
+        && _store.Definitions.Any(d => d.Group == MetricGroup.Game)
+        && !_store.Definitions.Where(d => d.Group == MetricGroup.Game)
+            .Any(d => _settings.DashboardMetrics.Contains(d.Id) || _settings.OverlayMetrics.Contains(d.Id));
+
+    [RelayCommand]
+    private void DismissFpsHint()
+    {
+        _settings.FpsHintDismissed = true;
+        RaiseFpsHintChanged();
+        _saveSettings();
+    }
+
+    private void RaiseFpsHintChanged() => OnPropertyChanged(nameof(ShowFpsHint));
 
     // ---- update banner ----
     private UpdateInfo? _pendingUpdate;
@@ -161,12 +189,18 @@ public sealed partial class DashboardViewModel : ObservableObject
 
     public void RefreshAll()
     {
-        foreach (var tile in Tiles) tile.Refresh();
-        CoreMatrix?.Refresh();
+        // Built once per batch rather than once per tile (v1.8 §10 "Cheap extras") — every tile/matrix cell below
+        // looks up its governing rule in O(1) instead of scanning ThresholdRules itself.
+        var thresholds = ThresholdIndex.Build(_settings);
+        foreach (var tile in Tiles) tile.Refresh(thresholds);
+        CoreMatrix?.Refresh(thresholds);
         if (IsPickerOpen)
         {
             foreach (var item in PickerItems)
-                item.CurrentText = ValueFormatter.Format(item.Definition, _store[item.Definition.Id].Current);
+            {
+                var text = ValueFormatter.Format(item.Definition, _store[item.Definition.Id].Current);
+                if (item.CurrentText != text) item.CurrentText = text; // skip the no-op PropertyChanged
+            }
         }
     }
 
@@ -230,6 +264,7 @@ public sealed partial class DashboardViewModel : ObservableObject
                 _settings.OverlayMetrics.Add(item.Definition.Id);
             else if (!item.IsOnOverlay)
                 _settings.OverlayMetrics.Remove(item.Definition.Id);
+            RaiseFpsHintChanged();
             OverlayMetricsChanged?.Invoke();
             _saveSettings();
         }
@@ -265,25 +300,44 @@ public sealed partial class DashboardViewModel : ObservableObject
         DashboardMetricsChanged?.Invoke();
     }
 
+    /// <summary>Unchecks the picker item for <paramref name="id"/> — the picker's IsChecked handler persists,
+    /// rebuilds sections, and saves. Also a <see cref="RelayCommand"/> (see <see cref="RemoveTileCommand"/>) so
+    /// the tile context menu (right-click, hover "⋯" button, or Shift+F10/Apps key) can bind directly to it.</summary>
+    [RelayCommand]
     public void RemoveTile(string id)
     {
         var picker = PickerItems.FirstOrDefault(p => p.Definition.Id == id);
         if (picker is not null) picker.IsChecked = false; // handler persists + rebuilds + saves
     }
 
+    /// <summary>Opens (or retargets) the detail chart window for a tile — double-click or the context menu's
+    /// "Details…" item.</summary>
+    public void OpenTileDetail(string id) => OpenTileDetailRequested?.Invoke(id);
+
     /// <summary>Per-metric threshold override. Both null = remove override (fall back to the group rule).</summary>
-    public void SetTileThresholds(string id, float? warn, float? crit)
+    /// <summary>Stores <paramref name="rule"/> verbatim as the per-metric override (including its
+    /// <see cref="ThresholdRule.LowerIsWorse"/> flag — this method no longer guesses direction from a group rule
+    /// that may not exist), or removes the override when <paramref name="rule"/> is null.</summary>
+    public void SetTileThresholds(string id, ThresholdRule? rule)
     {
-        var def = _store.Definitions.FirstOrDefault(d => d.Id == id);
-        bool lowerIsWorse = def is not null && _settings.ThresholdRules.FirstOrDefault(r => r.Group == def.Group && r.Unit == def.Unit)?.LowerIsWorse == true;
-        bool ordered = warn is float w && crit is float c && (lowerIsWorse ? w > c : w < c);
-        if (ordered)
-            _settings.ThresholdOverrides[id] = new ThresholdRule { Warn = warn!.Value, Crit = crit!.Value, LowerIsWorse = lowerIsWorse };
-        else
-            _settings.ThresholdOverrides.Remove(id);
+        if (rule is null) _settings.ThresholdOverrides.Remove(id);
+        else _settings.ThresholdOverrides[id] = rule;
         RefreshAll();
         _saveSettings();
     }
+
+    // ---- tile operation commands (v1.8 §7) ----
+    // Thin [RelayCommand] wrappers over the methods above — behavior is identical, the parameter records just
+    // pack (id, value) into a single argument so CommunityToolkit's generator can bind a command with one
+    // CommandParameter. DashboardWindow's context menu, hover "⋯" button, and keyboard menu all go through
+    // these; the plain methods above stay for direct callers (tests, drag-drop's MoveTile neighbour) so this
+    // promotion is zero-churn for existing call sites.
+
+    [RelayCommand] private void SetTileKindEdit(TileKindEdit edit) => SetTileKind(edit.Id, edit.Kind);
+    [RelayCommand] private void SetTileSizeEdit(TileSizeEdit edit) => SetTileSize(edit.Id, edit.Size);
+    [RelayCommand] private void SetTileMaxEdit(TileMaxEdit edit) => SetTileMax(edit.Id, edit.Max);
+    [RelayCommand] private void RenameTileEdit(TileRenameEdit edit) => RenameTile(edit.Id, edit.Name);
+    [RelayCommand] private void SetTileThresholdEdit(TileThresholdEdit edit) => SetTileThresholds(edit.Id, edit.Rule);
 
     private void AfterPrefChange()
     {
@@ -325,9 +379,11 @@ public sealed partial class DashboardViewModel : ObservableObject
         Tiles.Clear();
         Sections.Clear();
 
+        var thresholds = ThresholdIndex.Build(_settings);
+
         CoreMatrix = _settings.ShowCoreMatrix ? new CoreMatrixViewModel(_store, _settings) : null;
         if (CoreMatrix is { HasCores: false }) CoreMatrix = null;
-        CoreMatrix?.Refresh();
+        CoreMatrix?.Refresh(thresholds);
 
         var ordered = _settings.DashboardMetrics.Where(id => _store.TryGet(id, out _)).ToList();
         var defsById = _store.Definitions.ToDictionary(d => d.Id);
@@ -346,12 +402,13 @@ public sealed partial class DashboardViewModel : ObservableObject
             foreach (var id in ids)
             {
                 var tile = new MetricTileViewModel(defsById[id], _store[id], _settings);
-                tile.Refresh();
+                tile.Refresh(thresholds);
                 section.Tiles.Add(tile);
                 Tiles.Add(tile);
             }
             Sections.Add(section);
         }
+        RaiseFpsHintChanged();
     }
 
     private void OnSectionExpandedChanged(string name, bool expanded)
@@ -363,7 +420,9 @@ public sealed partial class DashboardViewModel : ObservableObject
         static bool Add(List<string> list, string v) { list.Add(v); return true; }
     }
 
-    private MetricGroup? GroupOf(string id) => _store.TryGet(id, out _) ? _store.Definitions.First(d => d.Id == id).Group : null;
+    /// <summary>Resolves a metric id's group, or null when unknown — public so <c>DashboardWindow</c>'s
+    /// Tile_DragOver can decide the no-drop cursor without re-implementing the lookup.</summary>
+    public MetricGroup? GroupOf(string id) => _store.TryGet(id, out _) ? _store.Definitions.First(d => d.Id == id).Group : null;
 
     private string FriendlyName(MetricDefinition def) =>
         _settings.TilePrefs.TryGetValue(def.Id, out var p) && !string.IsNullOrWhiteSpace(p.Name) ? p.Name! : def.DisplayName;

@@ -17,7 +17,7 @@
          TextPrimary/TextSecondary text would need to sit on — so no state here depends on Accent-vs-text
          contrast, which would vary per preset/custom accent.
 
-         Existing Button and TextBox styles stay in App.xaml. Keyboard focus uses a shared FocusVisualStyle
+         The TextBox style stays in App.xaml; HeaderButton is here (see the bottom of this file). Keyboard focus uses a shared FocusVisualStyle
          (StatsFocusVisual) instead of the system default dashed rectangle, which is barely visible on the
          dark presets. -->
 
@@ -555,8 +555,11 @@
                         <Grid Width="16" Height="16" VerticalAlignment="Center">
                             <Border x:Name="Box" CornerRadius="3" BorderThickness="1"
                                     Background="{DynamicResource ControlBg}" BorderBrush="{DynamicResource BorderDim}"/>
+                            <Path x:Name="CheckMark" Data="M2,8 L6,12 L14,3" Stroke="{DynamicResource AccentBrush}" StrokeThickness="2"
+                                  StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeLineJoin="Round" Visibility="Collapsed"/>
                             <Rectangle x:Name="IndeterminateMark" Width="8" Height="2" Fill="{DynamicResource AccentBrush}"
                                        HorizontalAlignment="Center" VerticalAlignment="Center" Visibility="Collapsed"/>
+                        </Grid>
                         <ContentPresenter Grid.Column="1" Margin="6,0,0,0" VerticalAlignment="Center" RecognizesAccessKey="True"/>
                     </Grid>
                     <ControlTemplate.Triggers>
@@ -697,6 +700,18 @@
         <Setter Property="BorderThickness" Value="0"/>
         <Setter Property="Padding" Value="4,2"/>
         <Setter Property="Template" Value="{StaticResource StatsExpanderTemplate}"/>
+    </Style>
+
+    <!-- Shared flat button used by every window header and by TileTemplates.xaml (TileMenuButtonStyle BasedOn it).
+         Lives here rather than App.xaml because a merged dictionary can resolve StaticResource only against
+         dictionaries merged before it. -->
+    <Style TargetType="Button" x:Key="HeaderButton">
+        <Setter Property="Padding" Value="10,4"/>
+        <Setter Property="Margin" Value="8,0,0,0"/>
+        <Setter Property="Background" Value="{DynamicResource TileBg}"/>
+        <Setter Property="Foreground" Value="{DynamicResource TextPrimary}"/>
+        <Setter Property="BorderThickness" Value="0"/>
+        <Setter Property="Cursor" Value="Hand"/>
     </Style>
 
 </ResourceDictionary>

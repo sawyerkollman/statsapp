@@ -64,4 +64,63 @@ public class PeaksViewModelTests
         Assert.True(float.IsNaN(store["cpu.temp"].SessionMax));
         Assert.Equal("—", vm.Rows[1].MinText);
     }
+
+    [Fact]
+    public void Refresh_FillsMinAtMaxAtText_WithLocalTimeOfExtremes()
+    {
+        var (vm, store, _) = Make();
+        var minAt = new DateTime(2024, 3, 1, 8, 15, 0, DateTimeKind.Utc);
+        var maxAt = new DateTime(2024, 3, 1, 9, 42, 0, DateTimeKind.Utc);
+        store.Apply(new SensorSnapshot(new Dictionary<string, float?> { ["cpu.temp"] = 80f }, minAt));
+        store.Apply(new SensorSnapshot(new Dictionary<string, float?> { ["cpu.temp"] = 94f }, maxAt));
+        vm.Refresh();
+        var cpu = vm.Rows[1];
+        Assert.Equal($"at {minAt.ToLocalTime():HH:mm}", cpu.MinAtText);
+        Assert.Equal($"at {maxAt.ToLocalTime():HH:mm}", cpu.MaxAtText);
+    }
+
+    [Fact]
+    public void Refresh_NoSampleYet_MinAtMaxAtTextAreEmpty()
+    {
+        var (vm, _, _) = Make();
+        vm.Refresh();
+        var cpu = vm.Rows[1];
+        Assert.Equal("", cpu.MinAtText);
+        Assert.Equal("", cpu.MaxAtText);
+    }
+
+    [Fact]
+    public void ToTsv_ProducesHeaderAndTabSeparatedRows_WithInvariantCultureNumbers()
+    {
+        var (vm, store, _) = Make();
+        var at = new DateTime(2024, 3, 1, 8, 15, 30, DateTimeKind.Utc);
+        store.Apply(new SensorSnapshot(new Dictionary<string, float?> { ["cpu.temp"] = 80.25f, ["gpu.clock"] = 2000f }, at));
+        vm.Refresh();
+        var tsv = vm.ToTsv();
+        var lines = tsv.Split('\n');
+        Assert.Equal("Metric\tNow\tMin\tMin time\tAvg\tMax\tMax time", lines[0]);
+        // Rows follow dashboard order: gpu.clock, then cpu.temp (with its friendly name).
+        var expectedTime = at.ToLocalTime().ToString("HH:mm:ss", System.Globalization.CultureInfo.InvariantCulture);
+        Assert.Equal($"CPU Temp\t80.25\t80.25\t{expectedTime}\t80.25\t80.25\t{expectedTime}", lines[2]);
+    }
+
+    [Fact]
+    public void ToTsv_NoSampleYet_LeavesNumberAndTimeColumnsEmpty()
+    {
+        var (vm, _, _) = Make();
+        var tsv = vm.ToTsv();
+        var lines = tsv.Split('\n');
+        Assert.Equal("GPU Core\t\t\t\t\t\t", lines[1]);
+    }
+
+    [Fact]
+    public void CopyError_SetNonEmpty_SetsHasCopyErrorTrue()
+    {
+        var (vm, _, _) = Make();
+        Assert.False(vm.HasCopyError);
+        vm.CopyError = "Copy failed: access denied";
+        Assert.True(vm.HasCopyError);
+        vm.CopyError = "";
+        Assert.False(vm.HasCopyError);
+    }
 }

@@ -77,6 +77,7 @@ public sealed class UpdateService : IDisposable
                     createdDestination = true;
                     var buffer = new byte[81920];
                     long readTotal = 0;
+                    int read;
                     while ((read = await httpStream.ReadAsync(buffer, cancellationToken).ConfigureAwait(false)) > 0)
                     {
                         await fileStream.WriteAsync(buffer.AsMemory(0, read), cancellationToken).ConfigureAwait(false);

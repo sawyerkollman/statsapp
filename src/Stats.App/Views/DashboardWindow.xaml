@@ -51,6 +51,17 @@
             <TextBlock Foreground="White" TextWrapping="Wrap" Text="{Binding SensorHealthNotice}"/>
         </Border>
 
+        <!-- FPS discoverability hint (v1.8 §8): shown while Game-group metrics were discovered, none is selected
+             on the dashboard or overlay yet, and the user hasn't dismissed it before. -->
+        <Border DockPanel.Dock="Top" Background="{DynamicResource ControlBg}" BorderBrush="{DynamicResource AccentBrush}" BorderThickness="0,0,0,1" Padding="10,6"
+                Visibility="{Binding ShowFpsHint, Converter={StaticResource BoolToVis}}">
+            <DockPanel LastChildFill="False">
+                <Button DockPanel.Dock="Right" Content="Got it" Command="{Binding DismissFpsHintCommand}" Style="{StaticResource HeaderButton}"/>
+                <TextBlock DockPanel.Dock="Left" Text="Gaming? Add FPS, 1% lows and frame time from ☰ Metrics"
+                           Foreground="{DynamicResource TextPrimary}" VerticalAlignment="Center" TextWrapping="Wrap"/>
+            </DockPanel>
+        </Border>
+
         <Border DockPanel.Dock="Top" Padding="14,10">
             <DockPanel>
                 <Button DockPanel.Dock="Right" Content="⚙  Settings" Command="{Binding OpenSettingsCommand}" Style="{StaticResource HeaderButton}"/>
@@ -65,6 +76,9 @@
         </Border>
 
         <Grid>
+            <Grid.LayoutTransform>
+                <ScaleTransform ScaleX="{Binding UiScale}" ScaleY="{Binding UiScale}"/>
+            </Grid.LayoutTransform>
             <ScrollViewer VerticalScrollBarVisibility="Auto">
                 <ItemsControl ItemsSource="{Binding Sections}">
                     <ItemsControl.ItemTemplate>
@@ -101,12 +115,18 @@
                                         <ItemsControl.ItemContainerStyle>
                                             <Style TargetType="ContentPresenter">
                                                 <Setter Property="AllowDrop" Value="True"/>
+                                                <Setter Property="Focusable" Value="True"/>
+                                                <Setter Property="KeyboardNavigation.IsTabStop" Value="True"/>
+                                                <Setter Property="FocusVisualStyle" Value="{StaticResource StatsFocusVisual}"/>
                                                 <EventSetter Event="PreviewMouseLeftButtonDown" Handler="Tile_PreviewMouseLeftButtonDown"/>
                                                 <EventSetter Event="PreviewMouseMove" Handler="Tile_PreviewMouseMove"/>
                                                 <EventSetter Event="PreviewMouseLeftButtonUp" Handler="Tile_PreviewMouseLeftButtonUp"/>
                                                 <EventSetter Event="MouseRightButtonUp" Handler="Tile_MouseRightButtonUp"/>
                                                 <EventSetter Event="Drop" Handler="Tile_Drop"/>
                                                 <EventSetter Event="DragOver" Handler="Tile_DragOver"/>
+                                                <EventSetter Event="DragLeave" Handler="Tile_DragLeave"/>
+                                                <EventSetter Event="Button.Click" Handler="TileMenuButton_Click"/>
+                                                <EventSetter Event="PreviewKeyDown" Handler="Tile_PreviewKeyDown"/>
                                             </Style>
                                         </ItemsControl.ItemContainerStyle>
                                     </ItemsControl>
@@ -146,13 +166,30 @@
                                         <GroupStyle>
                                             <GroupStyle.HeaderTemplate>
                                                 <DataTemplate>
-                                                    <DockPanel Margin="0,10,0,2">
-                                                        <Button DockPanel.Dock="Right" Content="None" Tag="{Binding Name}" Click="PickerGroupNone_Click"
-                                                                Style="{StaticResource HeaderButton}" FontSize="10" Padding="6,1" Margin="4,0,0,0"/>
-                                                        <Button DockPanel.Dock="Right" Content="All" Tag="{Binding Name}" Click="PickerGroupAll_Click"
-                                                                Style="{StaticResource HeaderButton}" FontSize="10" Padding="6,1"/>
-                                                        <TextBlock Text="{Binding Name}" Style="{StaticResource GroupHeader}" Margin="0"/>
-                                                    </DockPanel>
+                                                    <StackPanel Margin="0,10,0,2">
+                                                        <DockPanel>
+                                                            <Button DockPanel.Dock="Right" Content="None" Tag="{Binding Name}" Click="PickerGroupNone_Click"
+                                                                    Style="{StaticResource HeaderButton}" FontSize="10" Padding="6,1" Margin="4,0,0,0"/>
+                                                            <Button DockPanel.Dock="Right" Content="All" Tag="{Binding Name}" Click="PickerGroupAll_Click"
+                                                                    Style="{StaticResource HeaderButton}" FontSize="10" Padding="6,1"/>
+                                                            <TextBlock Text="{Binding Name}" Style="{StaticResource GroupHeader}" Margin="0"/>
+                                                        </DockPanel>
+                                                        <!-- Game group only: PresentMon is bundled but only actually spawned while a Game
+                                                             metric is selected on the dashboard or overlay (v1.8 §8). -->
+                                                        <TextBlock Text="uses bundled PresentMon; runs only while selected"
+                                                                   Foreground="{DynamicResource TextSecondary}" FontSize="11" Margin="0,0,0,2">
+                                                            <TextBlock.Style>
+                                                                <Style TargetType="TextBlock">
+                                                                    <Setter Property="Visibility" Value="Collapsed"/>
+                                                                    <Style.Triggers>
+                                                                        <DataTrigger Binding="{Binding Name}" Value="Game — Foreground app">
+                                                                            <Setter Property="Visibility" Value="Visible"/>
+                                                                        </DataTrigger>
+                                                                    </Style.Triggers>
+                                                                </Style>
+                                                            </TextBlock.Style>
+                                                        </TextBlock>
+                                                    </StackPanel>
                                                 </DataTemplate>
                                             </GroupStyle.HeaderTemplate>
                                         </GroupStyle>
@@ -192,6 +229,14 @@
                                             Value="{Binding PollIntervalSeconds, Delay=250}"/>
                                 </DockPanel>
 
+                                <TextBlock Text="Dashboard" Style="{StaticResource SettingsHeader}"/>
+                                <DockPanel Margin="0,2">
+                                    <TextBlock Text="UI scale" Width="90" Style="{StaticResource SettingsLabel}"/>
+                                    <TextBlock DockPanel.Dock="Right" Width="40" TextAlignment="Right" Style="{StaticResource SettingsLabel}"
+                                               Text="{Binding DashboardUiScale, StringFormat='{}{0:0.0}×'}"/>
+                                    <Slider Minimum="0.9" Maximum="1.3" TickFrequency="0.1" IsSnapToTickEnabled="True" Value="{Binding DashboardUiScale, Delay=250}"/>
+                                </DockPanel>
+
                                 <TextBlock Text="History window" Style="{StaticResource SettingsHeader}"/>
                                 <StackPanel Orientation="Horizontal">
                                     <RadioButton Content="2 min" IsChecked="{Binding HistoryWindowMinutes, Converter={StaticResource Equals}, ConverterParameter=2}"/>
@@ -201,29 +246,35 @@
                                 </StackPanel>
 
                                 <TextBlock Text="Thresholds (warn / crit)" Style="{StaticResource SettingsHeader}"/>
-                                <Grid>
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="120"/>
-                                        <ColumnDefinition Width="70"/>
-                                        <ColumnDefinition Width="70"/>
-                                    </Grid.ColumnDefinitions>
-                                    <Grid.RowDefinitions>
-                                        <RowDefinition/><RowDefinition/><RowDefinition/><RowDefinition/>
-                                    </Grid.RowDefinitions>
-                                    <TextBlock Text="CPU temp °C" Style="{StaticResource SettingsLabel}"/>
-                                    <TextBox Grid.Column="1" Margin="0,2,6,2" Text="{Binding CpuTempWarn, UpdateSourceTrigger=LostFocus}"/>
-                                    <TextBox Grid.Column="2" Margin="0,2,0,2" Text="{Binding CpuTempCrit, UpdateSourceTrigger=LostFocus}"/>
-                                    <TextBlock Grid.Row="1" Text="GPU temp °C" Style="{StaticResource SettingsLabel}"/>
-                                    <TextBox Grid.Row="1" Grid.Column="1" Margin="0,2,6,2" Text="{Binding GpuTempWarn, UpdateSourceTrigger=LostFocus}"/>
-                                    <TextBox Grid.Row="1" Grid.Column="2" Margin="0,2,0,2" Text="{Binding GpuTempCrit, UpdateSourceTrigger=LostFocus}"/>
-                                    <TextBlock Grid.Row="2" Text="Load %" Style="{StaticResource SettingsLabel}"/>
-                                    <TextBox Grid.Row="2" Grid.Column="1" Margin="0,2,6,2" Text="{Binding LoadWarn, UpdateSourceTrigger=LostFocus}"/>
-                                    <TextBox Grid.Row="2" Grid.Column="2" Margin="0,2,0,2" Text="{Binding LoadCrit, UpdateSourceTrigger=LostFocus}"/>
-                                    <TextBlock Grid.Row="3" Text="FPS (lower is worse)" Style="{StaticResource SettingsLabel}"/>
-                                    <TextBox Grid.Row="3" Grid.Column="1" Margin="0,2,6,2" Text="{Binding FpsWarn, UpdateSourceTrigger=LostFocus}"/>
-                                    <TextBox Grid.Row="3" Grid.Column="2" Margin="0,2,0,2" Text="{Binding FpsCrit, UpdateSourceTrigger=LostFocus}"/>
-                                </Grid>
-                                <TextBlock Text="{Binding ThresholdError}" Foreground="{DynamicResource CritBrush}" FontSize="11"/>
+                                <ItemsControl ItemsSource="{Binding ThresholdRuleItems}">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate>
+                                            <StackPanel Margin="0,2,0,4">
+                                                <Grid>
+                                                    <Grid.ColumnDefinitions>
+                                                        <ColumnDefinition Width="110"/>
+                                                        <ColumnDefinition Width="46"/>
+                                                        <ColumnDefinition Width="66"/>
+                                                        <ColumnDefinition Width="16"/>
+                                                        <ColumnDefinition Width="66"/>
+                                                        <ColumnDefinition Width="*"/>
+                                                    </Grid.ColumnDefinitions>
+                                                    <TextBlock Text="{Binding GroupName}" Style="{StaticResource SettingsLabel}" TextTrimming="CharacterEllipsis"/>
+                                                    <TextBlock Grid.Column="1" Text="{Binding Unit}" Style="{StaticResource SettingsLabel}"/>
+                                                    <TextBox Grid.Column="2" Margin="0,1,0,1" Text="{Binding WarnText, UpdateSourceTrigger=LostFocus}"/>
+                                                    <TextBlock Grid.Column="3" Text="/" Style="{StaticResource SettingsLabel}" HorizontalAlignment="Center" Margin="0"/>
+                                                    <TextBox Grid.Column="4" Margin="0,1,6,1" Text="{Binding CritText, UpdateSourceTrigger=LostFocus}"/>
+                                                    <TextBlock Grid.Column="5" Text="{Binding DirectionText}" Style="{StaticResource SettingsLabel}" FontStyle="Italic" VerticalAlignment="Center"/>
+                                                </Grid>
+                                                <TextBlock Text="{Binding Error}" Foreground="{DynamicResource CritBrush}" FontSize="11"/>
+                                            </StackPanel>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                                <StackPanel Orientation="Horizontal" Margin="0,4,0,0" Visibility="{Binding HasAddableRulePairs, Converter={StaticResource BoolToVis}}">
+                                    <ComboBox ItemsSource="{Binding AddableRulePairs}" SelectedItem="{Binding SelectedAddablePair}" MinWidth="150" VerticalAlignment="Center"/>
+                                    <Button Content="Add rule…" Command="{Binding AddRuleCommand}" Style="{StaticResource HeaderButton}"/>
+                                </StackPanel>
 
                                 <TextBlock Text="Limits (for % of limit / gauges)" Style="{StaticResource SettingsHeader}"/>
                                 <TextBlock Text="Enter your PBO PPT/TDC/EDC or GPU power limit. Blank = none."
@@ -280,6 +331,24 @@
 
                                 <TextBlock Text="Dashboard" Style="{StaticResource SettingsHeader}"/>
                                 <CheckBox Content="Show CPU core matrix" IsChecked="{Binding ShowCoreMatrix}"/>
+
+                                <TextBlock Text="Tray" Style="{StaticResource SettingsHeader}"/>
+                                <DockPanel Margin="0,0,0,4">
+                                    <TextBlock Text="Icon shows" Width="90" Style="{StaticResource SettingsLabel}"/>
+                                    <ComboBox ItemsSource="{Binding TrayMetricOptions}" SelectedItem="{Binding SelectedTrayMetric}"
+                                              MinWidth="200" HorizontalAlignment="Left"/>
+                                </DockPanel>
+
+                                <TextBlock Text="Alerts" Style="{StaticResource SettingsHeader}"/>
+                                <CheckBox Content="Notify on sustained critical readings" IsChecked="{Binding AlertsEnabled}"/>
+                                <DockPanel Margin="0,4,0,0">
+                                    <TextBlock Text="Hold time" Width="90" Style="{StaticResource SettingsLabel}"/>
+                                    <TextBlock DockPanel.Dock="Right" Width="34" TextAlignment="Right" Style="{StaticResource SettingsLabel}"
+                                               Text="{Binding AlertHoldSeconds, StringFormat='{}{0}s'}"/>
+                                    <Slider Minimum="1" Maximum="120" TickFrequency="1" IsSnapToTickEnabled="True"
+                                            Value="{Binding AlertHoldSeconds, Delay=250}"/>
+                                </DockPanel>
+                                <CheckBox Content="Play a sound with the notification" IsChecked="{Binding AlertSoundEnabled}" Margin="0,4,0,0"/>
 
                                 <TextBlock Text="Theme" Style="{StaticResource SettingsHeader}"/>
                                 <ComboBox ItemsSource="{Binding ThemePresetNames}" SelectedItem="{Binding SelectedThemePreset}"

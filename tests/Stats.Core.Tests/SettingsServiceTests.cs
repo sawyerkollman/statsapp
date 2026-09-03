@@ -78,7 +78,7 @@ public class SettingsServiceTests : IDisposable
     public void Load_SeedsThresholdRulesWhenEmpty()
     {
         var s = new SettingsService(_dir).Load();
-        Assert.Equal(5, s.ThresholdRules.Count);
+        Assert.Equal(Stats.Core.Metrics.ThresholdDefaults.Rules().Count, s.ThresholdRules.Count);
         var cpu = s.ThresholdRules.First(r => r.Group == Stats.Core.Metrics.MetricGroup.Cpu && r.Unit == "°C");
         Assert.Equal(85f, cpu.Warn);
         Assert.Equal(92f, cpu.Crit);
@@ -139,7 +139,7 @@ public class SettingsServiceTests : IDisposable
         Assert.Equal(2, l.HistoryWindowMinutes);
         Assert.True(l.ShowCoreMatrix);
         Assert.Equal("Ctrl+Shift+O", l.OverlayHotkey);
-        Assert.Equal(5, l.ThresholdRules.Count);
+        Assert.Equal(Stats.Core.Metrics.ThresholdDefaults.Rules().Count, l.ThresholdRules.Count);
     }
 
     [Theory]
@@ -202,7 +202,7 @@ public class SettingsServiceTests : IDisposable
         Assert.True(loaded.FanControlEnabled);
         Assert.NotNull(loaded.FanChannels);
         Assert.Empty(loaded.FanChannels);          // an explicit null must not blow up the fan loop
-        Assert.Equal(5, loaded.ThresholdRules.Count); // …and null rules still get the defaults
+        Assert.Equal(Stats.Core.Metrics.ThresholdDefaults.Rules().Count, loaded.ThresholdRules.Count); // …and null rules still get the defaults
     }
 
     [Fact]
@@ -348,7 +348,7 @@ public class SettingsServiceTests : IDisposable
         Assert.False(loaded.GameModeEnabled);                    // §6
         Assert.Null(loaded.GameModeGamingProfile);
         Assert.Null(loaded.GameModeDesktopProfile);
-        Assert.Equal(5, loaded.ThresholdRules.Count);            // §7: the fps rule was appended …
+        Assert.Equal(6, loaded.ThresholdRules.Count);            // §7: the fps and Motherboard rules were appended …
         Assert.All(loaded.ThresholdRules.Take(4), r => Assert.False(r.LowerIsWorse)); // … the four kept as they were
         Assert.Equal(85f, loaded.ThresholdRules[0].Warn);
         var fps = loaded.ThresholdRules.Single(r => r.Group == Stats.Core.Metrics.MetricGroup.Game && r.Unit == "fps");
@@ -384,6 +384,48 @@ public class SettingsServiceTests : IDisposable
         var s = new SettingsService(_dir).Load();
         Assert.Equal("Dark Amber", s.ThemePreset);
         Assert.Null(s.ThemeAccent);
+    }
+
+    [Fact]
+    public void Load_MissingFile_AlertsDefaultOnWithTenSecondHoldAndSoundOff()
+    {
+        var s = new SettingsService(_dir).Load();
+        Assert.True(s.AlertsEnabled);
+        Assert.Equal(10, s.AlertHoldSeconds);
+        Assert.False(s.AlertSoundEnabled);
+    }
+
+    [Theory]
+    [InlineData(0, 1)]
+    [InlineData(-5, 1)]
+    [InlineData(200, 120)]
+    public void Load_ClampsAlertHoldSecondsToOneToOneTwenty(int stored, int expected)
+    {
+        var svc = new SettingsService(_dir);
+        svc.Save(new AppSettings { AlertHoldSeconds = stored });
+        Assert.Equal(expected, svc.Load().AlertHoldSeconds);
+    }
+
+    [Theory]
+    [InlineData(0.5, 0.9)]
+    [InlineData(2.0, 1.3)]
+    [InlineData(1.1, 1.1)]
+    public void Load_ClampsDashboardUiScaleToSpecRange(double stored, double expected)
+    {
+        var svc = new SettingsService(_dir);
+        svc.Save(new AppSettings { DashboardUiScale = stored });
+        Assert.Equal(expected, svc.Load().DashboardUiScale);
+    }
+
+    [Fact]
+    public void SaveThenLoad_AlertFields_RoundTrip()
+    {
+        var svc = new SettingsService(_dir);
+        svc.Save(new AppSettings { AlertsEnabled = false, AlertHoldSeconds = 45, AlertSoundEnabled = true });
+        var loaded = new SettingsService(_dir).Load();
+        Assert.False(loaded.AlertsEnabled);
+        Assert.Equal(45, loaded.AlertHoldSeconds);
+        Assert.True(loaded.AlertSoundEnabled);
     }
 
     [Fact]
@@ -430,6 +472,48 @@ public class SettingsServiceTests : IDisposable
         var svc = new SettingsService(_dir);
         svc.Save(new AppSettings { ThemeAccent = "#4a9ee0" });
         Assert.Equal("#4A9EE0", new SettingsService(_dir).Load().ThemeAccent); // sanitized to uppercase
+    }
+
+    // ---- Tray metric / FPS hint (v1.8 §5, §8) ----
+
+    [Fact]
+    public void Load_MissingFile_TrayMetricIdDefaultsToNull_AutoMode()
+    {
+        var s = new SettingsService(_dir).Load();
+        Assert.Null(s.TrayMetricId);
+    }
+
+    [Fact]
+    public void Load_MissingFile_FpsHintDismissedDefaultsToFalse()
+    {
+        var s = new SettingsService(_dir).Load();
+        Assert.False(s.FpsHintDismissed);
+    }
+
+    [Fact]
+    public void SaveThenLoad_TrayMetricIdAndFpsHintDismissed_RoundTrip()
+    {
+        var svc = new SettingsService(_dir);
+        svc.Save(new AppSettings { TrayMetricId = "cpu.temp.tctl", FpsHintDismissed = true });
+        var loaded = new SettingsService(_dir).Load();
+        Assert.Equal("cpu.temp.tctl", loaded.TrayMetricId);
+        Assert.True(loaded.FpsHintDismissed);
+    }
+
+    [Fact]
+    public void Load_MissingFile_FanSafetyBannerCollapsedDefaultsToFalse()
+    {
+        var s = new SettingsService(_dir).Load();
+        Assert.False(s.FanSafetyBannerCollapsed);
+    }
+
+    [Fact]
+    public void SaveThenLoad_FanSafetyBannerCollapsed_RoundTrips()
+    {
+        var svc = new SettingsService(_dir);
+        svc.Save(new AppSettings { FanSafetyBannerCollapsed = true });
+        var loaded = new SettingsService(_dir).Load();
+        Assert.True(loaded.FanSafetyBannerCollapsed);
     }
 
     private void Write(string json)

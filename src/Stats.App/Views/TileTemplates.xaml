@@ -16,6 +16,9 @@
         <Setter Property="Margin" Value="6"/>
         <Setter Property="Padding" Value="10"/>
         <Setter Property="Cursor" Value="Hand"/>
+        <!-- Screen-reader label for the whole tile (v1.8 §11b) — value+severity are read out even though the
+             glyph/colour cues below are visual-only. -->
+        <Setter Property="AutomationProperties.Name" Value="{Binding AutomationLabel}"/>
     </Style>
 
     <Style x:Key="TileName" TargetType="TextBlock">
@@ -33,88 +36,162 @@
         <Setter Property="FontSize" Value="10"/>
     </Style>
 
+    <!-- Non-colour severity indicator next to the value (v1.8 §11b) — "" at Normal never shows, so it never
+         steals layout space when nothing is wrong. -->
+    <Style x:Key="TileSeverityGlyph" TargetType="TextBlock">
+        <Setter Property="Text" Value="{Binding SeverityGlyph}"/>
+        <Setter Property="Foreground" Value="{Binding Severity, Converter={StaticResource SeverityToBrush}}"/>
+        <Setter Property="FontSize" Value="14"/>
+        <Setter Property="FontWeight" Value="Bold"/>
+        <Setter Property="VerticalAlignment" Value="Center"/>
+        <Setter Property="Margin" Value="4,0,0,0"/>
+        <Style.Triggers>
+            <DataTrigger Binding="{Binding SeverityGlyph}" Value="">
+                <Setter Property="Visibility" Value="Collapsed"/>
+            </DataTrigger>
+        </Style.Triggers>
+    </Style>
+
+    <!-- Hover/keyboard-focus tile menu button (v1.8 §7b) — collapsed until the tile's Border is hovered or the
+         tile's container (the ItemsControl's ContentPresenter — see DashboardWindow's ItemContainerStyle) has
+         keyboard focus within it, so Tab/Shift+F10 access works without a permanently-visible button competing
+         with the tile's own content. Opens the same menu as right-click via DashboardWindow.OpenTileMenu,
+         reached through the Button.Click EventSetter on that ItemContainerStyle (this ResourceDictionary has no
+         code-behind of its own to host a Click handler directly). Not a Tab stop itself — Shift+F10/Apps already
+         reaches the menu once the tile container has focus, so this button would only be a redundant extra stop. -->
+    <Style x:Key="TileMenuButtonStyle" TargetType="Button" BasedOn="{StaticResource HeaderButton}">
+        <Setter Property="Content" Value="⋯"/>
+        <Setter Property="ToolTip" Value="Tile options"/>
+        <Setter Property="HorizontalAlignment" Value="Right"/>
+        <Setter Property="VerticalAlignment" Value="Top"/>
+        <Setter Property="Margin" Value="0"/>
+        <Setter Property="Padding" Value="6,0"/>
+        <Setter Property="FontSize" Value="16"/>
+        <Setter Property="FontWeight" Value="Bold"/>
+        <Setter Property="Focusable" Value="False"/>
+        <Setter Property="Visibility" Value="Collapsed"/>
+        <Style.Triggers>
+            <DataTrigger Binding="{Binding RelativeSource={RelativeSource AncestorType=Border}, Path=IsMouseOver}" Value="True">
+                <Setter Property="Visibility" Value="Visible"/>
+            </DataTrigger>
+            <DataTrigger Binding="{Binding RelativeSource={RelativeSource AncestorType=ContentPresenter}, Path=IsKeyboardFocusWithin}" Value="True">
+                <Setter Property="Visibility" Value="Visible"/>
+            </DataTrigger>
+        </Style.Triggers>
+    </Style>
+
     <!-- S: name + value only -->
     <DataTemplate x:Key="TileCompact">
         <Border Style="{StaticResource TileBorder}" Padding="10,6">
-            <StackPanel VerticalAlignment="Center">
-                <TextBlock Text="{Binding DisplayName}" Style="{StaticResource TileName}" FontSize="10" ToolTip="{Binding DisplayName}"/>
-                <TextBlock Text="{Binding CurrentText}" Style="{StaticResource TileValue}" FontSize="20"/>
-            </StackPanel>
+            <Grid>
+                <StackPanel VerticalAlignment="Center">
+                    <TextBlock Text="{Binding DisplayName}" Style="{StaticResource TileName}" FontSize="10" ToolTip="{Binding DisplayName}"/>
+                    <StackPanel Orientation="Horizontal">
+                        <TextBlock Text="{Binding CurrentText}" Style="{StaticResource TileValue}" FontSize="20"/>
+                        <TextBlock Style="{StaticResource TileSeverityGlyph}" FontSize="12"/>
+                    </StackPanel>
+                </StackPanel>
+                <Button x:Name="TileMenuButton" Style="{StaticResource TileMenuButtonStyle}"/>
+            </Grid>
         </Border>
     </DataTemplate>
 
     <!-- Sparkline (default) -->
     <DataTemplate x:Key="TileSparkline">
         <Border Style="{StaticResource TileBorder}">
-            <DockPanel>
-                <DockPanel DockPanel.Dock="Top">
-                    <TextBlock DockPanel.Dock="Right" Text="{Binding HistoryWindowTag}" Style="{StaticResource TileFoot}" FontSize="9" VerticalAlignment="Top"/>
-                    <TextBlock Text="{Binding DisplayName}" Style="{StaticResource TileName}" ToolTip="{Binding DisplayName}"/>
+            <Grid>
+                <DockPanel>
+                    <DockPanel DockPanel.Dock="Top">
+                        <TextBlock DockPanel.Dock="Right" Text="{Binding HistoryWindowTag}" Style="{StaticResource TileFoot}" FontSize="9" VerticalAlignment="Top"/>
+                        <TextBlock Text="{Binding DisplayName}" Style="{StaticResource TileName}" ToolTip="{Binding DisplayName}"/>
+                    </DockPanel>
+                    <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="0,2,0,0">
+                        <TextBlock Text="{Binding CurrentText}" Style="{StaticResource TileValue}"/>
+                        <TextBlock Style="{StaticResource TileSeverityGlyph}"/>
+                    </StackPanel>
+                    <TextBlock DockPanel.Dock="Top" Text="{Binding LimitText}" Foreground="{DynamicResource AccentBrush}" FontSize="11"/>
+                    <TextBlock DockPanel.Dock="Bottom" Text="{Binding MinMaxText}" Style="{StaticResource TileFoot}"/>
+                    <controls:Sparkline Values="{Binding HistoryValues}" Unit="{Binding Unit}"
+                                        Stroke="{Binding Severity, Converter={StaticResource SeverityToBrush}, ConverterParameter=accent}"
+                                        Margin="0,4"/>
                 </DockPanel>
-                <TextBlock DockPanel.Dock="Top" Text="{Binding CurrentText}" Style="{StaticResource TileValue}" Margin="0,2,0,0"/>
-                <TextBlock DockPanel.Dock="Top" Text="{Binding LimitText}" Foreground="{DynamicResource AccentBrush}" FontSize="11"/>
-                <TextBlock DockPanel.Dock="Bottom" Text="{Binding MinMaxText}" Style="{StaticResource TileFoot}"/>
-                <controls:Sparkline Values="{Binding HistoryValues}" Unit="{Binding Unit}"
-                                    Stroke="{Binding Severity, Converter={StaticResource SeverityToBrush}, ConverterParameter=accent}"
-                                    Margin="0,4"/>
-            </DockPanel>
+                <Button x:Name="TileMenuButton" Style="{StaticResource TileMenuButtonStyle}"/>
+            </Grid>
         </Border>
     </DataTemplate>
 
     <!-- Gauge -->
     <DataTemplate x:Key="TileGauge">
         <Border Style="{StaticResource TileBorder}">
-            <DockPanel>
-                <TextBlock DockPanel.Dock="Top" Text="{Binding DisplayName}" Style="{StaticResource TileName}" ToolTip="{Binding DisplayName}"/>
-                <TextBlock DockPanel.Dock="Bottom" Text="{Binding MinMaxText}" Style="{StaticResource TileFoot}"/>
-                <Grid Margin="0,2,0,0">
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="Auto"/>
-                        <ColumnDefinition Width="*"/>
-                    </Grid.ColumnDefinitions>
-                    <Grid Width="78" Height="78" VerticalAlignment="Center">
-                        <controls:ArcGauge Fraction="{Binding Fraction01}" Thickness="8"
-                                           Stroke="{Binding Severity, Converter={StaticResource SeverityToBrush}, ConverterParameter=accent}"
-                                           Track="{DynamicResource GaugeTrack}"/>
-                        <TextBlock Text="{Binding CurrentText}" Style="{StaticResource TileValue}" FontSize="13"
-                                   HorizontalAlignment="Center" VerticalAlignment="Center" TextAlignment="Center" TextWrapping="Wrap" MaxWidth="62"/>
+            <Grid>
+                <DockPanel>
+                    <TextBlock DockPanel.Dock="Top" Text="{Binding DisplayName}" Style="{StaticResource TileName}" ToolTip="{Binding DisplayName}"/>
+                    <TextBlock DockPanel.Dock="Bottom" Text="{Binding MinMaxText}" Style="{StaticResource TileFoot}"/>
+                    <Grid Margin="0,2,0,0">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto"/>
+                            <ColumnDefinition Width="*"/>
+                        </Grid.ColumnDefinitions>
+                        <Grid Width="78" Height="78" VerticalAlignment="Center">
+                            <controls:ArcGauge Fraction="{Binding Fraction01}" Thickness="8"
+                                               Stroke="{Binding Severity, Converter={StaticResource SeverityToBrush}, ConverterParameter=accent}"
+                                               Track="{DynamicResource GaugeTrack}"/>
+                            <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
+                                <TextBlock Text="{Binding CurrentText}" Style="{StaticResource TileValue}" FontSize="13"
+                                           HorizontalAlignment="Center" TextAlignment="Center" TextWrapping="Wrap" MaxWidth="62"/>
+                                <TextBlock Style="{StaticResource TileSeverityGlyph}" HorizontalAlignment="Center" Margin="0"/>
+                            </StackPanel>
+                        </Grid>
+                        <StackPanel Grid.Column="1" VerticalAlignment="Center" Margin="8,0,0,0">
+                            <TextBlock Text="{Binding LimitText}" Foreground="{DynamicResource AccentBrush}" FontSize="11" TextWrapping="Wrap"/>
+                            <TextBlock Text="{Binding MaxText, StringFormat='{}max {0}'}" Style="{StaticResource TileFoot}"/>
+                        </StackPanel>
                     </Grid>
-                    <StackPanel Grid.Column="1" VerticalAlignment="Center" Margin="8,0,0,0">
-                        <TextBlock Text="{Binding LimitText}" Foreground="{DynamicResource AccentBrush}" FontSize="11" TextWrapping="Wrap"/>
-                        <TextBlock Text="{Binding MaxText, StringFormat='{}max {0}'}" Style="{StaticResource TileFoot}"/>
-                    </StackPanel>
-                </Grid>
-            </DockPanel>
+                </DockPanel>
+                <Button x:Name="TileMenuButton" Style="{StaticResource TileMenuButtonStyle}"/>
+            </Grid>
         </Border>
     </DataTemplate>
 
     <!-- Bar -->
     <DataTemplate x:Key="TileBar">
         <Border Style="{StaticResource TileBorder}">
-            <DockPanel>
-                <TextBlock DockPanel.Dock="Top" Text="{Binding DisplayName}" Style="{StaticResource TileName}" ToolTip="{Binding DisplayName}"/>
-                <TextBlock DockPanel.Dock="Top" Text="{Binding CurrentText}" Style="{StaticResource TileValue}" Margin="0,2,0,0"/>
-                <TextBlock DockPanel.Dock="Bottom" Text="{Binding MinMaxText}" Style="{StaticResource TileFoot}"/>
-                <DockPanel DockPanel.Dock="Bottom" Margin="0,0,0,4">
-                    <TextBlock DockPanel.Dock="Right" Text="{Binding MaxText}" Style="{StaticResource TileFoot}"/>
-                    <TextBlock Text="0" Style="{StaticResource TileFoot}"/>
+            <Grid>
+                <DockPanel>
+                    <TextBlock DockPanel.Dock="Top" Text="{Binding DisplayName}" Style="{StaticResource TileName}" ToolTip="{Binding DisplayName}"/>
+                    <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="0,2,0,0">
+                        <TextBlock Text="{Binding CurrentText}" Style="{StaticResource TileValue}"/>
+                        <TextBlock Style="{StaticResource TileSeverityGlyph}"/>
+                    </StackPanel>
+                    <TextBlock DockPanel.Dock="Bottom" Text="{Binding MinMaxText}" Style="{StaticResource TileFoot}"/>
+                    <DockPanel DockPanel.Dock="Bottom" Margin="0,0,0,4">
+                        <TextBlock DockPanel.Dock="Right" Text="{Binding MaxText}" Style="{StaticResource TileFoot}"/>
+                        <TextBlock Text="0" Style="{StaticResource TileFoot}"/>
+                    </DockPanel>
+                    <controls:LevelBar Height="10" VerticalAlignment="Bottom" Fraction="{Binding Fraction01}"
+                                       Fill="{Binding Severity, Converter={StaticResource SeverityToBrush}, ConverterParameter=accent}"
+                                       Track="{DynamicResource GaugeTrack}"/>
                 </DockPanel>
-                <controls:LevelBar Height="10" VerticalAlignment="Bottom" Fraction="{Binding Fraction01}"
-                                   Fill="{Binding Severity, Converter={StaticResource SeverityToBrush}, ConverterParameter=accent}"
-                                   Track="{DynamicResource GaugeTrack}"/>
-            </DockPanel>
+                <Button x:Name="TileMenuButton" Style="{StaticResource TileMenuButtonStyle}"/>
+            </Grid>
         </Border>
     </DataTemplate>
 
     <!-- Value -->
     <DataTemplate x:Key="TileValueTemplate">
         <Border Style="{StaticResource TileBorder}">
-            <DockPanel>
-                <TextBlock DockPanel.Dock="Top" Text="{Binding DisplayName}" Style="{StaticResource TileName}" ToolTip="{Binding DisplayName}"/>
-                <TextBlock DockPanel.Dock="Bottom" Text="{Binding MinMaxText}" Style="{StaticResource TileFoot}"/>
-                <TextBlock DockPanel.Dock="Bottom" Text="{Binding LimitText}" Foreground="{DynamicResource AccentBrush}" FontSize="11"/>
-                <TextBlock Text="{Binding CurrentText}" Style="{StaticResource TileValue}" FontSize="32" VerticalAlignment="Center"/>
-            </DockPanel>
+            <Grid>
+                <DockPanel>
+                    <TextBlock DockPanel.Dock="Top" Text="{Binding DisplayName}" Style="{StaticResource TileName}" ToolTip="{Binding DisplayName}"/>
+                    <TextBlock DockPanel.Dock="Bottom" Text="{Binding MinMaxText}" Style="{StaticResource TileFoot}"/>
+                    <TextBlock DockPanel.Dock="Bottom" Text="{Binding LimitText}" Foreground="{DynamicResource AccentBrush}" FontSize="11"/>
+                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                        <TextBlock Text="{Binding CurrentText}" Style="{StaticResource TileValue}" FontSize="32"/>
+                        <TextBlock Style="{StaticResource TileSeverityGlyph}" FontSize="18"/>
+                    </StackPanel>
+                </DockPanel>
+                <Button x:Name="TileMenuButton" Style="{StaticResource TileMenuButtonStyle}"/>
+            </Grid>
         </Border>
     </DataTemplate>
 

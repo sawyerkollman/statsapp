@@ -30,9 +30,9 @@ public class SettingsViewModelTests
     {
         var (vm, _, changes, saves) = Make();
         Assert.Equal(1.0, vm.PollIntervalSeconds);
-        Assert.Equal(85f, vm.CpuTempWarn);
-        Assert.Equal(88f, vm.GpuTempCrit);
-        Assert.Equal(90f, vm.LoadWarn);
+        Assert.Equal("85", vm.ThresholdRuleItems.Single(i => i.Group == MetricGroup.Cpu && i.Unit == "°C").WarnText);
+        Assert.Equal("88", vm.ThresholdRuleItems.Single(i => i.Group == MetricGroup.Gpu && i.Unit == "°C").CritText);
+        Assert.Equal("90", vm.ThresholdRuleItems.Single(i => i.Group == MetricGroup.Cpu && i.Unit == "%").WarnText);
         Assert.Equal("Ctrl+Shift+O", vm.OverlayHotkey);
         Assert.Empty(changes);
         Assert.Equal(0, saves());
@@ -68,38 +68,175 @@ public class SettingsViewModelTests
     }
 
     [Fact]
-    public void Thresholds_ValidPair_UpdatesRulesAndRaises()
+    public void ThresholdRuleItem_ValidPair_UpdatesRuleAndRaises()
     {
         var (vm, s, changes, _) = Make();
-        vm.CpuTempWarn = 80f;
-        vm.CpuTempCrit = 90f;
+        var item = vm.ThresholdRuleItems.Single(i => i.Group == MetricGroup.Cpu && i.Unit == "°C");
+        // Each TextBox commits independently (LostFocus), so setting Warn=80 (still below the default Crit=92) is
+        // already a valid, ordered pair and applies on its own; setting Crit=90 afterward applies again.
+        item.WarnText = "80";
+        item.CritText = "90";
         var rule = s.ThresholdRules.Single(r => r.Group == MetricGroup.Cpu && r.Unit == "°C");
         Assert.Equal(80f, rule.Warn);
         Assert.Equal(90f, rule.Crit);
-        Assert.Equal("", vm.ThresholdError);
+        Assert.Equal("", item.Error);
+        Assert.Equal(2, changes.Count(c => c == SettingsChange.Thresholds));
+    }
+
+    [Fact]
+    public void ThresholdRuleItem_WarnNotBelowCrit_NotAppliedAndFlagged()
+    {
+        var (vm, s, _, _) = Make();
+        var item = vm.ThresholdRuleItems.Single(i => i.Group == MetricGroup.Gpu && i.Unit == "°C");
+        item.WarnText = "95"; // crit is 88
+        var rule = s.ThresholdRules.Single(r => r.Group == MetricGroup.Gpu && r.Unit == "°C");
+        Assert.Equal(80f, rule.Warn); // unchanged
+        Assert.Equal("Warn must be below crit", item.Error);
+        item.CritText = "99"; // now valid
+        Assert.Equal(95f, rule.Warn);
+        Assert.Equal(99f, rule.Crit);
+        Assert.Equal("", item.Error);
+    }
+
+    [Fact]
+    public void ThresholdRuleItem_UnparseableText_SetsErrorAndDoesNotWriteThroughOrRaise()
+    {
+        var (vm, s, changes, _) = Make();
+        var item = vm.ThresholdRuleItems.Single(i => i.Group == MetricGroup.Cpu && i.Unit == "°C");
+        item.WarnText = "9O"; // letter O, not zero
+        var rule = s.ThresholdRules.Single(r => r.Group == MetricGroup.Cpu && r.Unit == "°C");
+        Assert.Equal("Warn must be a number", item.Error);
+        Assert.Equal(85f, rule.Warn); // unchanged
+        Assert.Equal(92f, rule.Crit); // unchanged
+        Assert.Empty(changes);
+        item.WarnText = "80"; // fixing the input clears the error and writes through
+        Assert.Equal("", item.Error);
+        Assert.Equal(80f, rule.Warn);
         Assert.Contains(SettingsChange.Thresholds, changes);
     }
 
     [Fact]
-    public void Thresholds_WarnNotBelowCrit_NotAppliedAndFlagged()
+    public void ThresholdRuleItem_CommaDecimal_Parses()
     {
-        var (vm, s, _, _) = Make();
-        vm.GpuTempWarn = 95f; // crit is 88
-        var rule = s.ThresholdRules.Single(r => r.Group == MetricGroup.Gpu && r.Unit == "°C");
-        Assert.Equal(80f, rule.Warn);
-        Assert.NotEqual("", vm.ThresholdError);
-        vm.GpuTempCrit = 99f; // now valid
-        Assert.Equal(95f, rule.Warn);
-        Assert.Equal(99f, rule.Crit);
-        Assert.Equal("", vm.ThresholdError);
+        var original = System.Globalization.CultureInfo.CurrentCulture;
+        try
+        {
+            System.Globalization.CultureInfo.CurrentCulture = new System.Globalization.CultureInfo("de-DE");
+            var (vm, s, _, _) = Make();
+            var item = vm.ThresholdRuleItems.Single(i => i.Group == MetricGroup.Cpu && i.Unit == "°C");
+            item.WarnText = "80,5";
+            item.CritText = "90,5";
+            var rule = s.ThresholdRules.Single(r => r.Group == MetricGroup.Cpu && r.Unit == "°C");
+            Assert.Equal(80.5f, rule.Warn);
+            Assert.Equal(90.5f, rule.Crit);
+            Assert.Equal("", item.Error);
+        }
+        finally
+        {
+            System.Globalization.CultureInfo.CurrentCulture = original;
+        }
     }
 
     [Fact]
-    public void LoadThresholds_ApplyToBothCpuAndGpuPercentRules()
+    public void ThresholdRuleItem_CpuAndGpuPercentRows_AreIndependent()
     {
+        // The old coupled editor wrote one "Load %" value to both the CPU and GPU % rules; the rule-driven grid
+        // edits each row independently now — editing CPU % must not touch GPU %.
         var (vm, s, _, _) = Make();
-        vm.LoadWarn = 70f;
-        Assert.All(s.ThresholdRules.Where(r => r.Unit == "%"), r => Assert.Equal(70f, r.Warn));
+        var cpuLoad = vm.ThresholdRuleItems.Single(i => i.Group == MetricGroup.Cpu && i.Unit == "%");
+        var gpuLoad = vm.ThresholdRuleItems.Single(i => i.Group == MetricGroup.Gpu && i.Unit == "%");
+        cpuLoad.WarnText = "70";
+        Assert.Equal(70f, s.ThresholdRules.Single(r => r.Group == MetricGroup.Cpu && r.Unit == "%").Warn);
+        Assert.Equal(90f, s.ThresholdRules.Single(r => r.Group == MetricGroup.Gpu && r.Unit == "%").Warn); // untouched
+        Assert.Equal("90", gpuLoad.WarnText); // the row's own displayed value is also untouched
+    }
+
+    [Fact]
+    public void ThresholdRuleItem_SeededZeroZeroRow_NoErrorUntilEdited()
+    {
+        var (vm, s, changes, _) = Make();
+        vm.SelectedAddablePair = vm.AddableRulePairs.Single(p => p.Group == MetricGroup.Cpu && p.Unit == "W");
+        vm.AddRuleCommand.Execute(null);
+        var item = vm.ThresholdRuleItems.Single(i => i.Group == MetricGroup.Cpu && i.Unit == "W");
+
+        Assert.Equal("", item.Error);
+        Assert.Equal("0", item.WarnText);
+        Assert.Equal("0", item.CritText);
+
+        item.WarnText = "20";
+        item.CritText = "40";
+        var rule = s.ThresholdRules.Single(r => r.Group == MetricGroup.Cpu && r.Unit == "W");
+        Assert.Equal(20f, rule.Warn);
+        Assert.Equal(40f, rule.Crit);
+        Assert.Equal("", item.Error);
+        Assert.Contains(SettingsChange.Thresholds, changes);
+    }
+
+    [Fact]
+    public void ThresholdRuleItems_OrderedByGroupOrderThenUnit_IncludesMotherboardDefault()
+    {
+        var (vm, _, _, _) = Make();
+        Assert.Equal(
+            new[]
+            {
+                (MetricGroup.Cpu, "%"), (MetricGroup.Cpu, "°C"),
+                (MetricGroup.Gpu, "%"), (MetricGroup.Gpu, "°C"),
+                (MetricGroup.Game, "fps"),
+                (MetricGroup.Motherboard, "°C"),
+            },
+            vm.ThresholdRuleItems.Select(i => (i.Group, i.Unit)));
+    }
+
+    [Fact]
+    public void AddableRulePairs_OrderedByGroupThenUnit_ExcludesExistingRules()
+    {
+        var (vm, _, _, _) = Make();
+        Assert.Equal(
+            new[] { (MetricGroup.Cpu, "A"), (MetricGroup.Cpu, "W"), (MetricGroup.Gpu, "MHz"), (MetricGroup.Gpu, "W") },
+            vm.AddableRulePairs.Select(p => (p.Group, p.Unit)));
+        Assert.True(vm.HasAddableRulePairs);
+    }
+
+    [Fact]
+    public void AddRuleCommand_SeedsZeroZeroRule_AddsRowAndRemovesFromAddable_Raises()
+    {
+        var (vm, s, changes, saves) = Make();
+        vm.SelectedAddablePair = vm.AddableRulePairs.Single(p => p.Group == MetricGroup.Cpu && p.Unit == "W");
+
+        vm.AddRuleCommand.Execute(null);
+
+        var rule = s.ThresholdRules.Single(r => r.Group == MetricGroup.Cpu && r.Unit == "W");
+        Assert.Equal(0f, rule.Warn);
+        Assert.Equal(0f, rule.Crit);
+        Assert.False(rule.LowerIsWorse);
+        Assert.Contains(vm.ThresholdRuleItems, i => i.Group == MetricGroup.Cpu && i.Unit == "W");
+        Assert.DoesNotContain(vm.AddableRulePairs, p => p.Group == MetricGroup.Cpu && p.Unit == "W");
+        Assert.Contains(SettingsChange.Thresholds, changes);
+        Assert.Equal(1, saves());
+    }
+
+    [Fact]
+    public void AddRuleCommand_NoSelection_IsNoOp()
+    {
+        var (vm, s, changes, saves) = Make();
+        vm.SelectedAddablePair = null;
+        int before = s.ThresholdRules.Count;
+
+        vm.AddRuleCommand.Execute(null);
+
+        Assert.Equal(before, s.ThresholdRules.Count);
+        Assert.Empty(changes);
+        Assert.Equal(0, saves());
+    }
+
+    [Fact]
+    public void HasAddableRulePairs_FalseWhenAllDiscoveredPairsHaveRules()
+    {
+        var s = new AppSettings { ThresholdRules = ThresholdDefaults.Rules() };
+        var vm = new SettingsViewModel(s, Array.Empty<MetricDefinition>(), () => { });
+        Assert.False(vm.HasAddableRulePairs);
+        Assert.Empty(vm.AddableRulePairs);
+        Assert.Null(vm.SelectedAddablePair);
     }
 
     [Fact]
@@ -142,6 +279,26 @@ public class SettingsViewModelTests
     }
 
     [Fact]
+    public void DashboardUiScale_WritesThroughAndRaisesUiScale()
+    {
+        var (vm, s, changes, _) = Make();
+        vm.DashboardUiScale = 1.2;
+        Assert.Equal(1.2, s.DashboardUiScale);
+        Assert.Equal(1, changes.Count(c => c == SettingsChange.UiScale));
+    }
+
+    [Theory]
+    [InlineData(0.5, 0.9)]
+    [InlineData(2.0, 1.3)]
+    public void DashboardUiScale_ClampsOutOfRange(double set, double expected)
+    {
+        var (vm, s, _, _) = Make();
+        vm.DashboardUiScale = set;
+        Assert.Equal(expected, vm.DashboardUiScale);
+        Assert.Equal(expected, s.DashboardUiScale);
+    }
+
+    [Fact]
     public void Hotkey_ValidNormalizes_InvalidFlagged_EmptyDisables()
     {
         var (vm, s, changes, _) = Make();
@@ -177,18 +334,20 @@ public class SettingsViewModelTests
     }
 
     [Fact]
-    public void FpsThresholds_LoadFromRule_WarnMustExceedCrit()
+    public void ThresholdRuleItem_Fps_LowerIsWorse_WarnMustExceedCrit()
     {
         var s = new AppSettings { ThresholdRules = ThresholdDefaults.Rules() };
         int saves = 0;
         var vm = new SettingsViewModel(s, Array.Empty<MetricDefinition>(), () => saves++);
-        Assert.Equal(60f, vm.FpsWarn);
-        Assert.Equal(30f, vm.FpsCrit);
-        vm.FpsWarn = 20; // below crit → invalid
-        Assert.Equal("FPS: warn must be above crit", vm.ThresholdError);
+        var item = vm.ThresholdRuleItems.Single(i => i.Group == MetricGroup.Game && i.Unit == "fps");
+        Assert.True(item.LowerIsWorse);
+        Assert.Equal("60", item.WarnText);
+        Assert.Equal("30", item.CritText);
+        item.WarnText = "20"; // below crit → invalid (lower-is-worse wants warn above crit)
+        Assert.Equal("Warn must be above crit when lower is worse", item.Error);
         Assert.Equal(60f, s.ThresholdRules.Single(r => r.Group == MetricGroup.Game && r.Unit == "fps").Warn); // not applied
-        vm.FpsWarn = 75;
-        Assert.Equal("", vm.ThresholdError);
+        item.WarnText = "75";
+        Assert.Equal("", item.Error);
         Assert.Equal(75f, s.ThresholdRules.Single(r => r.Group == MetricGroup.Game && r.Unit == "fps").Warn);
         Assert.True(s.ThresholdRules.Single(r => r.Group == MetricGroup.Game && r.Unit == "fps").LowerIsWorse);
     }
@@ -461,5 +620,118 @@ public class SettingsViewModelTests
         vm.RestartError = "Couldn't restart Stats: access denied.";
 
         Assert.Equal("Couldn't restart Stats: access denied.", vm.RestartError);
+    }
+
+    // ---- Alerts section (v1.8) ----
+
+    [Fact]
+    public void Ctor_LoadsAlertValuesFromSettings()
+    {
+        var s = new AppSettings { AlertsEnabled = false, AlertHoldSeconds = 30, AlertSoundEnabled = true };
+        var vm = new SettingsViewModel(s, Defs, () => { });
+        Assert.False(vm.AlertsEnabled);
+        Assert.Equal(30, vm.AlertHoldSeconds);
+        Assert.True(vm.AlertSoundEnabled);
+    }
+
+    [Fact]
+    public void AlertsEnabled_WritesThroughAndRaisesAlerts()
+    {
+        var (vm, s, changes, saves) = Make();
+        vm.AlertsEnabled = false;
+        Assert.False(s.AlertsEnabled);
+        Assert.Equal(new[] { SettingsChange.Alerts }, changes);
+        Assert.Equal(1, saves());
+    }
+
+    [Fact]
+    public void AlertHoldSeconds_WritesThroughAndRaisesAlerts()
+    {
+        var (vm, s, changes, _) = Make();
+        vm.AlertHoldSeconds = 45;
+        Assert.Equal(45, s.AlertHoldSeconds);
+        Assert.Contains(SettingsChange.Alerts, changes);
+    }
+
+    [Theory]
+    [InlineData(0, 1)]
+    [InlineData(-10, 1)]
+    [InlineData(500, 120)]
+    public void AlertHoldSeconds_ClampsBothSettingsAndViewModel(int input, int expected)
+    {
+        var (vm, s, _, _) = Make();
+        vm.AlertHoldSeconds = input;
+        Assert.Equal(expected, s.AlertHoldSeconds);
+        Assert.Equal(expected, vm.AlertHoldSeconds);
+    }
+
+    [Fact]
+    public void AlertSoundEnabled_WritesThroughAndRaisesAlerts()
+    {
+        var (vm, s, changes, _) = Make();
+        vm.AlertSoundEnabled = true;
+        Assert.True(s.AlertSoundEnabled);
+        Assert.Contains(SettingsChange.Alerts, changes);
+    }
+
+    // ---- Tray metric picker (v1.8 §5) ----
+
+    [Fact]
+    public void Ctor_TrayMetricOptions_AutoFirst_ThenCandidatesInGroupOrder()
+    {
+        var (vm, _, _, _) = Make();
+        Assert.Equal("Auto", vm.TrayMetricOptions[0].DisplayName);
+        Assert.Null(vm.TrayMetricOptions[0].Id);
+        // cpu.temp, gpu.power (W, excluded), gpu.clock (MHz, excluded) — only °C/% metrics qualify.
+        Assert.Equal(new[] { "cpu.temp" }, vm.TrayMetricOptions.Skip(1).Select(o => o.Id));
+    }
+
+    [Fact]
+    public void Ctor_NoStoredTrayMetricId_SelectsAuto()
+    {
+        var (vm, _, _, _) = Make();
+        Assert.Null(vm.SelectedTrayMetric.Id);
+        Assert.Equal("Auto", vm.SelectedTrayMetric.DisplayName);
+    }
+
+    [Fact]
+    public void Ctor_StoredTrayMetricId_SelectsMatchingOption_WithoutRaisingChanged()
+    {
+        var s = new AppSettings { ThresholdRules = ThresholdDefaults.Rules(), TrayMetricId = "cpu.temp" };
+        var changes = new List<SettingsChange>();
+        var vm = new SettingsViewModel(s, Defs, () => { });
+        vm.Changed += c => changes.Add(c);
+        Assert.Equal("cpu.temp", vm.SelectedTrayMetric.Id);
+        Assert.Empty(changes);
+    }
+
+    [Fact]
+    public void Ctor_StoredTrayMetricId_NoLongerDiscovered_FallsBackToAuto()
+    {
+        var s = new AppSettings { ThresholdRules = ThresholdDefaults.Rules(), TrayMetricId = "cpu.removed" };
+        var vm = new SettingsViewModel(s, Defs, () => { });
+        Assert.Null(vm.SelectedTrayMetric.Id);
+    }
+
+    [Fact]
+    public void SelectedTrayMetric_WritesThroughAndRaisesTray()
+    {
+        var (vm, s, changes, saves) = Make();
+        var cpuTemp = vm.TrayMetricOptions.Single(o => o.Id == "cpu.temp");
+        vm.SelectedTrayMetric = cpuTemp;
+        Assert.Equal("cpu.temp", s.TrayMetricId);
+        Assert.Equal(new[] { SettingsChange.Tray }, changes);
+        Assert.Equal(1, saves());
+    }
+
+    [Fact]
+    public void SelectedTrayMetric_BackToAuto_ClearsStoredId()
+    {
+        var (vm, s, changes, _) = Make();
+        var cpuTemp = vm.TrayMetricOptions.Single(o => o.Id == "cpu.temp");
+        vm.SelectedTrayMetric = cpuTemp;
+        vm.SelectedTrayMetric = vm.TrayMetricOptions[0]; // Auto
+        Assert.Null(s.TrayMetricId);
+        Assert.Equal(new[] { SettingsChange.Tray, SettingsChange.Tray }, changes);
     }
 }

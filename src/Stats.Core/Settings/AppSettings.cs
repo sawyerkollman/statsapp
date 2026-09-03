@@ -76,6 +76,34 @@ public sealed class AppSettings
     /// <summary>Custom accent override as "#RRGGBB", or null to use the preset's own accent colour.</summary>
     public string? ThemeAccent { get; set; }
 
+    // ---- v1.8 alerts ----
+    /// <summary>Master switch for the alert engine (tray balloon + log); evaluated regardless of dashboard/overlay
+    /// visibility.</summary>
+    public bool AlertsEnabled { get; set; } = true;
+    /// <summary>Seconds a metric must hold Crit before an alert raises; clamped 1–120 at load.</summary>
+    public int AlertHoldSeconds { get; set; } = 10;
+    /// <summary>Play <see cref="System.Media.SystemSounds.Exclamation"/> alongside the tray balloon.</summary>
+    public bool AlertSoundEnabled { get; set; }
+
+    // ---- v1.8 tray picker ----
+    /// <summary>Metric id the tray icon renders; null = Auto (the CPU-temp heuristic in App). Resolved via
+    /// <see cref="Tray.TrayMetricSelector.Resolve"/>, which falls back to null (Auto) when the id is missing or no
+    /// longer discovered.</summary>
+    public string? TrayMetricId { get; set; }
+
+    // ---- v1.8 FPS hint ----
+    /// <summary>The dashboard's "Gaming? Add FPS…" hint banner was dismissed via Got it; persists across restarts.</summary>
+    public bool FpsHintDismissed { get; set; }
+
+    // ---- v1.8 accessibility floor ----
+    /// <summary>Dashboard-wide UI scale applied as a LayoutTransform on the content root; clamped 0.9–1.3 at load.</summary>
+    public double DashboardUiScale { get; set; } = 1.0;
+
+    // ---- v1.8 Fans window UX ----
+    /// <summary>The Fans window's always-on safety warning collapses to one line via "Got it"; persists across
+    /// restarts. Recovery/conflict banners are unrelated and always show in full.</summary>
+    public bool FanSafetyBannerCollapsed { get; set; }
+
     /// <summary>Get-or-create the TilePref for a metric id.</summary>
     public TilePref PrefFor(string metricId)
     {

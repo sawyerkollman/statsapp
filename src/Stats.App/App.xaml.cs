@@ -11,12 +11,15 @@ using H.NotifyIcon;
 using Stats.App.Helpers;
 using Stats.App.Tray;
 using Stats.App.Views;
+using Stats.Core.Alerts;
 using Stats.Core.Fans;
 using Stats.Core.Frames;
 using Stats.Core.Metrics;
+using Stats.Core.Refresh;
 using Stats.Core.Sensors;
 using Stats.Core.Settings;
 using Stats.Core.Startup;
+using Stats.Core.Tray;
 using Stats.Core.Updates;
 using Stats.Core.ViewModels;
 
@@ -40,10 +43,15 @@ public partial class App : Application
     private TaskbarIcon? _tray;
     private string? _trayCpuTempId;
     private string? _trayGpuTempId;
+    private MenuItem? _moveOverlayMenuItem;
     private SettingsViewModel? _settingsVm;
     private GlobalHotkey? _hotkey;
     private PeaksWindow? _peaks;
     private PeaksViewModel? _peaksVm;
+    private AlertEngine? _alertEngine;
+    private AlertLogViewModel? _alertLog;
+    private MetricDetailWindow? _detail;
+    private MetricDetailViewModel? _detailVm;
     private TrayIconRenderer? _trayRenderer;
     private System.Drawing.Icon? _appIcon;
     private MetricDefinition? _trayCpuTempDef;
@@ -68,10 +76,15 @@ public partial class App : Application
     /// <summary>Cancelled by OnExit() so an in-flight manual "Check for updates" doesn't try to touch a
     /// tearing-down SettingsViewModel.</summary>
     private CancellationTokenSource? _manualCheckCts;
-    /// <summary>True until the first ShowDashboard() call (tray click or Settings/Open dashboard) — that call
-    /// performs one immediate RefreshAll() against already-polled data before showing, since a --minimized
-    /// launch skipped the initial Show() and its first snapshot dispatch race.</summary>
-    private bool _pendingFirstShowRefresh;
+    /// <summary>Latest snapshot from the poller, applied by the coalesced Dispatcher refresh action below — see
+    /// <see cref="_refreshCoalescer"/>. Written with Volatile.Write on the poll thread, read with Volatile.Read on
+    /// the UI thread.</summary>
+    private SensorSnapshot? _latestSnapshot;
+    /// <summary>"At most one refresh in flight" latch (v1.8 §10 "Coalescing") — the poll thread's
+    /// SnapshotAvailable handler posts a Dispatcher.BeginInvoke only when <see cref="RefreshCoalescer.TryPost"/>
+    /// returns true, so a UI thread that's still processing an earlier tick never accumulates a backlog of queued
+    /// refreshes; the posted action always applies whatever the *latest* snapshot is by the time it runs.</summary>
+    private readonly RefreshCoalescer _refreshCoalescer = new();
     /// <summary>Cancelled by ExitApp()/OnExit() so an in-flight install download bails out (and resets the busy
     /// state) instead of racing app shutdown; a fresh instance per "Update now" click.</summary>
     private CancellationTokenSource? _installCts;
@@ -134,6 +147,12 @@ public partial class App : Application
         }
 
         _store = new MetricStore(definitions);
+        _alertLog = new AlertLogViewModel(); // created before any window so early alerts (Peaks not yet opened) are captured
+        _alertEngine = new AlertEngine { HoldSeconds = _settings.AlertHoldSeconds };
+        _alertEngine.EpisodeEnded += (metricId, raisedAtLocal, duration) =>
+        {
+            if (raisedAtLocal is not null) _alertLog.Complete(metricId, duration);
+        };
         _poller = new SensorPoller(_reader)
         {
             Interval = TimeSpan.FromSeconds(_settings.PollIntervalSeconds),
@@ -147,6 +166,7 @@ public partial class App : Application
         _dashboardVm = new DashboardViewModel(_store, _settings, SaveSettings)
         {
             IsDegraded = degraded,
+            UiScale = _settings.DashboardUiScale,
         };
 
         _overlayVm = new OverlayViewModel(_store, _settings);
@@ -163,6 +183,7 @@ public partial class App : Application
             _settings.OverlayLeft = _overlay.Left;
             _settings.OverlayTop = _overlay.Top;
         };
+        _overlay.ExitMoveModeRequested += ExitMoveMode;
         _dashboardVm.OverlayMetricsChanged += () => { _overlayVm.Rebuild(); ApplyFrameTracing(); };
         _dashboardVm.OverlayToggleRequested += ToggleOverlay;
 
@@ -188,6 +209,7 @@ public partial class App : Application
 
         _dashboardVm.OpenPeaksRequested += ShowPeaks;
         _dashboardVm.OpenFansRequested += ShowFans;
+        _dashboardVm.OpenTileDetailRequested += ShowMetricDetail;
         _dashboardVm.DashboardMetricsChanged += () => { _peaksVm?.RebuildRows(); ApplyFrameTracing(); };
         _dashboardVm.InstallUpdateRequested += OnInstallUpdateRequested;
         _dashboardVm.OpenReleasePageRequested += OnOpenReleasePageRequested;
@@ -199,7 +221,8 @@ public partial class App : Application
                        ?? cpuTemps.FirstOrDefault())?.Id;
         _trayGpuTempId = definitions.FirstOrDefault(d =>
             d.Group == MetricGroup.Gpu && d.Unit == "°C")?.Id;
-        _trayCpuTempDef = definitions.FirstOrDefault(d => d.Id == _trayCpuTempId);
+        _trayCpuTempDef = TrayMetricSelector.Resolve(_settings.TrayMetricId, definitions)
+                       ?? definitions.FirstOrDefault(d => d.Id == _trayCpuTempId);
         _trayRenderer = new TrayIconRenderer();
         SetupTray();
 
@@ -218,16 +241,14 @@ public partial class App : Application
             try { fanController.Tick(snapshot, DateTime.UtcNow); }
             catch (Exception ex) { System.Diagnostics.Trace.WriteLine("[Stats] FanController.Tick failed: " + ex); }
         };
-        _poller.SnapshotAvailable += snapshot => Dispatcher.BeginInvoke(() =>
+        // Coalesced (v1.8 §10 "Coalescing"): every snapshot updates _latestSnapshot, but only the first one since
+        // the UI thread last caught up gets a BeginInvoke — a busy UI thread never queues up a backlog, and the
+        // action that does run always applies whatever is newest by the time it runs, never a stale snapshot.
+        _poller.SnapshotAvailable += snapshot =>
         {
-            _store.Apply(snapshot);
-            _dashboardVm.RefreshAll();
-            _dashboardVm.SetGroupStatus(MetricGroup.Game, FrameStatus());
-            _overlayVm?.RefreshAll();
-            UpdateTrayTooltip();
-            if (_peaks is { IsVisible: true }) _peaksVm?.Refresh();
-            if (_fans is { IsVisible: true }) _fansVm?.Refresh();
-        });
+            Volatile.Write(ref _latestSnapshot, snapshot);
+            if (_refreshCoalescer.TryPost()) Dispatcher.BeginInvoke(RunCoalescedRefresh);
+        };
         // HealthChanged fires on the poll thread (see SensorPoller); dispatch its already-immutable state to the
         // dashboard VM the same way every other poll-thread → UI signal here is marshaled.
         _poller.HealthChanged += state => Dispatcher.BeginInvoke(() => _dashboardVm.SetSensorHealth(state));
@@ -235,8 +256,12 @@ public partial class App : Application
         _dashboard.AllowClose = false; // close button hides to tray; exit via tray menu
         _dashboard.LocationChanged += (_, _) => SaveWindowBounds();
         _dashboard.SizeChanged += (_, _) => SaveWindowBounds();
+        // Visibility gating (v1.8 §10): RefreshAll only runs against a visible window, but also runs once
+        // immediately whenever the window *becomes* visible — including a --minimized launch's first ShowDashboard()
+        // and every subsequent hide/show — so a freshly shown window is never stale for a whole poll interval.
+        _dashboard.IsVisibleChanged += (_, e) => { if (e.NewValue is true) { _dashboardVm.RefreshAll(); _dashboardVm.SetGroupStatus(MetricGroup.Game, FrameStatus()); } };
+        _overlay.IsVisibleChanged += (_, e) => { if (e.NewValue is true) _overlayVm?.RefreshAll(); };
         SessionEnding += (_, _) => ExitApp();
-        _pendingFirstShowRefresh = true; // consumed by the first ShowDashboard() call, whether that's now or a later tray click
         if (!startMinimized) _dashboard.Show(); // --minimized: dashboard/tray/services/poller are still fully constructed above, just not shown
         _poller.Start();
         StartUpdateChecks();
@@ -440,6 +465,9 @@ public partial class App : Application
         open.Click += (_, _) => ShowDashboard();
         var overlay = new MenuItem { Header = "Toggle overlay" };
         overlay.Click += (_, _) => ToggleOverlay();
+        var moveOverlay = new MenuItem { Header = "Move overlay" };
+        moveOverlay.Click += (_, _) => ToggleMoveMode();
+        _moveOverlayMenuItem = moveOverlay;
         var peaks = new MenuItem { Header = "Session peaks" };
         peaks.Click += (_, _) => ShowPeaks();
         var fans = new MenuItem { Header = "Fans…" };
@@ -451,6 +479,7 @@ public partial class App : Application
 
         menu.Items.Add(open);
         menu.Items.Add(overlay);
+        menu.Items.Add(moveOverlay);
         menu.Items.Add(peaks);
         menu.Items.Add(fans);
         menu.Items.Add(settings);
@@ -495,18 +524,68 @@ public partial class App : Application
         catch { /* keep previous icon */ }
     }
 
-    /// <summary>Tray icon left-click, "Open dashboard", and "Settings" all funnel through here. The very first
-    /// call refreshes the dashboard VM against the already-current MetricStore before showing/activating —
-    /// closes the gap between a --minimized launch's skipped initial Show() and whatever poll tick last ran.
-    /// </summary>
+    /// <summary>The Dispatcher-side half of the poll-thread → UI coalescing latch (v1.8 §10 "Coalescing"): clears
+    /// <see cref="_refreshCoalescer"/> *before* reading <see cref="_latestSnapshot"/> (see RefreshCoalescer.Take)
+    /// so a snapshot that lands mid-refresh is never lost, applies that snapshot to the store, evaluates alerts,
+    /// and updates the tray unconditionally — those never depend on any window being visible (§1) — then refreshes
+    /// the dashboard/overlay/Peaks/Fans/Detail only while each is actually visible (§10 "Visibility gating"); a
+    /// hidden window catches up in one shot via its own IsVisibleChanged handler instead (see OnStartup).</summary>
+    private void RunCoalescedRefresh()
+    {
+        _refreshCoalescer.Take();
+        var snapshot = Interlocked.Exchange(ref _latestSnapshot, null); // consume: a second queued action must not re-apply the same snapshot
+        if (snapshot is null || _store is null || _dashboardVm is null || _dashboard is null) return;
+
+        _store.Apply(snapshot);
+        if (_dashboard.IsVisible)
+        {
+            _dashboardVm.RefreshAll();
+            _dashboardVm.SetGroupStatus(MetricGroup.Game, FrameStatus());
+        }
+        if (_overlay is { IsVisible: true }) _overlayVm?.RefreshAll();
+        UpdateTrayTooltip();
+        if (_settings?.AlertsEnabled == true) EvaluateAlerts();
+        if (_peaks is { IsVisible: true }) _peaksVm?.Refresh();
+        if (_fans is { IsVisible: true }) _fansVm?.Refresh();
+        if (_detail is { IsVisible: true }) _detailVm?.Refresh();
+    }
+
+    /// <summary>Builds one <see cref="AlertSample"/> per metric in the union of the dashboard and overlay
+    /// selections (evaluated regardless of whether either window is visible), ticks <see cref="_alertEngine"/>,
+    /// and surfaces any raised alert as a tray balloon (optionally with a chime) plus a log row. A balloon failure
+    /// (e.g. the shell not being ready) must never take the refresh path down with it.</summary>
+    private void EvaluateAlerts()
+    {
+        if (_store is null || _settings is null || _alertEngine is null || _alertLog is null) return;
+        var defsById = _store.Definitions.ToDictionary(d => d.Id);
+        var ids = _settings.DashboardMetrics.Concat(_settings.OverlayMetrics).Distinct();
+        // Built once for this tick's whole sample set rather than per metric — see v1.8 §10 "Cheap extras".
+        var thresholds = ThresholdIndex.Build(_settings);
+        var samples = new List<AlertSample>();
+        foreach (var id in ids)
+        {
+            if (!defsById.TryGetValue(id, out var def) || !_store.TryGet(id, out var history)) continue;
+            var rule = thresholds.RuleFor(def);
+            var severity = thresholds.Evaluate(def, history.Current);
+            samples.Add(new AlertSample(def, history.Current, severity, rule));
+        }
+
+        foreach (var evt in _alertEngine.Tick(samples, DateTime.UtcNow))
+        {
+            _alertLog.Add(evt);
+            try { _tray?.ShowNotification("Stats alert", evt.Message); }
+            catch (Exception ex) { System.Diagnostics.Trace.WriteLine("[Stats] alert balloon failed: " + ex.Message); }
+            if (_settings.AlertSoundEnabled)
+                try { System.Media.SystemSounds.Exclamation.Play(); } catch { /* audio device unavailable */ }
+        }
+    }
+
+    /// <summary>Tray icon left-click, "Open dashboard", and "Settings" all funnel through here. Show() alone
+    /// covers the "not stale for a poll interval" refresh via the Dashboard window's IsVisibleChanged handler
+    /// (see OnStartup) — including the very first show after a --minimized launch.</summary>
     private void ShowDashboard()
     {
         if (_dashboard is null) return;
-        if (_pendingFirstShowRefresh)
-        {
-            _pendingFirstShowRefresh = false;
-            _dashboardVm?.RefreshAll();
-        }
         _dashboard.Show();
         _dashboard.WindowState = WindowState.Normal;
         _dashboard.Activate();
@@ -515,8 +594,40 @@ public partial class App : Application
     private void ToggleOverlay()
     {
         if (_overlay is null) return;
-        if (_overlay.IsVisible) _overlay.Hide();
+        if (_overlay.IsVisible)
+        {
+            _overlay.Hide();
+            if (_overlayVm?.IsMoveMode == true) ExitMoveMode(); // hiding while moving must restore click-through
+        }
         else _overlay.Show();
+    }
+
+    /// <summary>Tray "Move overlay" — enters move mode (click-through off, overlay shown/activated, dashed
+    /// outline, header becomes "Done moving overlay") or exits it (menu clicked again). Esc on the overlay and
+    /// hiding it via <see cref="ToggleOverlay"/> exit through <see cref="ExitMoveMode"/> directly.</summary>
+    private void ToggleMoveMode()
+    {
+        if (_overlayVm is null) return;
+        if (_overlayVm.IsMoveMode) ExitMoveMode();
+        else EnterMoveMode();
+    }
+
+    private void EnterMoveMode()
+    {
+        if (_overlay is null || _overlayVm is null) return;
+        ClickThrough.Set(_overlay, false); // the persisted OverlayClickThrough setting is never touched
+        _overlay.Show();
+        _overlay.Activate();
+        _overlayVm.IsMoveMode = true;
+        if (_moveOverlayMenuItem is not null) _moveOverlayMenuItem.Header = "Done moving overlay";
+    }
+
+    private void ExitMoveMode()
+    {
+        if (_overlay is null || _overlayVm is null || _settings is null || !_overlayVm.IsMoveMode) return;
+        _overlayVm.IsMoveMode = false;
+        ClickThrough.Set(_overlay, _settings.OverlayClickThrough); // restores whatever the setting is now
+        if (_moveOverlayMenuItem is not null) _moveOverlayMenuItem.Header = "Move overlay";
     }
 
     private void ShowPeaks()
@@ -524,7 +635,7 @@ public partial class App : Application
         if (_store is null || _settings is null) return;
         if (_peaks is null)
         {
-            _peaksVm = new PeaksViewModel(_store, _settings);
+            _peaksVm = new PeaksViewModel(_store, _settings, _alertLog);
             _peaks = new PeaksWindow { DataContext = _peaksVm };
             if (_settings.PeaksWidth is double w) _peaks.Width = w;
             if (_settings.PeaksHeight is double h) _peaks.Height = h;
@@ -549,6 +660,26 @@ public partial class App : Application
         _settings.PeaksWidth = _peaks.Width;
         _settings.PeaksHeight = _peaks.Height;
         ScheduleBoundsSave();
+    }
+
+    private void ShowMetricDetail(string metricId)
+    {
+        if (_store is null || _settings is null) return;
+        if (!_store.TryGet(metricId, out var history)) return;
+        var def = _store.Definitions.FirstOrDefault(d => d.Id == metricId);
+        if (def is null) return;
+        if (_detail is null)
+        {
+            _detailVm = new MetricDetailViewModel(def, history, _settings);
+            _detail = new MetricDetailWindow { DataContext = _detailVm };
+        }
+        else
+        {
+            _detailVm!.SetTarget(def, history);
+        }
+        _detail.Show();
+        _detail.WindowState = WindowState.Normal;
+        _detail.Activate();
     }
 
     private void ShowFans()
@@ -618,7 +749,9 @@ public partial class App : Application
                 if (_overlay is not null)
                 {
                     _overlay.Opacity = _settings.OverlayOpacity;
-                    ClickThrough.Set(_overlay, _settings.OverlayClickThrough);
+                    // Move mode owns click-through (forced off) until it exits — see ExitMoveMode, which applies
+                    // whatever the setting holds at that point.
+                    if (_overlayVm?.IsMoveMode != true) ClickThrough.Set(_overlay, _settings.OverlayClickThrough);
                 }
                 _overlayVm?.ApplyLayout();
                 break;
@@ -635,6 +768,14 @@ public partial class App : Application
                 if (_settings.CheckForUpdatesAutomatically) StartUpdateChecks();
                 else { _updateCts?.Cancel(); _updateCts?.Dispose(); _updateCts = null; }
                 break;
+            case SettingsChange.Alerts:
+                if (_alertEngine is not null) _alertEngine.HoldSeconds = _settings.AlertHoldSeconds;
+                break;
+            case SettingsChange.Tray:
+                _trayCpuTempDef = TrayMetricSelector.Resolve(_settings.TrayMetricId, _definitions)
+                               ?? _definitions.FirstOrDefault(d => d.Id == _trayCpuTempId);
+                UpdateTrayTooltip();
+                break;
             case SettingsChange.Theme:
                 ThemeManager.Apply(_settings.ThemePreset, _settings.ThemeAccent);
                 // ThemeManager.Apply replaces brush entries rather than mutating them, so already-bound
@@ -643,6 +784,10 @@ public partial class App : Application
                 _dashboardVm?.RaiseSeverityRefresh();
                 _overlayVm?.RaiseSeverityRefresh();
                 _peaksVm?.RaiseSeverityRefresh();
+                _detailVm?.RaiseSeverityRefresh();
+                break;
+            case SettingsChange.UiScale:
+                if (_dashboardVm is not null) _dashboardVm.UiScale = _settings.DashboardUiScale;
                 break;
         }
     }
@@ -775,6 +920,7 @@ public partial class App : Application
         if (_dashboard is not null) _dashboard.AllowClose = true;
         if (_peaks is not null) _peaks.AllowClose = true;
         if (_fans is not null) _fans.AllowClose = true;
+        if (_detail is not null) _detail.AllowClose = true;
         _tray?.Dispose();
         SaveWindowBounds();
         Shutdown();

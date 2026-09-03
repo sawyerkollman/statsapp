@@ -36,6 +36,16 @@ public class MetricStoreTests
     }
 
     [Fact]
+    public void Apply_PassesSnapshotTimestamp_ToSessionMinMaxAtUtc()
+    {
+        var store = new MetricStore(new[] { Def("a") });
+        var t = new DateTime(2026, 1, 1, 12, 0, 0, DateTimeKind.Utc);
+        store.Apply(new SensorSnapshot(new Dictionary<string, float?> { ["a"] = 1f }, t));
+        Assert.Equal(t, store["a"].SessionMinAtUtc);
+        Assert.Equal(t, store["a"].SessionMaxAtUtc);
+    }
+
+    [Fact]
     public void ResizeAll_And_ResetSession_ApplyToEveryHistory()
     {
         var store = new MetricStore(new[] { Def("a"), Def("b") }, capacity: 2);

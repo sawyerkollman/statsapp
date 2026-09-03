@@ -55,6 +55,8 @@ public sealed class SettingsService
         settings.OverlayFontScale = Math.Clamp(settings.OverlayFontScale, 0.8, 1.6);
         settings.OverlayOpacity = Math.Clamp(settings.OverlayOpacity, 0.3, 1.0);
         settings.HistoryWindowMinutes = SnapHistoryMinutes(settings.HistoryWindowMinutes);
+        settings.AlertHoldSeconds = Math.Clamp(settings.AlertHoldSeconds, 1, 120);
+        settings.DashboardUiScale = Math.Clamp(settings.DashboardUiScale, 0.9, 1.3);
         // An explicit JSON null deserializes over the property initializer, so re-establish the empty collections.
         settings.ThresholdRules ??= new();
         settings.ThresholdOverrides ??= new();

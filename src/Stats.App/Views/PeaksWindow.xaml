@@ -3,50 +3,108 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="Stats — Session peaks" Width="640" Height="480" MinWidth="480" MinHeight="240"
         Background="{DynamicResource WindowBg}">
-    <DockPanel Margin="12">
-        <DockPanel DockPanel.Dock="Top" Margin="0,0,0,10">
-            <Button DockPanel.Dock="Right" Content="Reset session" Command="{Binding ResetSessionCommand}" Style="{StaticResource HeaderButton}"/>
-            <CheckBox DockPanel.Dock="Right" Content="All metrics" IsChecked="{Binding IncludeAll}" VerticalAlignment="Center" Margin="0,0,8,0"/>
-            <TextBlock Text="Session peaks" FontSize="18" FontWeight="Bold" Foreground="{DynamicResource TextPrimary}"/>
-        </DockPanel>
-        <Grid DockPanel.Dock="Top" Margin="6,0,6,4">
-            <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="*"/>
-                <ColumnDefinition Width="100"/>
-                <ColumnDefinition Width="100"/>
-                <ColumnDefinition Width="100"/>
-                <ColumnDefinition Width="100"/>
-            </Grid.ColumnDefinitions>
-            <TextBlock Text="Metric" Foreground="{DynamicResource TextSecondary}" FontSize="11"/>
-            <TextBlock Grid.Column="1" Text="Now" Foreground="{DynamicResource TextSecondary}" FontSize="11" TextAlignment="Right"/>
-            <TextBlock Grid.Column="2" Text="Min" Foreground="{DynamicResource TextSecondary}" FontSize="11" TextAlignment="Right"/>
-            <TextBlock Grid.Column="3" Text="Avg" Foreground="{DynamicResource TextSecondary}" FontSize="11" TextAlignment="Right"/>
-            <TextBlock Grid.Column="4" Text="Max" Foreground="{DynamicResource TextSecondary}" FontSize="11" TextAlignment="Right"/>
-        </Grid>
-        <ScrollViewer VerticalScrollBarVisibility="Auto">
-            <ItemsControl ItemsSource="{Binding Rows}">
-                <ItemsControl.ItemTemplate>
-                    <DataTemplate>
-                        <Border Background="{DynamicResource TileBg}" CornerRadius="4" Padding="6,4" Margin="0,2">
-                            <Grid>
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="*"/>
-                                    <ColumnDefinition Width="100"/>
-                                    <ColumnDefinition Width="100"/>
-                                    <ColumnDefinition Width="100"/>
-                                    <ColumnDefinition Width="100"/>
-                                </Grid.ColumnDefinitions>
-                                <TextBlock Text="{Binding Name}" Foreground="{DynamicResource TextPrimary}" FontSize="12" TextTrimming="CharacterEllipsis" ToolTip="{Binding Definition.DisplayName}"/>
-                                <TextBlock Grid.Column="1" Text="{Binding NowText}" FontSize="12" FontWeight="SemiBold" TextAlignment="Right"
-                                           Foreground="{Binding Severity, Converter={StaticResource SeverityToBrush}}"/>
-                                <TextBlock Grid.Column="2" Text="{Binding MinText}" Foreground="{DynamicResource TextSecondary}" FontSize="12" TextAlignment="Right"/>
-                                <TextBlock Grid.Column="3" Text="{Binding AvgText}" Foreground="{DynamicResource TextSecondary}" FontSize="12" TextAlignment="Right"/>
-                                <TextBlock Grid.Column="4" Text="{Binding MaxText}" Foreground="{DynamicResource TextPrimary}" FontSize="12" TextAlignment="Right"/>
-                            </Grid>
-                        </Border>
-                    </DataTemplate>
-                </ItemsControl.ItemTemplate>
-            </ItemsControl>
-        </ScrollViewer>
-    </DockPanel>
+    <TabControl Margin="12">
+
+        <!-- ============ Peaks ============ -->
+        <TabItem Header="Peaks">
+            <DockPanel Margin="0,8,0,0">
+                <DockPanel DockPanel.Dock="Top" Margin="0,0,0,4">
+                    <Button DockPanel.Dock="Right" Content="Reset session" Command="{Binding ResetSessionCommand}" Style="{StaticResource HeaderButton}"/>
+                    <Button DockPanel.Dock="Right" Content="Copy" Click="Copy_Click" Style="{StaticResource HeaderButton}" Margin="0,0,6,0"/>
+                    <CheckBox DockPanel.Dock="Right" Content="All metrics" IsChecked="{Binding IncludeAll}" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                    <TextBlock Text="Session peaks" FontSize="18" FontWeight="Bold" Foreground="{DynamicResource TextPrimary}"/>
+                </DockPanel>
+                <TextBlock DockPanel.Dock="Top" Text="{Binding CopyError}" Foreground="{DynamicResource CritBrush}" FontSize="11"
+                           Margin="0,0,0,6" Visibility="{Binding HasCopyError, Converter={StaticResource BoolToVis}}"/>
+                <Grid DockPanel.Dock="Top" Margin="6,0,6,4">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="100"/>
+                        <ColumnDefinition Width="100"/>
+                        <ColumnDefinition Width="100"/>
+                        <ColumnDefinition Width="100"/>
+                    </Grid.ColumnDefinitions>
+                    <TextBlock Text="Metric" Foreground="{DynamicResource TextSecondary}" FontSize="11"/>
+                    <TextBlock Grid.Column="1" Text="Now" Foreground="{DynamicResource TextSecondary}" FontSize="11" TextAlignment="Right"/>
+                    <TextBlock Grid.Column="2" Text="Min" Foreground="{DynamicResource TextSecondary}" FontSize="11" TextAlignment="Right"/>
+                    <TextBlock Grid.Column="3" Text="Avg" Foreground="{DynamicResource TextSecondary}" FontSize="11" TextAlignment="Right"/>
+                    <TextBlock Grid.Column="4" Text="Max" Foreground="{DynamicResource TextSecondary}" FontSize="11" TextAlignment="Right"/>
+                </Grid>
+                <ScrollViewer VerticalScrollBarVisibility="Auto">
+                    <ItemsControl ItemsSource="{Binding Rows}">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <Border Background="{DynamicResource TileBg}" CornerRadius="4" Padding="6,4" Margin="0,2">
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*"/>
+                                            <ColumnDefinition Width="100"/>
+                                            <ColumnDefinition Width="100"/>
+                                            <ColumnDefinition Width="100"/>
+                                            <ColumnDefinition Width="100"/>
+                                        </Grid.ColumnDefinitions>
+                                        <TextBlock Text="{Binding Name}" Foreground="{DynamicResource TextPrimary}" FontSize="12" TextTrimming="CharacterEllipsis" ToolTip="{Binding Definition.DisplayName}"/>
+                                        <TextBlock Grid.Column="1" Text="{Binding NowText}" FontSize="12" FontWeight="SemiBold" TextAlignment="Right"
+                                                   Foreground="{Binding Severity, Converter={StaticResource SeverityToBrush}}"/>
+                                        <TextBlock Grid.Column="2" Text="{Binding MinText}" Foreground="{DynamicResource TextSecondary}" FontSize="12" TextAlignment="Right" ToolTip="{Binding MinAtText}"/>
+                                        <TextBlock Grid.Column="3" Text="{Binding AvgText}" Foreground="{DynamicResource TextSecondary}" FontSize="12" TextAlignment="Right"/>
+                                        <TextBlock Grid.Column="4" Text="{Binding MaxText}" Foreground="{DynamicResource TextPrimary}" FontSize="12" TextAlignment="Right" ToolTip="{Binding MaxAtText}"/>
+                                    </Grid>
+                                </Border>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </ScrollViewer>
+            </DockPanel>
+        </TabItem>
+
+        <!-- ============ Alerts ============ -->
+        <TabItem Header="Alerts">
+            <DockPanel Margin="0,8,0,0" DataContext="{Binding AlertLog}">
+                <DockPanel DockPanel.Dock="Top" Margin="0,0,0,4">
+                    <Button DockPanel.Dock="Right" Content="Clear" Command="{Binding ClearCommand}" Style="{StaticResource HeaderButton}"/>
+                    <TextBlock Text="Alert log" FontSize="18" FontWeight="Bold" Foreground="{DynamicResource TextPrimary}"/>
+                </DockPanel>
+                <Grid DockPanel.Dock="Top" Margin="6,0,6,4">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="80"/>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="90"/>
+                        <ColumnDefinition Width="90"/>
+                        <ColumnDefinition Width="90"/>
+                    </Grid.ColumnDefinitions>
+                    <TextBlock Text="Time" Foreground="{DynamicResource TextSecondary}" FontSize="11"/>
+                    <TextBlock Grid.Column="1" Text="Metric" Foreground="{DynamicResource TextSecondary}" FontSize="11"/>
+                    <TextBlock Grid.Column="2" Text="Peak" Foreground="{DynamicResource TextSecondary}" FontSize="11" TextAlignment="Right"/>
+                    <TextBlock Grid.Column="3" Text="Threshold" Foreground="{DynamicResource TextSecondary}" FontSize="11" TextAlignment="Right"/>
+                    <TextBlock Grid.Column="4" Text="Duration" Foreground="{DynamicResource TextSecondary}" FontSize="11" TextAlignment="Right"/>
+                </Grid>
+                <ScrollViewer VerticalScrollBarVisibility="Auto">
+                    <ItemsControl ItemsSource="{Binding Rows}">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <Border Background="{DynamicResource TileBg}" CornerRadius="4" Padding="6,4" Margin="0,2">
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="80"/>
+                                            <ColumnDefinition Width="*"/>
+                                            <ColumnDefinition Width="90"/>
+                                            <ColumnDefinition Width="90"/>
+                                            <ColumnDefinition Width="90"/>
+                                        </Grid.ColumnDefinitions>
+                                        <TextBlock Text="{Binding TimeText}" Foreground="{DynamicResource TextSecondary}" FontSize="12"/>
+                                        <TextBlock Grid.Column="1" Text="{Binding MetricText}" Foreground="{DynamicResource TextPrimary}" FontSize="12" TextTrimming="CharacterEllipsis"/>
+                                        <TextBlock Grid.Column="2" Text="{Binding PeakText}" Foreground="{DynamicResource CritBrush}" FontSize="12" TextAlignment="Right"/>
+                                        <TextBlock Grid.Column="3" Text="{Binding ThresholdText}" Foreground="{DynamicResource TextSecondary}" FontSize="12" TextAlignment="Right"/>
+                                        <TextBlock Grid.Column="4" Text="{Binding DurationText}" Foreground="{DynamicResource TextPrimary}" FontSize="12" TextAlignment="Right"/>
+                                    </Grid>
+                                </Border>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </ScrollViewer>
+            </DockPanel>
+        </TabItem>
+
+    </TabControl>
 </Window>

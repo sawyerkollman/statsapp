@@ -4,12 +4,13 @@ using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Stats.Core.Metrics;
 using Stats.Core.Settings;
+using Stats.Core.Tray;
 
 namespace Stats.Core.ViewModels;
 
 // No GameMode member: the game-mode controls live in the Fans window, which re-applies frame tracing through
 // FansViewModel.GameModeChanged. A member nothing raises only invites the next feature onto a dead channel.
-public enum SettingsChange { PollInterval, HistoryWindow, Thresholds, Limits, Overlay, Hotkey, CoreMatrix, Hardware, Updates, Theme }
+public enum SettingsChange { PollInterval, HistoryWindow, Thresholds, Limits, Overlay, Hotkey, CoreMatrix, Hardware, Updates, Theme, Alerts, Tray, UiScale }
 
 /// <summary>One editable metric limit (PPT/TDC/EDC/GPU power). Empty text = no limit.</summary>
 public sealed partial class LimitItemViewModel : ObservableObject
@@ -37,6 +38,7 @@ public sealed partial class SettingsViewModel : ObservableObject
 {
     private readonly AppSettings _s;
     private readonly Action _save;
+    private readonly IReadOnlyList<MetricDefinition> _definitions;
     private readonly bool _loaded;
 
     public event Action<SettingsChange>? Changed;
@@ -60,13 +62,10 @@ public sealed partial class SettingsViewModel : ObservableObject
     {
         _s = settings;
         _save = save;
+        _definitions = definitions;
 
         _pollIntervalSeconds = settings.PollIntervalSeconds;
         _historyWindowMinutes = settings.HistoryWindowMinutes;
-        _cpuTempWarn = Rule(MetricGroup.Cpu, "°C").Warn; _cpuTempCrit = Rule(MetricGroup.Cpu, "°C").Crit;
-        _gpuTempWarn = Rule(MetricGroup.Gpu, "°C").Warn; _gpuTempCrit = Rule(MetricGroup.Gpu, "°C").Crit;
-        _loadWarn = Rule(MetricGroup.Cpu, "%").Warn;     _loadCrit = Rule(MetricGroup.Cpu, "%").Crit;
-        _fpsWarn = Rule(MetricGroup.Game, "fps").Warn;   _fpsCrit = Rule(MetricGroup.Game, "fps").Crit;
         _overlayIsVertical = settings.OverlayOrientation == OverlayOrientation.Vertical;
         _overlayFontScale = settings.OverlayFontScale;
         _overlayOpacity = settings.OverlayOpacity;
@@ -77,6 +76,10 @@ public sealed partial class SettingsViewModel : ObservableObject
         _checkForUpdatesAutomatically = settings.CheckForUpdatesAutomatically;
         _selectedThemePreset = settings.ThemePreset;
         _accentHex = settings.ThemeAccent ?? "";
+        _alertsEnabled = settings.AlertsEnabled;
+        _alertHoldSeconds = settings.AlertHoldSeconds;
+        _alertSoundEnabled = settings.AlertSoundEnabled;
+        _dashboardUiScale = settings.DashboardUiScale;
 
         foreach (var def in definitions.Where(IsLimitCandidate))
         {
@@ -85,22 +88,26 @@ public sealed partial class SettingsViewModel : ObservableObject
             LimitItems.Add(new LimitItemViewModel(def, text, ApplyLimit));
         }
 
+        RebuildThresholdRuleItems();
+        RefreshAddableRulePairs();
+
+        TrayMetricOptions.Add(new TrayMetricOption(null, "Auto"));
+        foreach (var def in TrayMetricSelector.Candidates(definitions))
+            TrayMetricOptions.Add(new TrayMetricOption(def.Id, $"{def.Group} · {def.DisplayName} ({def.Unit})"));
+        _selectedTrayMetric = TrayMetricOptions.FirstOrDefault(o => o.Id == settings.TrayMetricId) ?? TrayMetricOptions[0];
+
         _loaded = true;
     }
 
     public ObservableCollection<LimitItemViewModel> LimitItems { get; } = new();
+    public ObservableCollection<ThresholdRuleItemViewModel> ThresholdRuleItems { get; } = new();
+    public ObservableCollection<ThresholdRulePairOption> AddableRulePairs { get; } = new();
+    public ObservableCollection<TrayMetricOption> TrayMetricOptions { get; } = new();
 
     [ObservableProperty] private double _pollIntervalSeconds;
     [ObservableProperty] private int _historyWindowMinutes;
-    [ObservableProperty] private float _cpuTempWarn;
-    [ObservableProperty] private float _cpuTempCrit;
-    [ObservableProperty] private float _gpuTempWarn;
-    [ObservableProperty] private float _gpuTempCrit;
-    [ObservableProperty] private float _loadWarn;
-    [ObservableProperty] private float _loadCrit;
-    [ObservableProperty] private float _fpsWarn;
-    [ObservableProperty] private float _fpsCrit;
-    [ObservableProperty] private string _thresholdError = "";
+    [ObservableProperty] private ThresholdRulePairOption? _selectedAddablePair;
+    [ObservableProperty] private bool _hasAddableRulePairs;
     [ObservableProperty] private bool _overlayIsVertical;
     [ObservableProperty] private double _overlayFontScale;
     [ObservableProperty] private double _overlayOpacity;
@@ -151,6 +158,13 @@ public sealed partial class SettingsViewModel : ObservableObject
     /// <summary>"" = ok; set by App after "Restart now" fails to launch a new instance. Restart is not attempted
     /// again automatically — the user can just click again.</summary>
     [ObservableProperty] private string _restartError = "";
+    [ObservableProperty] private bool _alertsEnabled;
+    [ObservableProperty] private int _alertHoldSeconds;
+    [ObservableProperty] private bool _alertSoundEnabled;
+    /// <summary>Dashboard-wide UI scale (see <see cref="AppSettings.DashboardUiScale"/>); clamped 0.9–1.3.</summary>
+    [ObservableProperty] private double _dashboardUiScale;
+    /// <summary>Selected entry of <see cref="TrayMetricOptions"/>; the first entry (Id null) is "Auto".</summary>
+    [ObservableProperty] private TrayMetricOption _selectedTrayMetric;
 
     public IReadOnlyList<string> ThemePresetNames => ThemePresets.Names;
     public IReadOnlyList<string> AccentSwatches => ThemePresets.AccentSwatches;
@@ -159,6 +173,20 @@ public sealed partial class SettingsViewModel : ObservableObject
     [RelayCommand] private void ResetAccent() => AccentHex = "";
     [RelayCommand] private void SetAccent(string hex) => AccentHex = hex;
     [RelayCommand] private void OpenLogFolder() => OpenLogFolderRequested?.Invoke();
+
+    /// <summary>Seeds a new (Group, Unit) rule at 0/0 (inactive — see <see cref="ThresholdEvaluator.Evaluate"/> —
+    /// so it colours nothing until the user fills in real values) for <see cref="SelectedAddablePair"/>. No-op
+    /// when nothing is selected (the "Add rule…" row is hidden whenever <see cref="AddableRulePairs"/> is empty,
+    /// but a stale selection could still reach here between a settings reload and the next refresh).</summary>
+    [RelayCommand]
+    private void AddRule()
+    {
+        if (SelectedAddablePair is not ThresholdRulePairOption pair) return;
+        _s.ThresholdRules.Add(new ThresholdRule { Group = pair.Group, Unit = pair.Unit, Warn = 0, Crit = 0, LowerIsWorse = false });
+        RebuildThresholdRuleItems();
+        RefreshAddableRulePairs();
+        Raise(SettingsChange.Thresholds);
+    }
 
     [RelayCommand]
     private void CheckForUpdates()
@@ -190,33 +218,6 @@ public sealed partial class SettingsViewModel : ObservableObject
         if (snapped != value) { HistoryWindowMinutes = snapped; return; } // re-enters with snapped
         _s.HistoryWindowMinutes = snapped;
         Raise(SettingsChange.HistoryWindow);
-    }
-
-    partial void OnCpuTempWarnChanged(float value) => ApplyThresholds();
-    partial void OnCpuTempCritChanged(float value) => ApplyThresholds();
-    partial void OnGpuTempWarnChanged(float value) => ApplyThresholds();
-    partial void OnGpuTempCritChanged(float value) => ApplyThresholds();
-    partial void OnLoadWarnChanged(float value) => ApplyThresholds();
-    partial void OnLoadCritChanged(float value) => ApplyThresholds();
-    partial void OnFpsWarnChanged(float value) => ApplyThresholds();
-    partial void OnFpsCritChanged(float value) => ApplyThresholds();
-
-    private void ApplyThresholds()
-    {
-        if (!_loaded) return;
-        if (CpuTempWarn >= CpuTempCrit || GpuTempWarn >= GpuTempCrit || LoadWarn >= LoadCrit)
-        {
-            ThresholdError = "Warn must be below Crit";
-            return;
-        }
-        if (FpsWarn <= FpsCrit) { ThresholdError = "FPS: warn must be above crit"; return; }
-        ThresholdError = "";
-        Upsert(MetricGroup.Cpu, "°C", CpuTempWarn, CpuTempCrit);
-        Upsert(MetricGroup.Gpu, "°C", GpuTempWarn, GpuTempCrit);
-        Upsert(MetricGroup.Cpu, "%", LoadWarn, LoadCrit);
-        Upsert(MetricGroup.Gpu, "%", LoadWarn, LoadCrit);
-        Upsert(MetricGroup.Game, "fps", FpsWarn, FpsCrit, lowerIsWorse: true);
-        Raise(SettingsChange.Thresholds);
     }
 
     partial void OnOverlayIsVerticalChanged(bool value)
@@ -283,6 +284,45 @@ public sealed partial class SettingsViewModel : ObservableObject
         if (!_loaded) return;
         _s.CheckForUpdatesAutomatically = value;
         Raise(SettingsChange.Updates);
+    }
+
+    partial void OnAlertsEnabledChanged(bool value)
+    {
+        if (!_loaded) return;
+        _s.AlertsEnabled = value;
+        Raise(SettingsChange.Alerts);
+    }
+
+    partial void OnAlertHoldSecondsChanged(int value)
+    {
+        if (!_loaded) return;
+        var clamped = Math.Clamp(value, 1, 120);
+        if (clamped != value) { AlertHoldSeconds = clamped; return; } // re-enters with clamped
+        _s.AlertHoldSeconds = clamped;
+        Raise(SettingsChange.Alerts);
+    }
+
+    partial void OnAlertSoundEnabledChanged(bool value)
+    {
+        if (!_loaded) return;
+        _s.AlertSoundEnabled = value;
+        Raise(SettingsChange.Alerts);
+    }
+
+    partial void OnSelectedTrayMetricChanged(TrayMetricOption value)
+    {
+        if (!_loaded) return;
+        _s.TrayMetricId = value.Id;
+        Raise(SettingsChange.Tray);
+    }
+
+    partial void OnDashboardUiScaleChanged(double value)
+    {
+        if (!_loaded) return;
+        var clamped = Math.Clamp(value, 0.9, 1.3);
+        if (clamped != value) { DashboardUiScale = clamped; return; } // re-enters with clamped
+        _s.DashboardUiScale = clamped;
+        Raise(SettingsChange.UiScale);
     }
 
     /// <summary>The checkbox is bound TwoWay, so a user click lands here first. Deliberately does not write to
@@ -377,17 +417,56 @@ public sealed partial class SettingsViewModel : ObservableObject
     private static bool IsLimitCandidate(MetricDefinition d) =>
         (d.Group == MetricGroup.Cpu && d.Unit is "W" or "A") || (d.Group == MetricGroup.Gpu && d.Unit == "W");
 
-    private ThresholdRule Rule(MetricGroup group, string unit) =>
-        _s.ThresholdRules.FirstOrDefault(r => r.Group == group && r.Unit == unit)
-        ?? new ThresholdRule { Group = group, Unit = unit };
-
-    private void Upsert(MetricGroup group, string unit, float warn, float crit, bool? lowerIsWorse = null)
+    /// <summary>Rebuilds <see cref="ThresholdRuleItems"/> from <see cref="AppSettings.ThresholdRules"/>, ordered by
+    /// <see cref="DashboardViewModel.GroupOrder"/> then unit — the same order the dashboard groups tiles in.</summary>
+    private void RebuildThresholdRuleItems()
     {
-        var rule = _s.ThresholdRules.FirstOrDefault(r => r.Group == group && r.Unit == unit);
-        if (rule is null) { rule = new ThresholdRule { Group = group, Unit = unit }; _s.ThresholdRules.Add(rule); }
-        rule.Warn = warn;
-        rule.Crit = crit;
-        if (lowerIsWorse is bool low) rule.LowerIsWorse = low;
+        ThresholdRuleItems.Clear();
+        foreach (var rule in _s.ThresholdRules
+            .OrderBy(r => Array.IndexOf(DashboardViewModel.GroupOrder, r.Group))
+            .ThenBy(r => r.Unit, StringComparer.Ordinal))
+        {
+            ThresholdRuleItems.Add(new ThresholdRuleItemViewModel(rule, ApplyThresholdRuleItem));
+        }
+    }
+
+    /// <summary>Parses and validates one row's edited <see cref="ThresholdRuleItemViewModel.WarnText"/>/
+    /// <see cref="ThresholdRuleItemViewModel.CritText"/> with the same <see cref="ThresholdInput.TryParse"/> the
+    /// per-tile dialog uses, against the row's (fixed) direction. A valid, ordered pair writes through to the
+    /// underlying <see cref="ThresholdRule"/>, saves, and raises <see cref="SettingsChange.Thresholds"/>; anything
+    /// else — unparseable text or a bad ordering — leaves the rule untouched and only sets the row's
+    /// <see cref="ThresholdRuleItemViewModel.Error"/>, so bad input is never silently dropped.</summary>
+    private void ApplyThresholdRuleItem(ThresholdRuleItemViewModel item)
+    {
+        if (!_loaded) return;
+        if (!ThresholdInput.TryParse(item.WarnText, item.CritText, item.LowerIsWorse, out var parsed, out var error))
+        {
+            item.Error = error;
+            return;
+        }
+        item.Error = "";
+        item.Rule.Warn = parsed.Warn;
+        item.Rule.Crit = parsed.Crit;
+        Raise(SettingsChange.Thresholds);
+    }
+
+    /// <summary>Recomputes the (Group, Unit) pairs discovered among <see cref="_definitions"/> that have no rule
+    /// yet, ordered the same way as <see cref="ThresholdRuleItems"/>, and resets <see cref="SelectedAddablePair"/>
+    /// to the first (or none, hiding the "Add rule…" row via <see cref="HasAddableRulePairs"/>).</summary>
+    private void RefreshAddableRulePairs()
+    {
+        var existing = _s.ThresholdRules.Select(r => (r.Group, r.Unit)).ToHashSet();
+        var discovered = _definitions
+            .Select(d => (d.Group, d.Unit))
+            .Distinct()
+            .Where(p => !existing.Contains(p))
+            .OrderBy(p => Array.IndexOf(DashboardViewModel.GroupOrder, p.Group))
+            .ThenBy(p => p.Unit, StringComparer.Ordinal);
+
+        AddableRulePairs.Clear();
+        foreach (var (group, unit) in discovered) AddableRulePairs.Add(new ThresholdRulePairOption(group, unit));
+        HasAddableRulePairs = AddableRulePairs.Count > 0;
+        SelectedAddablePair = AddableRulePairs.FirstOrDefault();
     }
 
     private void Raise(SettingsChange change)
@@ -395,4 +474,12 @@ public sealed partial class SettingsViewModel : ObservableObject
         _save();
         Changed?.Invoke(change);
     }
+}
+
+/// <summary>One entry of <see cref="SettingsViewModel.TrayMetricOptions"/>: <see cref="Id"/> null is "Auto" (App
+/// falls back to its CPU-temp heuristic); otherwise a discovered °C/% metric's id. <see cref="ToString"/> is the
+/// ComboBox's default display text.</summary>
+public sealed record TrayMetricOption(string? Id, string DisplayName)
+{
+    public override string ToString() => DisplayName;
 }

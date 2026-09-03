@@ -269,23 +269,25 @@ public class FansViewModelTests
     }
 
     [Fact]
-    public void SelectedProfileName_AppliesTheProfile_AndSurvivesRefreshAfterAnEdit()
+    public void SelectedProfileName_FollowsTheActiveProfile_AndPickingADifferentOneLoadsIt()
     {
         var (vm, c, _, s) = Make();
         vm.Devices[0].Channels[0].Mode = FanMode.Manual;
         vm.SaveProfileCommand.Execute("Quiet");
+        Assert.Equal("Quiet", vm.SelectedProfileName);          // SyncProfileState follows ActiveProfile quietly
         vm.Devices[0].Channels[0].Mode = FanMode.Curve;
         vm.SaveProfileCommand.Execute("Curvy");
         Assert.Equal("Curvy", vm.SelectedProfileName);
 
-        vm.SelectedProfileName = "Quiet";                       // the ComboBox entry point the window uses
+        vm.SelectedProfileName = "Quiet";                       // picking a DIFFERENT entry loads it
         Assert.Equal(FanMode.Manual, vm.Devices[0].Channels[0].Mode);
         Assert.Equal("Quiet", vm.ActiveProfileName);
+        Assert.Equal("Quiet", vm.SelectedProfileName);
 
         vm.Devices[0].Channels[0].ManualPercent = 44;           // an edit makes the applied profile "Custom" …
         vm.Refresh(); vm.Refresh();
         Assert.Equal("Custom", vm.ActiveProfileName);
-        Assert.Equal("Quiet", vm.SelectedProfileName);          // … but the selection (and Delete) stays usable
+        Assert.Null(vm.SelectedProfileName);                    // … and the dropdown quietly clears (no reload)
         Assert.Equal(44f, s.FanChannels["/ite/control/0"].ManualPercent); // Refresh did not re-load the profile
         Assert.Equal(44f, c.Views().Single(v => v.Id == "/ite/control/0").ManualPercent);
     }
@@ -298,6 +300,64 @@ public class FansViewModelTests
         Assert.Equal("Quiet", vm.SelectedProfileName);
         vm.DeleteProfileCommand.Execute("Quiet");
         Assert.Null(vm.SelectedProfileName);
+    }
+
+    [Fact]
+    public void IsModified_TracksAnEditAfterLoad_AndReloadReappliesTheSameProfile()
+    {
+        var (vm, c, _, s) = Make();
+        vm.Devices[0].Channels[0].Mode = FanMode.Manual;
+        vm.Devices[0].Channels[0].ManualPercent = 40;
+        vm.SaveProfileCommand.Execute("Quiet");
+        Assert.False(vm.IsModified);
+
+        vm.Devices[0].Channels[0].ManualPercent = 77;           // user edit after load/save
+        vm.Refresh();
+        Assert.True(vm.IsModified);
+        Assert.Equal("Custom", vm.ActiveProfileName);
+        Assert.Null(vm.SelectedProfileName);
+
+        vm.ReloadCommand.Execute(null);                         // re-applies "Quiet" without re-picking it
+        Assert.Equal("Quiet", vm.ActiveProfileName);
+        Assert.Equal("Quiet", vm.SelectedProfileName);
+        Assert.False(vm.IsModified);
+        Assert.Equal(40f, s.FanChannels["/ite/control/0"].ManualPercent);
+        Assert.Equal(40f, c.Views().Single(v => v.Id == "/ite/control/0").ManualPercent);
+    }
+
+    [Fact]
+    public void Reload_OfTheSameProfile_WorksRepeatedly()
+    {
+        // The v1.4 problem: picking an already-selected ComboBox entry raises no change event, so re-loading the
+        // same profile twice in a row (edit, reload, edit again, reload again) has to go through the Reload
+        // command rather than the dropdown, regardless of what the dropdown currently shows.
+        var (vm, c, _, s) = Make();
+        vm.Devices[0].Channels[0].Mode = FanMode.Manual;
+        vm.Devices[0].Channels[0].ManualPercent = 50;
+        vm.SaveProfileCommand.Execute("Quiet");
+
+        vm.Devices[0].Channels[0].ManualPercent = 10;
+        vm.Refresh();
+        vm.ReloadCommand.Execute(null);
+        Assert.Equal(50f, s.FanChannels["/ite/control/0"].ManualPercent);
+        Assert.False(vm.IsModified);
+
+        vm.Devices[0].Channels[0].ManualPercent = 20;
+        vm.Refresh();
+        Assert.True(vm.IsModified);
+        vm.ReloadCommand.Execute(null);
+        Assert.Equal(50f, s.FanChannels["/ite/control/0"].ManualPercent);
+        Assert.Equal(50f, c.Views().Single(v => v.Id == "/ite/control/0").ManualPercent);
+        Assert.False(vm.IsModified);
+    }
+
+    [Fact]
+    public void Reload_WithNoProfileEverLoaded_IsANoOp()
+    {
+        var (vm, _, _, _) = Make();
+        Assert.False(vm.IsModified);
+        vm.ReloadCommand.Execute(null); // must not throw
+        Assert.False(vm.IsModified);
     }
 
     [Fact]
@@ -325,6 +385,37 @@ public class FansViewModelTests
         Assert.Equal("Gone", vm.GamingProfile);
         vm.GamingProfile = null;                    // WPF cannot select an item absent from ItemsSource
         Assert.Equal("Gone", s.GameModeGamingProfile);
+    }
+
+    [Fact]
+    public void IdentifyCommand_CanExecute_FollowsTheMasterSwitch()
+    {
+        var (vm, c, b, _) = Make();
+        var ch = vm.Devices[0].Channels[0];
+        Assert.False(ch.IdentifyCommand.CanExecute(null)); // master switch defaults off
+
+        vm.Enabled = true;
+        Assert.True(ch.IdentifyCommand.CanExecute(null));
+        ch.IdentifyCommand.Execute(null);
+        c.Tick(new SensorSnapshot(new Dictionary<string, float?> { ["mb.fan1"] = 1200f }, DateTime.UtcNow), DateTime.UtcNow);
+        Assert.Contains(b.Writes, w => w.Id == "/ite/control/0" && w.Pct == 100f);
+
+        vm.Enabled = false;
+        Assert.False(ch.IdentifyCommand.CanExecute(null));
+    }
+
+    [Fact]
+    public void SafetyBanner_DefaultsExpanded_GotItCollapsesAndPersists()
+    {
+        int saves = 0;
+        var (vm, _, _, s) = Make(saveSettings: () => saves++);
+        Assert.False(vm.SafetyBannerCollapsed);
+        vm.DismissSafetyBannerCommand.Execute(null);
+        Assert.True(vm.SafetyBannerCollapsed);
+        Assert.True(s.FanSafetyBannerCollapsed);
+        Assert.Equal(1, saves);
+        vm.DismissSafetyBannerCommand.Execute(null); // idempotent — no extra save
+        Assert.Equal(1, saves);
     }
 
     [Fact]
