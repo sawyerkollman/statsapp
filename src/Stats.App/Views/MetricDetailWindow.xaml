@@ -17,7 +17,7 @@
                 <Run Text="   max "/><Run Text="{Binding MaxText, Mode=OneWay}"/>
             </TextBlock>
         </DockPanel>
-        <ctl:HistoryChart Values="{Binding Values}" Unit="{Binding Unit}" SecondsPerSample="{Binding SecondsPerSample}"
+        <ctl:HistoryChart Values="{Binding Values}" Unit="{Binding Unit}" HoverTextProvider="{Binding HoverTextProvider}" SecondsPerSample="{Binding SecondsPerSample}"
                           WarnValue="{Binding WarnValue}" CritValue="{Binding CritValue}"
                           TimeAxisLabels="{Binding TimeAxisLabels}" YAxisLabels="{Binding YAxisLabels}"
                           Stroke="{Binding Severity, Converter={StaticResource SeverityToBrush}, ConverterParameter=accent}"/>

@@ -99,6 +99,9 @@ public sealed partial class MetricDetailViewModel : ObservableObject
 
     /// <summary>"<value> at <-Xs/now>" for the sample at <paramref name="index"/> — used by HistoryChart's hover
     /// crosshair. A gap (NaN) sample reports "—" rather than a bogus value.</summary>
+    /// <summary>Bindable form of <see cref="HoverText"/> for HistoryChart.HoverTextProvider.</summary>
+    public Func<int, string> HoverTextProvider => HoverText;
+
     public string HoverText(int index)
     {
         if (Values.Length == 0 || index < 0 || index >= Values.Length) return "";

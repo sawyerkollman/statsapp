@@ -533,7 +533,7 @@ public partial class App : Application
     private void RunCoalescedRefresh()
     {
         _refreshCoalescer.Take();
-        var snapshot = Volatile.Read(ref _latestSnapshot);
+        var snapshot = Interlocked.Exchange(ref _latestSnapshot, null); // consume: a second queued action must not re-apply the same snapshot
         if (snapshot is null || _store is null || _dashboardVm is null || _dashboard is null) return;
 
         _store.Apply(snapshot);

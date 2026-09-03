@@ -36,15 +36,8 @@
                 <Setter Property="Margin" Value="0,0,8,0"/>
             </Style>
 
-            <!-- Dark control styles -->
-            <Style TargetType="Button" x:Key="HeaderButton">
-                <Setter Property="Padding" Value="10,4"/>
-                <Setter Property="Margin" Value="8,0,0,0"/>
-                <Setter Property="Background" Value="{DynamicResource TileBg}"/>
-                <Setter Property="Foreground" Value="{DynamicResource TextPrimary}"/>
-                <Setter Property="BorderThickness" Value="0"/>
-                <Setter Property="Cursor" Value="Hand"/>
-            </Style>
+            <!-- Dark control styles. HeaderButton lives in Controls.xaml: TileTemplates.xaml derives from it with
+                 StaticResource, and a merged dictionary can only see keys merged before it, not App.xaml-level ones. -->
             <Style TargetType="TextBox">
                 <Setter Property="Background" Value="{DynamicResource ControlBg}"/>
                 <Setter Property="Foreground" Value="{DynamicResource TextPrimary}"/>

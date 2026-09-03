@@ -28,6 +28,12 @@ public sealed class HistoryChart : FrameworkElement
     public static readonly DependencyProperty UnitProperty = DependencyProperty.Register(
         nameof(Unit), typeof(string), typeof(HistoryChart), new PropertyMetadata(""));
 
+    /// <summary>Formats the hover label for a sample index — bound to MetricDetailViewModel.HoverTextProvider so
+    /// the crosshair uses the same ValueFormatter as the y-axis labels and the header (v1.8 review); falls back to
+    /// a plain "{value} {Unit}" when unset.</summary>
+    public static readonly DependencyProperty HoverTextProviderProperty = DependencyProperty.Register(
+        nameof(HoverTextProvider), typeof(Func<int, string>), typeof(HistoryChart), new PropertyMetadata(null));
+
     public static readonly DependencyProperty SecondsPerSampleProperty = DependencyProperty.Register(
         nameof(SecondsPerSample), typeof(double), typeof(HistoryChart), new PropertyMetadata(1.0));
 
@@ -102,6 +108,7 @@ public sealed class HistoryChart : FrameworkElement
     public IReadOnlyList<float>? Values { get => (IReadOnlyList<float>?)GetValue(ValuesProperty); set => SetValue(ValuesProperty, value); }
     public Brush Stroke { get => (Brush)GetValue(StrokeProperty); set => SetValue(StrokeProperty, value); }
     public string Unit { get => (string)GetValue(UnitProperty); set => SetValue(UnitProperty, value); }
+    public Func<int, string>? HoverTextProvider { get => (Func<int, string>?)GetValue(HoverTextProviderProperty); set => SetValue(HoverTextProviderProperty, value); }
     public double SecondsPerSample { get => (double)GetValue(SecondsPerSampleProperty); set => SetValue(SecondsPerSampleProperty, value); }
     public float? WarnValue { get => (float?)GetValue(WarnValueProperty); set => SetValue(WarnValueProperty, value); }
     public float? CritValue { get => (float?)GetValue(CritValueProperty); set => SetValue(CritValueProperty, value); }
@@ -249,6 +256,7 @@ public sealed class HistoryChart : FrameworkElement
 
     private string HoverLabel(IReadOnlyList<float> values, int idx)
     {
+        if (HoverTextProvider is { } provider) { var text = provider(idx); if (text.Length > 0) return text; }
         float v = values[idx];
         string valueText = float.IsNaN(v) ? "—" : string.Create(CultureInfo.InvariantCulture, $"{v:F1} {Unit}").TrimEnd();
         double secondsAgo = (values.Count - 1 - idx) * SecondsPerSample;
