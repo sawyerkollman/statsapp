@@ -43,6 +43,10 @@ public sealed class FanController
     private DateTime? _firstTick;
     private bool _pendingSave;
     private bool _armed;
+    /// <summary>Bumped under <see cref="_gate"/> by <see cref="RestoreAll"/>, before it touches any channel. A
+    /// queued <see cref="Work"/> item captures the generation in phase 1; phase 2 and phase 3 compare against
+    /// the live value to detect a <see cref="RestoreAll"/> that ran mid-Tick — see the note on <see cref="Tick"/>.</summary>
+    private int _restoreGeneration;
 
     public FanController(IFanControlBackend backend, AppSettings settings, Action saveSettings, IFanArmedMarker? marker = null)
     {
@@ -252,6 +256,8 @@ public sealed class FanController
         public float Percent;               // Write only
         public FanChannelStatus Status;     // Release only: the status to apply once SetAuto succeeds
         public FanChannelPref? Pref;        // Write only: for the three-strikes fail-safe (null: Identify on an untouched Auto channel)
+        public int Gen;                     // Write only: _restoreGeneration captured in phase 1
+        public bool Skipped;                // Write only: RestoreAll ran before phase 2 reached this item; the backend call was never made
         public bool Success;
         public Exception? Error;
     }
@@ -271,6 +277,15 @@ public sealed class FanController
     ///      clear — then update the armed marker and flush any pending save. A fail-safe trip discovered here
     ///      still needs its own SetAuto call, so it queues a second, smaller phase-2/phase-3 round rather than
     ///      calling out while _gate is held; that channel is never handed a second write in the same tick.
+    ///
+    /// Race with RestoreAll (App.OnExit: poller.Stop() then RestoreAll() unconditionally, even if the poller
+    /// gave up waiting for a stuck Tick): because phase 2/3 run unlocked, RestoreAll can run on the exiting
+    /// thread between phase 1 (which already latched InSoftware + the armed marker and queued a write) and
+    /// phase 2/3 finishing that write — releasing the channel out from under a write that is still in flight,
+    /// which would otherwise leave the fan re-driven in software with no marker on disk. <see cref="_restoreGeneration"/>
+    /// is a generation latch against that: phase 1 captures it per queued write, phase 2 skips the backend call
+    /// if RestoreAll has bumped it since, and phase 3 — if RestoreAll ran around/after a write that did go
+    /// through — re-latches tracking/the marker and queues a follow-up release instead of normal bookkeeping.
     /// </summary>
     public void Tick(SensorSnapshot snapshot, DateTime nowUtc)
     {
@@ -279,6 +294,7 @@ public sealed class FanController
         lock (_gate)
         {
             _firstTick ??= nowUtc;
+            int gen = _restoreGeneration;
             foreach (var ch in _backend.Channels)
             {
                 var rt = Rt(ch.Id);
@@ -366,7 +382,7 @@ public sealed class FanController
                             want = last + Math.Clamp(want - last, -MaxStepPerTick, MaxStepPerTick);
                         want = MathF.Round(want);
                         rt.Target = want;
-                        if (!rt.InSoftware || rt.LastWritten != want) DecideWrite(work, ch, rt, want, pref);
+                        if (!rt.InSoftware || rt.LastWritten != want) DecideWrite(work, ch, rt, want, pref, gen);
                         else if (rt.Status != FanChannelStatus.WriteFailed) rt.Status = FanChannelStatus.Active;
                     }
                     else if (mode != FanMode.Curve || rt.Status == FanChannelStatus.SourceUnavailable || rt.Status == FanChannelStatus.Idle)
@@ -419,7 +435,7 @@ public sealed class FanController
     /// <summary><paramref name="pref"/> is null when Identify pulses a channel that has no saved preference (an
     /// Auto channel that was never touched) — the fail-safe below must not fabricate one, so it only flips a mode
     /// that already exists.</summary>
-    private void DecideWrite(List<Work> work, FanChannel ch, Runtime rt, float percent, FanChannelPref? pref)
+    private void DecideWrite(List<Work> work, FanChannel ch, Runtime rt, float percent, FanChannelPref? pref, int gen)
     {
         // LHM's SetSoftware may switch the control into software mode before the hardware write itself fails
         // (a "partial write"), so mark InSoftware before the call — otherwise a failed write would leave the
@@ -428,7 +444,7 @@ public sealed class FanController
         // Only latch _armed once the marker is actually on disk — a transient failure (AV lock, disk full) must
         // not disable crash recovery for the rest of the session; the next write retries the marker.
         if (!_armed && _marker.Set()) _armed = true;
-        work.Add(new Work { Kind = WorkKind.Write, Ch = ch, Rt = rt, Percent = percent, Pref = pref });
+        work.Add(new Work { Kind = WorkKind.Write, Ch = ch, Rt = rt, Percent = percent, Pref = pref, Gen = gen });
     }
 
     /// <summary>Phase 2: the only place Tick touches the backend. Runs on the poller thread with no lock held.</summary>
@@ -438,7 +454,14 @@ public sealed class FanController
         {
             try
             {
-                if (w.Kind == WorkKind.Write) _backend.SetPercent(w.Ch.Id, w.Percent);
+                if (w.Kind == WorkKind.Write)
+                {
+                    // RestoreAll may have run (on the exiting thread) since phase 1 latched this write — see the
+                    // generation-latch note on Tick. If so, the channel has already been handed back to the
+                    // device; skip the queued write rather than re-driving it out from under RestoreAll.
+                    if (Volatile.Read(ref _restoreGeneration) != w.Gen) { w.Skipped = true; continue; }
+                    _backend.SetPercent(w.Ch.Id, w.Percent);
+                }
                 else _backend.SetAuto(w.Ch.Id);
                 w.Success = true;
             }
@@ -449,6 +472,21 @@ public sealed class FanController
     private void ApplyWriteOutcomeLocked(Work w, ref List<Work>? failSafe)
     {
         var rt = w.Rt;
+        if (w.Skipped) return; // RestoreAll already left this channel released before the backend call; nothing to undo.
+
+        if (_restoreGeneration != w.Gen)
+        {
+            // RestoreAll ran after phase 2's generation check — either mid-write or between the write completing
+            // and this lock. The write may still have gone through (or partially landed) after RestoreAll already
+            // released the channel, so the hardware could be back in software mode at w.Percent despite
+            // RestoreAll's SetAuto. Re-latch tracking/the marker and hand the channel back via a follow-up
+            // release round instead of applying the normal Active/failure bookkeeping below.
+            rt.InSoftware = true;
+            if (!_armed && _marker.Set()) _armed = true;
+            (failSafe ??= new()).Add(new Work { Kind = WorkKind.Release, Ch = w.Ch, Rt = rt, Status = FanChannelStatus.Idle });
+            return;
+        }
+
         if (w.Success)
         {
             rt.LastWritten = w.Percent;
@@ -592,6 +630,9 @@ public sealed class FanController
     {
         lock (_gate)
         {
+            // Bumped before touching any channel: a Tick concurrently mid-flight (poller.Stop() gave up on a
+            // stuck Tick, App.OnExit calls RestoreAll anyway) uses this to detect the interleave — see Tick.
+            _restoreGeneration++;
             foreach (var (id, rt) in _rt)
             {
                 if (rt.InSoftware) ReleaseLocked(id, rt, FanChannelStatus.Idle);

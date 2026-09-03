@@ -13,17 +13,17 @@ public class FanControllerTests
         public Func<string, bool>? FailWrite;
         public Func<string, bool>? FailAuto;
         public bool RecordBeforeThrow; // models a partial write: the hardware saw it, then the call still threw
-        /// <summary>Test hook invoked at the top of every SetPercent call — i.e. from phase 2, on the poller
-        /// thread, with the controller's gate released.</summary>
-        public Action? OnSetPercent;
+        /// <summary>Test hook invoked after a successful SetPercent call actually lands (i.e. from phase 2, on
+        /// the poller thread, with the controller's gate released) — id and the percent just written.</summary>
+        public Action<string, float>? OnSetPercent;
         public IReadOnlyList<FanChannel> Channels => Chans;
         public void SetPercent(string id, float p)
         {
-            OnSetPercent?.Invoke();
             bool fail = FailWrite?.Invoke(id) == true;
             if (fail && RecordBeforeThrow) Writes.Add((id, p));
-            if (fail) throw new InvalidOperationException("io");
+            if (fail) { OnSetPercent?.Invoke(id, p); throw new InvalidOperationException("io"); }
             Writes.Add((id, p));
+            OnSetPercent?.Invoke(id, p);
         }
         public void SetAuto(string id)
         {
@@ -794,7 +794,7 @@ public class FanControllerTests
         h.C.SetMode(Case, FanMode.Manual); h.C.SetManualPercent(Case, 40);
         var acquired = new ManualResetEventSlim(false);
         bool gotLock = false;
-        h.B.OnSetPercent = () =>
+        h.B.OnSetPercent = (_, _) =>
         {
             var t = new Thread(() =>
             {
@@ -822,7 +822,7 @@ public class FanControllerTests
         h.C.SetMode(Case, FanMode.Manual); h.C.SetManualPercent(Case, 40);
         // Models a UI-thread setter racing the poller's backend call. If Tick held _gate across SetPercent, this
         // (a different thread taking the same lock) would hang until the test's own timeout killed the run.
-        h.B.OnSetPercent = () =>
+        h.B.OnSetPercent = (_, _) =>
         {
             var t = new Thread(() => h.C.SetManualPercent(Gpu, 77));
             t.IsBackground = true;
@@ -841,7 +841,7 @@ public class FanControllerTests
         var h = new H();
         h.C.SetMode(Case, FanMode.Manual); h.C.SetManualPercent(Case, 40);
         bool? markerPresentDuringCall = null;
-        h.B.OnSetPercent = () => markerPresentDuringCall ??= h.M.Present;
+        h.B.OnSetPercent = (_, _) => markerPresentDuringCall ??= h.M.Present;
 
         h.Tick(50);
 
@@ -856,7 +856,7 @@ public class FanControllerTests
         // "The UI" changes the channel's mode mid-write (between phase 1's decision and phase 3's bookkeeping).
         // Phase 3 must still apply the write's outcome via the Runtime object captured in phase 1, not by
         // re-deriving anything from the pref's current (now different) mode.
-        h.B.OnSetPercent = () => h.C.SetMode(Case, FanMode.Curve);
+        h.B.OnSetPercent = (_, _) => h.C.SetMode(Case, FanMode.Curve);
 
         h.Tick(50);
 
@@ -876,12 +876,72 @@ public class FanControllerTests
         h.Tick(50); h.Tick(50); // two failures banked
 
         int percentWrites = 0, autoWrites = 0;
-        h.B.OnSetPercent = () => percentWrites++;
+        h.B.OnSetPercent = (_, _) => percentWrites++;
         h.Tick(50); // 3rd failure: fail-safe trips and releases the channel via a follow-up SetAuto round
 
         autoWrites = h.WritesFor(Case).Count(w => w.Item2 is null);
         Assert.Equal(1, percentWrites);                          // exactly one write attempt this tick
         Assert.Equal(1, autoWrites);                              // exactly one release, not a second write
         Assert.Equal(FanMode.Auto, h.S.FanChannels[Case].Mode);
+    }
+
+    // ---- RestoreAll racing a mid-flight Tick (the generation latch) ----
+
+    [Fact]
+    public void RestoreAll_DuringPhase2_QueuedWriteIsSkipped_AndFanStaysReleased()
+    {
+        var h = new H();
+        h.C.SetMode(Case, FanMode.Manual); h.C.SetManualPercent(Case, 40);
+        h.C.SetMode(Gpu, FanMode.Manual); h.C.SetManualPercent(Gpu, 60);
+        // Both channels are latched InSoftware + queued for a write in phase 1 (backend channel order is
+        // Case, Gpu, Pump). Calling RestoreAll from Case's SetPercent — the first queued write — models
+        // App.OnExit's poller.Stop()-then-RestoreAll() landing mid-Tick: it releases both already-latched
+        // channels before Gpu's own queued write reaches the backend.
+        h.B.OnSetPercent = (id, _) => { if (id == Case) h.C.RestoreAll(); };
+
+        h.Tick(50);
+
+        Assert.DoesNotContain(h.WritesFor(Gpu), w => w.Item2 == 60f); // Gpu's queued write never reached the backend
+        Assert.Equal(FanChannelStatus.Idle, h.C.Views().Single(v => v.Id == Gpu).Status);
+        Assert.Equal(FanChannelStatus.Idle, h.C.Views().Single(v => v.Id == Case).Status);
+        Assert.False(h.M.Present); // both channels end the tick released — no armed marker should survive
+    }
+
+    [Fact]
+    public void RestoreAll_BetweenWriteAndPhase3_ChannelIsReleasedAgain_AndMarkerConsistent()
+    {
+        var h = new H();
+        h.C.SetMode(Case, FanMode.Manual); h.C.SetManualPercent(Case, 40);
+        // The write lands normally, then RestoreAll runs before phase 2 returns — modeling App.OnExit's
+        // RestoreAll() landing after the backend already re-drove the fan but before Tick's phase 3 can see it.
+        h.B.OnSetPercent = (id, _) => { if (id == Case) h.C.RestoreAll(); };
+
+        h.Tick(50);
+
+        // SetPercent(40) actually reached the backend, then RestoreAll's SetAuto ran (releasing the channel out
+        // from under the in-flight write), then phase 3 detects the generation changed, re-latches, and queues
+        // its own follow-up SetAuto — so the channel is *not* left driving the fan at 40 with no marker.
+        Assert.Equal(new (string, float?)[] { (Case, 40f), (Case, null), (Case, null) }, h.WritesFor(Case));
+        Assert.Equal(FanChannelStatus.Idle, h.C.Views().Single(v => v.Id == Case).Status);
+        // Marker semantics chosen here: by the end of the tick the channel really is released again (the
+        // follow-up SetAuto succeeded), so UpdateMarkerLocked clears it in FinishTickLocked — the marker ends
+        // the tick *absent*, not present. It was re-armed transiently in between (phase 3 re-latches it before
+        // queuing the follow-up release, since at that instant the hardware may still be driven), but that
+        // transient state isn't observable between Tick calls, so we only assert the post-Tick value.
+        Assert.False(h.M.Present);
+    }
+
+    [Fact]
+    public void ManualWrite_NoRestoreAllInterleaving_StillYieldsActiveAndOneWrite()
+    {
+        var h = new H();
+        h.C.SetMode(Case, FanMode.Manual); h.C.SetManualPercent(Case, 40);
+
+        h.Tick(50);
+
+        Assert.Equal(new (string, float?)[] { (Case, 40f) }, h.WritesFor(Case));
+        var v = h.C.Views().Single(x => x.Id == Case);
+        Assert.Equal(FanChannelStatus.Active, v.Status);
+        Assert.Equal(40f, v.Percent);
     }
 }
