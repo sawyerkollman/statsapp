@@ -500,6 +500,22 @@ public class SettingsServiceTests : IDisposable
         Assert.True(loaded.FpsHintDismissed);
     }
 
+    [Fact]
+    public void Load_MissingFile_FanSafetyBannerCollapsedDefaultsToFalse()
+    {
+        var s = new SettingsService(_dir).Load();
+        Assert.False(s.FanSafetyBannerCollapsed);
+    }
+
+    [Fact]
+    public void SaveThenLoad_FanSafetyBannerCollapsed_RoundTrips()
+    {
+        var svc = new SettingsService(_dir);
+        svc.Save(new AppSettings { FanSafetyBannerCollapsed = true });
+        var loaded = new SettingsService(_dir).Load();
+        Assert.True(loaded.FanSafetyBannerCollapsed);
+    }
+
     private void Write(string json)
     {
         Directory.CreateDirectory(_dir);

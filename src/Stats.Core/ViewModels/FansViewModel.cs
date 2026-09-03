@@ -26,11 +26,14 @@ public sealed partial class FanSourceSelection : ObservableObject
 public sealed partial class FanChannelViewModel : ObservableObject
 {
     private readonly FanController _controller;
+    private readonly Func<DateTime> _clock;
     private bool _refreshing;
 
-    public FanChannelViewModel(FanChannelView v, FanController controller, IReadOnlyList<FanSourceOption> sourceOptions)
+    public FanChannelViewModel(FanChannelView v, FanController controller, IReadOnlyList<FanSourceOption> sourceOptions,
+        Func<DateTime> clock, bool controlEnabled)
     {
         _controller = controller;
+        _clock = clock;
         _refreshing = true; // SourceSelections below must not echo the just-loaded state back to the controller
         Id = v.Id;
         Device = v.Device;
@@ -41,6 +44,7 @@ public sealed partial class FanChannelViewModel : ObservableObject
         _mode = v.Mode;
         _manualPercent = v.ManualPercent;
         _sourceMetricId = v.SourceMetricId;
+        _controlEnabled = controlEnabled;
         SourceSelections = new ObservableCollection<FanSourceSelection>(sourceOptions.Select(o =>
             new FanSourceSelection(o.Id, o.Label, OnSelectionChanged) { IsSelected = v.SourceMetricIds.Contains(o.Id) }));
         Points = new ObservableCollection<FanPoint>(v.Points);
@@ -68,6 +72,9 @@ public sealed partial class FanChannelViewModel : ObservableObject
     [ObservableProperty] private string _statusText = "";
     [ObservableProperty] private double _liveTemp = double.NaN;
     [ObservableProperty] private double _liveTarget = double.NaN;
+    /// <summary>Mirrors the master switch (<see cref="FansViewModel.Enabled"/>); gates <see cref="IdentifyCommand"/>.</summary>
+    [NotifyCanExecuteChangedFor(nameof(IdentifyCommand))]
+    [ObservableProperty] private bool _controlEnabled;
 
     public bool IsManual => Mode == FanMode.Manual;
     public bool IsCurve => Mode == FanMode.Curve;
@@ -102,6 +109,11 @@ public sealed partial class FanChannelViewModel : ObservableObject
         _controller.ResetCurve(Id);
         ReplacePoints(FanCurve.DefaultPoints);
     }
+
+    /// <summary>Pulses this channel to max so the user can see which physical fan it is. Never touches this
+    /// channel's mode/prefs — Tick resumes the channel's own mode once the pulse expires.</summary>
+    [RelayCommand(CanExecute = nameof(ControlEnabled))]
+    private void Identify() => _controller.Identify(Id, _clock());
 
     /// <summary>Pull live values (and any controller-side changes, e.g. failsafe → Auto) without echoing back.</summary>
     public void Apply(FanChannelView v)
@@ -194,20 +206,25 @@ public sealed partial class FansViewModel : ObservableObject
             .Select(d => new FanSourceOption(d.Id,
                 settings.TilePrefs.TryGetValue(d.Id, out var p) && !string.IsNullOrWhiteSpace(p.Name) ? p.Name! : d.DisplayName))
             .ToList();
+        _enabled = controller.Enabled;
         foreach (var v in controller.Views())
         {
             var group = Devices.FirstOrDefault(g => g.Device == v.Device);
             if (group is null) { group = new FanDeviceGroupViewModel(v.Device); Devices.Add(group); }
-            var ch = new FanChannelViewModel(v, controller, _celsiusOptions);
+            var ch = new FanChannelViewModel(v, controller, _celsiusOptions, _clock, _enabled);
             group.Channels.Add(ch);
             _byId[v.Id] = ch;
         }
-        _enabled = controller.Enabled;
         foreach (var name in controller.ProfileNames()) ProfileNames.Add(name);
         _gameModeEnabled = settings.GameModeEnabled;
         _gamingProfile = settings.GameModeGamingProfile;
         _desktopProfile = settings.GameModeDesktopProfile;
         _gameModeStatus = _switcher?.StatusText ?? "";
+        _safetyBannerCollapsed = settings.FanSafetyBannerCollapsed;
+        // A profile can already be active from a previous session (persisted ActiveFanProfile) — treat that as
+        // "loaded" too, so an edit right after opening the window still offers Reload.
+        LastLoadedProfile = controller.ActiveProfile;
+        SetSelectedProfileQuietly(controller.ActiveProfile);
     }
 
     public ObservableCollection<FanDeviceGroupViewModel> Devices { get; } = new();
@@ -224,7 +241,11 @@ public sealed partial class FansViewModel : ObservableObject
             : "Fan control unavailable — restart Stats to apply the hardware setting you changed.";
 
     [ObservableProperty] private bool _enabled;
-    partial void OnEnabledChanged(bool value) => _controller.Enabled = value;
+    partial void OnEnabledChanged(bool value)
+    {
+        _controller.Enabled = value;
+        foreach (var ch in _byId.Values) ch.ControlEnabled = value;
+    }
 
     [ObservableProperty] private string _recoveryNotice = "";
     public bool HasRecoveryNotice => RecoveryNotice.Length > 0;
@@ -233,6 +254,19 @@ public sealed partial class FansViewModel : ObservableObject
     [ObservableProperty] private string _conflictText = "";
     public bool HasConflict => ConflictText.Length > 0;
     partial void OnConflictTextChanged(string value) => OnPropertyChanged(nameof(HasConflict));
+
+    /// <summary>The always-on "writes to your hardware" warning collapses to one line via Got it; unrelated to
+    /// the recovery/conflict banners above, which are unchanged.</summary>
+    [ObservableProperty] private bool _safetyBannerCollapsed;
+
+    [RelayCommand]
+    private void DismissSafetyBanner()
+    {
+        if (SafetyBannerCollapsed) return;
+        SafetyBannerCollapsed = true;
+        _settings.FanSafetyBannerCollapsed = true;
+        _saveSettings();
+    }
 
     [RelayCommand]
     private void DismissRecoveryNotice() => RecoveryNotice = "";
@@ -291,6 +325,15 @@ public sealed partial class FansViewModel : ObservableObject
     /// FanChannelViewModel) is picked up without a Refresh().</summary>
     public string ActiveProfileName => _controller.ActiveProfile ?? "Custom";
 
+    /// <summary>The last profile name loaded or saved (Save As counts: it makes that name the active profile too).
+    /// Reload re-applies this — the dropdown itself can't be re-picked to reload, because the same value assigned
+    /// twice never raises a WPF SelectionChanged (that was the v1.4 problem this button fixes).</summary>
+    public string? LastLoadedProfile { get; private set; }
+
+    /// <summary>True once a profile has been loaded/saved and the controller's active profile has since gone
+    /// back to null (Custom) — i.e. the user edited a channel after loading. Drives the Reload button.</summary>
+    public bool IsModified => LastLoadedProfile is not null && _controller.ActiveProfile is null;
+
     [ObservableProperty] private string? _selectedProfileName;
     partial void OnSelectedProfileNameChanged(string? value)
     {
@@ -307,7 +350,7 @@ public sealed partial class FansViewModel : ObservableObject
         _controller.AddOrReplaceProfile(_controller.SnapshotProfile(name)); // under the controller's gate
         if (isNew) ProfileNames.Add(name);
         _controller.SetActiveProfile(name); // saves settings.FanProfiles + ActiveFanProfile together
-        SetSelectedProfileQuietly(name);
+        LastLoadedProfile = name;
         SyncProfileState();
     }
 
@@ -316,8 +359,17 @@ public sealed partial class FansViewModel : ObservableObject
     {
         if (!_controller.TryGetProfile(name, out var prof)) return;
         _controller.ApplyProfile(prof!);
-        SetSelectedProfileQuietly(name);
+        LastLoadedProfile = name;
         Refresh();
+    }
+
+    /// <summary>Re-applies <see cref="LastLoadedProfile"/> — the fix for "re-load the same profile" (picking the
+    /// dropdown entry that's already selected raises no change event; this button always re-applies regardless
+    /// of what the dropdown currently shows).</summary>
+    [RelayCommand]
+    private void Reload()
+    {
+        if (LastLoadedProfile is string name) LoadProfile(name);
     }
 
     [RelayCommand]
@@ -334,6 +386,7 @@ public sealed partial class FansViewModel : ObservableObject
             if (DesktopProfile == name) DesktopProfile = null;
         }
         finally { _clearingProfileRefs = false; }
+        if (LastLoadedProfile == name) LastLoadedProfile = null; // nothing sane left for Reload to re-apply
         if (_controller.ActiveProfile == name) _controller.SetActiveProfile(null);
         else _saveSettings();
         SyncProfileState();
@@ -361,15 +414,18 @@ public sealed partial class FansViewModel : ObservableObject
         return (candidates.FirstOrDefault(o => preferred(o.Id)) ?? candidates.FirstOrDefault())?.Id;
     }
 
-    /// <summary>Refreshes the ActiveProfileName binding. The ComboBox selection is the user's, NOT a mirror of the
-    /// applied profile: any channel edit clears ActiveFanProfile ("Custom"), and forcing the selection to follow
-    /// would blank the dropdown a second after every edit — leaving Delete (bound to SelectedProfileName) inert
-    /// and re-picking the profile the only way back, which would throw the edit away. Only a selection naming a
-    /// profile that no longer exists is cleared.</summary>
+    /// <summary>Refreshes the ActiveProfileName/IsModified bindings and keeps the ComboBox selection following the
+    /// controller's active profile (quietly — no reload side effect): null → no selection, header shows "Custom".
+    /// Picking a *different* entry still loads it via <see cref="OnSelectedProfileNameChanged"/>; reloading the
+    /// same one again goes through <see cref="Reload"/> instead, since re-picking an already-selected ComboBox
+    /// entry raises no change event (the v1.4 problem this replaces — see the design doc's deviation note).</summary>
     private void SyncProfileState()
     {
         OnPropertyChanged(nameof(ActiveProfileName));
-        if (SelectedProfileName is not null && !ProfileNames.Contains(SelectedProfileName)) SetSelectedProfileQuietly(null);
+        var active = _controller.ActiveProfile;
+        if (active is not null && !ProfileNames.Contains(active)) active = null; // a name settings.json no longer has
+        if (SelectedProfileName != active) SetSelectedProfileQuietly(active);
+        OnPropertyChanged(nameof(IsModified));
     }
 
     /// <summary>Set the ComboBox selection without the setter re-entering LoadProfile.</summary>

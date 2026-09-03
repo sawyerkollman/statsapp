@@ -15,6 +15,8 @@
             <Button DockPanel.Dock="Right" Content="Create defaults" Command="{Binding CreateDefaultProfilesCommand}" Style="{StaticResource HeaderButton}" Margin="6,0,0,0"/>
             <Button DockPanel.Dock="Right" Content="Delete" Command="{Binding DeleteProfileCommand}" CommandParameter="{Binding SelectedProfileName}" Style="{StaticResource HeaderButton}" Margin="6,0,0,0"/>
             <Button DockPanel.Dock="Right" Content="Save as…" Click="SaveAs_Click" Style="{StaticResource HeaderButton}" Margin="6,0,0,0"/>
+            <Button DockPanel.Dock="Right" Content="Reload" Command="{Binding ReloadCommand}" Style="{StaticResource HeaderButton}" Margin="6,0,0,0"
+                    Visibility="{Binding IsModified, Converter={StaticResource BoolToVis}}"/>
             <TextBlock DockPanel.Dock="Right" Text="{Binding ActiveProfileName, StringFormat='profile: {0}'}" Foreground="{DynamicResource TextSecondary}" VerticalAlignment="Center" Margin="10,0,0,0"/>
             <ComboBox ItemsSource="{Binding ProfileNames}" SelectedItem="{Binding SelectedProfileName}" MinWidth="160" VerticalAlignment="Center" HorizontalAlignment="Left"/>
         </DockPanel>
@@ -23,8 +25,16 @@
              TextPrimary, which would go dark-on-dark under the Light preset. Matches DashboardWindow's degraded-
              mode banner. -->
         <Border DockPanel.Dock="Top" Background="#4A3A1E" CornerRadius="4" Padding="10,6" Margin="0,0,0,10">
-            <TextBlock Foreground="White" TextWrapping="Wrap" FontSize="12"
-                       Text="Writes fan speeds to your hardware. Close other fan software (MSI Center, Fan Control, Afterburner fan curves) first — two controllers fighting over the same fan is unsafe. Speeds return to device control when you switch a fan to Auto, turn this off, or exit Stats. Changes apply on the next sensor poll (≈1 s)."/>
+            <DockPanel>
+                <Button DockPanel.Dock="Right" Content="Got it" Command="{Binding DismissSafetyBannerCommand}" Style="{StaticResource HeaderButton}" FontSize="11"
+                        Visibility="{Binding SafetyBannerCollapsed, Converter={StaticResource InverseBoolToVis}}"/>
+                <TextBlock Foreground="White" TextWrapping="Wrap" FontSize="12"
+                           Visibility="{Binding SafetyBannerCollapsed, Converter={StaticResource InverseBoolToVis}}"
+                           Text="Writes fan speeds to your hardware. Close other fan software (MSI Center, Fan Control, Afterburner fan curves) first — two controllers fighting over the same fan is unsafe. Speeds return to device control when you switch a fan to Auto, turn this off, or exit Stats. Changes apply on the next sensor poll (≈1 s)."/>
+                <TextBlock Foreground="White" FontSize="12"
+                           Visibility="{Binding SafetyBannerCollapsed, Converter={StaticResource BoolToVis}}"
+                           Text="Fan control writes to your hardware — speeds return to device control on Auto, off, or exit."/>
+            </DockPanel>
         </Border>
         <StackPanel DockPanel.Dock="Top" Margin="0,0,0,10">
             <CheckBox IsChecked="{Binding GameModeEnabled}" Margin="0,0,0,6">
@@ -84,6 +94,8 @@
                                                                      IsChecked="{Binding Mode, Converter={StaticResource Equals}, ConverterParameter=Manual}"/>
                                                         <RadioButton Content="Curve" Foreground="{DynamicResource TextPrimary}" GroupName="{Binding Id}"
                                                                      IsChecked="{Binding Mode, Converter={StaticResource Equals}, ConverterParameter=Curve}"/>
+                                                        <Button Content="Identify" Command="{Binding IdentifyCommand}" Style="{StaticResource HeaderButton}"
+                                                                FontSize="11" Margin="16,0,0,0" ToolTip="Pulse this fan to max for 2 seconds"/>
                                                     </StackPanel>
                                                 </Grid>
                                                 <TextBlock Text="{Binding StatusText}" Foreground="{DynamicResource TextSecondary}" FontSize="11" Margin="0,2,0,0"/>

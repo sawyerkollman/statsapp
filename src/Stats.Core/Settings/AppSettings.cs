@@ -99,6 +99,11 @@ public sealed class AppSettings
     /// <summary>Dashboard-wide UI scale applied as a LayoutTransform on the content root; clamped 0.9–1.3 at load.</summary>
     public double DashboardUiScale { get; set; } = 1.0;
 
+    // ---- v1.8 Fans window UX ----
+    /// <summary>The Fans window's always-on safety warning collapses to one line via "Got it"; persists across
+    /// restarts. Recovery/conflict banners are unrelated and always show in full.</summary>
+    public bool FanSafetyBannerCollapsed { get; set; }
+
     /// <summary>Get-or-create the TilePref for a metric id.</summary>
     public TilePref PrefFor(string metricId)
     {
