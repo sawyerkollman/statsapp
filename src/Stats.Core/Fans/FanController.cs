@@ -15,6 +15,7 @@ public sealed class FanController
     public const float PumpFloorPercent = 50f;
     public const int MaxWriteFailures = 3;
     public static readonly TimeSpan SourceStaleAfter = TimeSpan.FromSeconds(10);
+    public static readonly TimeSpan IdentifyDuration = TimeSpan.FromSeconds(2);
 
     private sealed class Runtime
     {
@@ -26,6 +27,9 @@ public sealed class FanController
         public bool FailedOver; // fail-safe flipped this channel to Auto: keep reporting WriteFailed until the user acts
         public FanChannelStatus Status = FanChannelStatus.Idle;
         public float? Rpm, Percent, Target, SourceTemp;
+        /// <summary>Set by <see cref="Identify"/>; while <c>nowUtc</c> is before this, Tick forces the channel to
+        /// MaxPercent regardless of its own mode. Never touches prefs/ActiveFanProfile.</summary>
+        public DateTime? IdentifyUntil;
     }
 
     private readonly IFanControlBackend _backend;
@@ -77,6 +81,16 @@ public sealed class FanController
         if (!FanCurve.TryCreate(points, out var curve)) return false;
         Mutate(id, p => p.Points = curve!.Points.ToList());
         return true;
+    }
+
+    /// <summary>Pulses the channel to <see cref="FanChannel.MaxPercent"/> for <see cref="IdentifyDuration"/> so the
+    /// user can see which physical fan a row corresponds to. Deliberately NOT routed through <see cref="Mutate"/>:
+    /// it never touches <see cref="FanChannelPref"/> or <see cref="AppSettings.ActiveFanProfile"/>, and it never
+    /// writes to the backend itself — only <see cref="Tick"/> (the poller thread) does that. A no-op while the
+    /// master switch is off: Tick's disabled branch releases everything and never looks at IdentifyUntil.</summary>
+    public void Identify(string id, DateTime nowUtc)
+    {
+        lock (_gate) { Rt(id).IdentifyUntil = nowUtc + IdentifyDuration; }
     }
 
     private void Mutate(string id, Action<FanChannelPref> change)
@@ -262,7 +276,17 @@ public sealed class FanController
                     float? target = null;
                     rt.SourceTemp = null;
 
-                    switch (mode)
+                    // An unexpired Identify pulse overrides the channel's own mode entirely: MaxPercent, ramp
+                    // limit skipped (below) so the pulse is visible right away. Once it expires we fall straight
+                    // through to the channel's own mode this same tick — Auto releases, Manual/Curve ramp back.
+                    bool identifying = rt.IdentifyUntil is DateTime identifyUntil && nowUtc < identifyUntil;
+                    if (rt.IdentifyUntil is not null && !identifying) rt.IdentifyUntil = null;
+
+                    if (identifying)
+                    {
+                        target = ch.MaxPercent;
+                    }
+                    else switch (mode)
                     {
                         case FanMode.Auto:
                             ReleaseLocked(ch.Id, rt, rt.FailedOver ? FanChannelStatus.WriteFailed : FanChannelStatus.Idle);
@@ -304,11 +328,11 @@ public sealed class FanController
                         if (ch.Name.Contains("pump", StringComparison.OrdinalIgnoreCase)) min = MathF.Max(min, PumpFloorPercent);
                         min = MathF.Min(min, ch.MaxPercent); // a floor above the ceiling would make Math.Clamp throw
                         want = Math.Clamp(want, min, ch.MaxPercent);
-                        if (rt.LastWritten is float last)
+                        if (!identifying && rt.LastWritten is float last)
                             want = last + Math.Clamp(want - last, -MaxStepPerTick, MaxStepPerTick);
                         want = MathF.Round(want);
                         rt.Target = want;
-                        if (!rt.InSoftware || rt.LastWritten != want) WriteLocked(ch, rt, want, pref!);
+                        if (!rt.InSoftware || rt.LastWritten != want) WriteLocked(ch, rt, want, pref);
                         else if (rt.Status != FanChannelStatus.WriteFailed) rt.Status = FanChannelStatus.Active;
                     }
                     else if (mode != FanMode.Curve || rt.Status == FanChannelStatus.SourceUnavailable || rt.Status == FanChannelStatus.Idle)
@@ -385,7 +409,10 @@ public sealed class FanController
         return true;
     }
 
-    private void WriteLocked(FanChannel ch, Runtime rt, float percent, FanChannelPref pref)
+    /// <summary><paramref name="pref"/> is null when Identify pulses a channel that has no saved preference (an
+    /// Auto channel that was never touched) — the fail-safe below must not fabricate one, so it only flips a mode
+    /// that already exists.</summary>
+    private void WriteLocked(FanChannel ch, Runtime rt, float percent, FanChannelPref? pref)
     {
         // LHM's SetSoftware may switch the control into software mode before the hardware write itself fails
         // (a "partial write"), so mark InSoftware before the call — otherwise a failed write would leave the
@@ -408,9 +435,12 @@ public sealed class FanController
             Trace.WriteLine($"[Stats.FanController] write {ch.Id}={percent} failed ({rt.Failures}/{MaxWriteFailures}): {ex.Message}");
             if (rt.Failures >= MaxWriteFailures)
             {
-                pref.Mode = FanMode.Auto;
+                if (pref is not null)
+                {
+                    pref.Mode = FanMode.Auto;
+                    _pendingSave = true; // persist the fail-safe mode flip at the end of the tick, still under _gate
+                }
                 rt.FailedOver = true; // keep the Auto branch reporting WriteFailed until the user changes something
-                _pendingSave = true;  // persist the fail-safe mode flip at the end of the tick, still under _gate
                 ReleaseLocked(ch.Id, rt, FanChannelStatus.WriteFailed);
                 Trace.WriteLine($"[Stats.FanController] {ch.Id} set to Auto after repeated write failures");
             }

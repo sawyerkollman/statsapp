@@ -664,6 +664,84 @@ public class FanControllerTests
         Assert.Equal(new[] { "B" }, h.C.ProfileNames());
     }
 
+    // ---- Identify ----
+
+    [Fact]
+    public void Identify_PulseWritesMaxPercent_OnNextTick()
+    {
+        var h = new H();
+        h.C.Identify(Gpu, T0);                     // Auto channel, never touched before
+        h.C.Tick(h.Snap(50), T0);
+        Assert.Equal((Gpu, 100f), h.WritesFor(Gpu).Single());
+    }
+
+    [Fact]
+    public void Identify_Expires_AutoChannelIsReleased()
+    {
+        var h = new H();
+        h.C.Identify(Gpu, T0);
+        h.C.Tick(h.Snap(50), T0);
+        Assert.Equal((Gpu, 100f), h.WritesFor(Gpu).Single());
+        h.C.Tick(h.Snap(50), T0.AddSeconds(2.1));  // pulse expired: Auto's own mode releases it
+        Assert.Equal(new (string, float?)[] { (Gpu, 100f), (Gpu, null) }, h.WritesFor(Gpu));
+        Assert.Equal(FanChannelStatus.Idle, h.C.Views().Single(v => v.Id == Gpu).Status);
+    }
+
+    [Fact]
+    public void Identify_Expires_ManualChannelRampsBackToItsOwnTarget()
+    {
+        var h = new H();
+        h.C.SetMode(Case, FanMode.Manual); h.C.SetManualPercent(Case, 40);
+        h.C.Tick(h.Snap(50), T0);                  // establishes Manual at 40 first
+        Assert.Equal((Case, 40f), h.WritesFor(Case).Last());
+        h.C.Identify(Case, T0.AddSeconds(1));
+        h.C.Tick(h.Snap(50), T0.AddSeconds(1));    // pulse: straight to max, no slew
+        Assert.Equal((Case, 100f), h.WritesFor(Case).Last());
+        h.C.Tick(h.Snap(50), T0.AddSeconds(3.1));  // expired: Manual resumes, ramping down at the normal slew rate
+        Assert.Equal((Case, 90f), h.WritesFor(Case).Last());
+        h.C.Tick(h.Snap(50), T0.AddSeconds(4));
+        Assert.Equal((Case, 80f), h.WritesFor(Case).Last());
+    }
+
+    [Fact]
+    public void Identify_NeverTouchesPrefsOrActiveProfile()
+    {
+        var h = new H();
+        h.C.SetMode(Case, FanMode.Manual); h.C.SetManualPercent(Case, 40);
+        h.C.ApplyProfile(new FanProfile { Name = "P", Channels = { [Case] = new FanChannelPref { Mode = FanMode.Manual, ManualPercent = 40 } } });
+        Assert.Equal("P", h.S.ActiveFanProfile);
+        h.C.Identify(Case, T0);
+        h.C.Tick(h.Snap(50), T0);
+        Assert.Equal("P", h.S.ActiveFanProfile);                 // Identify is not a "user edit" of the pref
+        Assert.Equal(FanMode.Manual, h.S.FanChannels[Case].Mode);
+        Assert.Equal(40f, h.S.FanChannels[Case].ManualPercent);
+    }
+
+    [Fact]
+    public void Identify_WhileFanControlDisabled_DoesNothing()
+    {
+        var h = new H();
+        h.C.Enabled = false;
+        h.C.Identify(Gpu, T0);
+        h.C.Tick(h.Snap(50), T0);
+        Assert.Empty(h.B.Writes);
+    }
+
+    [Fact]
+    public void Identify_DuringMidFailureCount_CountsTowardTheSameFailSafe()
+    {
+        var h = new H();
+        h.B.FailWrite = id => id == Case;
+        h.C.SetMode(Case, FanMode.Manual); h.C.SetManualPercent(Case, 40);
+        h.C.Tick(h.Snap(50), T0); h.C.Tick(h.Snap(50), T0.AddSeconds(1)); // two failures already on the shared counter
+        Assert.Equal(FanChannelStatus.WriteFailed, h.C.Views().Single(v => v.Id == Case).Status);
+        Assert.Equal(FanMode.Manual, h.S.FanChannels[Case].Mode);
+
+        h.C.Identify(Case, T0.AddSeconds(2));
+        h.C.Tick(h.Snap(50), T0.AddSeconds(2));    // the identify pulse's write is the 3rd failure → fail-safe trips
+        Assert.Equal(FanMode.Auto, h.S.FanChannels[Case].Mode);
+    }
+
     [Fact]
     public void PollThreadProfileSwitches_AndUiEdits_NeverSerializeAMutatingCollection()
     {
