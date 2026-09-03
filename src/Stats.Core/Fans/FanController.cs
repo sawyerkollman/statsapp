@@ -240,8 +240,42 @@ public sealed class FanController
 
     // ---- loop (poll thread) ----
 
+    private enum WorkKind { Write, Release }
+
+    /// <summary>A single backend call decided under <see cref="_gate"/> in phase 1, performed outside it in
+    /// phase 2, and whose outcome is applied back under <see cref="_gate"/> in phase 3. See <see cref="Tick"/>.</summary>
+    private sealed class Work
+    {
+        public WorkKind Kind;
+        public FanChannel Ch = null!;
+        public Runtime Rt = null!;
+        public float Percent;               // Write only
+        public FanChannelStatus Status;     // Release only: the status to apply once SetAuto succeeds
+        public FanChannelPref? Pref;        // Write only: for the three-strikes fail-safe (null: Identify on an untouched Auto channel)
+        public bool Success;
+        public Exception? Error;
+    }
+
+    /// <summary>
+    /// Tick runs in three phases so hardware I/O never happens while <see cref="_gate"/> — which IS
+    /// <see cref="AppSettings.SyncRoot"/> — is held: a UI-thread setter or a settings save would otherwise block
+    /// on the same lock for however long the backend call takes.
+    ///   1. Locked: for every channel, decide Write(percent) / Release(status) / none from settings + the
+    ///      snapshot (mode, Identify pulse, curve evaluation, source-stale handling, pump floor, clamping, slew
+    ///      limit). Any channel that will be written has <see cref="Runtime.InSoftware"/> and the armed marker
+    ///      latched here, before the lock is released — exactly as the old single-phase WriteLocked did.
+    ///   2. Unlocked, still the poller thread: perform the queued SetPercent/SetAuto calls and record each
+    ///      outcome (success or exception) on its <see cref="Work"/> item.
+    ///   3. Locked: apply bookkeeping from the outcomes — LastWritten/Failures/Status, the three-strikes fail-safe
+    ///      (pref.Mode = Auto + _pendingSave, only when a pref exists), and ReleaseLocked's success-only tracking
+    ///      clear — then update the armed marker and flush any pending save. A fail-safe trip discovered here
+    ///      still needs its own SetAuto call, so it queues a second, smaller phase-2/phase-3 round rather than
+    ///      calling out while _gate is held; that channel is never handed a second write in the same tick.
+    /// </summary>
     public void Tick(SensorSnapshot snapshot, DateTime nowUtc)
     {
+        var work = new List<Work>();
+        var pending = new List<(Runtime Rt, float? Reported)>();
         lock (_gate)
         {
             _firstTick ??= nowUtc;
@@ -257,8 +291,8 @@ public sealed class FanController
 
                     if (!_settings.FanControlEnabled)
                     {
-                        ReleaseLocked(ch.Id, rt, FanChannelStatus.Idle);
-                        rt.Percent = reported; rt.Target = null; rt.SourceTemp = null;
+                        DecideRelease(work, ch, rt, FanChannelStatus.Idle);
+                        rt.Percent = reported; rt.SourceTemp = null;
                         continue;
                     }
 
@@ -266,7 +300,7 @@ public sealed class FanController
                     {
                         // A control that reports no usable headroom can only be driven to 0 % — which would stop the
                         // fan. Leave it to the device and surface the problem instead.
-                        ReleaseLocked(ch.Id, rt, FanChannelStatus.WriteFailed);
+                        DecideRelease(work, ch, rt, FanChannelStatus.WriteFailed);
                         rt.Percent = reported; rt.SourceTemp = null;
                         continue;
                     }
@@ -289,7 +323,7 @@ public sealed class FanController
                     else switch (mode)
                     {
                         case FanMode.Auto:
-                            ReleaseLocked(ch.Id, rt, rt.FailedOver ? FanChannelStatus.WriteFailed : FanChannelStatus.Idle);
+                            DecideRelease(work, ch, rt, rt.FailedOver ? FanChannelStatus.WriteFailed : FanChannelStatus.Idle);
                             break;
 
                         case FanMode.Manual:
@@ -308,7 +342,7 @@ public sealed class FanController
                             var lastSeen = rt.LastSourceSeen ?? _firstTick.Value;
                             if (src is null && nowUtc - lastSeen > SourceStaleAfter)
                             {
-                                ReleaseLocked(ch.Id, rt, FanChannelStatus.SourceUnavailable);
+                                DecideRelease(work, ch, rt, FanChannelStatus.SourceUnavailable);
                                 rt.LastSourceUsed = null;
                                 break;
                             }
@@ -332,7 +366,7 @@ public sealed class FanController
                             want = last + Math.Clamp(want - last, -MaxStepPerTick, MaxStepPerTick);
                         want = MathF.Round(want);
                         rt.Target = want;
-                        if (!rt.InSoftware || rt.LastWritten != want) WriteLocked(ch, rt, want, pref);
+                        if (!rt.InSoftware || rt.LastWritten != want) DecideWrite(work, ch, rt, want, pref);
                         else if (rt.Status != FanChannelStatus.WriteFailed) rt.Status = FanChannelStatus.Active;
                     }
                     else if (mode != FanMode.Curve || rt.Status == FanChannelStatus.SourceUnavailable || rt.Status == FanChannelStatus.Idle)
@@ -340,7 +374,9 @@ public sealed class FanController
                         rt.Target = null;
                     }
 
-                    rt.Percent = reported ?? (rt.InSoftware ? rt.LastWritten : null);
+                    // Finalized once every outcome from this tick (including a follow-up fail-safe release) is
+                    // known — see FinishTickLocked — since rt.LastWritten only reflects a successful write.
+                    pending.Add((rt, reported));
                 }
                 catch (Exception ex)
                 {
@@ -348,17 +384,127 @@ public sealed class FanController
                     rt.Status = FanChannelStatus.WriteFailed;
                 }
             }
+        }
 
-            UpdateMarkerLocked();
+        ExecuteWork(work);
 
-            // Poll-thread save: the write fail-safe mode flip, or a game-mode profile switch. Kept inside _gate
-            // (which IS AppSettings.SyncRoot) so even a save callback that serializes straight from this thread
-            // cannot enumerate FanChannels while the UI thread's Mutate modifies it.
-            if (_pendingSave)
+        List<Work>? failSafe = null;
+        lock (_gate)
+        {
+            foreach (var w in work)
             {
-                _pendingSave = false;
-                _save();
+                if (w.Kind == WorkKind.Write) ApplyWriteOutcomeLocked(w, ref failSafe);
+                else ApplyReleaseOutcomeLocked(w);
             }
+            if (failSafe is null) { FinishTickLocked(pending); return; }
+        }
+
+        // A three-strikes fail-safe tripped above: rt.InSoftware is already true (latched in phase 1), so handing
+        // the channel back to the device still needs its own SetAuto call. One more unlocked/locked round, never
+        // a second write for the channel that just failed.
+        ExecuteWork(failSafe);
+        lock (_gate)
+        {
+            foreach (var w in failSafe) ApplyReleaseOutcomeLocked(w);
+            FinishTickLocked(pending);
+        }
+    }
+
+    private static void DecideRelease(List<Work> work, FanChannel ch, Runtime rt, FanChannelStatus status)
+    {
+        if (rt.InSoftware) work.Add(new Work { Kind = WorkKind.Release, Ch = ch, Rt = rt, Status = status });
+        else { rt.Target = null; rt.Status = status; } // ReleaseLocked's no-op case: never tracked, nothing to call.
+    }
+
+    /// <summary><paramref name="pref"/> is null when Identify pulses a channel that has no saved preference (an
+    /// Auto channel that was never touched) — the fail-safe below must not fabricate one, so it only flips a mode
+    /// that already exists.</summary>
+    private void DecideWrite(List<Work> work, FanChannel ch, Runtime rt, float percent, FanChannelPref? pref)
+    {
+        // LHM's SetSoftware may switch the control into software mode before the hardware write itself fails
+        // (a "partial write"), so mark InSoftware before the call — otherwise a failed write would leave the
+        // channel pinned at whatever PWM it landed on while we believe it's still under device control.
+        rt.InSoftware = true;
+        // Only latch _armed once the marker is actually on disk — a transient failure (AV lock, disk full) must
+        // not disable crash recovery for the rest of the session; the next write retries the marker.
+        if (!_armed && _marker.Set()) _armed = true;
+        work.Add(new Work { Kind = WorkKind.Write, Ch = ch, Rt = rt, Percent = percent, Pref = pref });
+    }
+
+    /// <summary>Phase 2: the only place Tick touches the backend. Runs on the poller thread with no lock held.</summary>
+    private void ExecuteWork(List<Work> work)
+    {
+        foreach (var w in work)
+        {
+            try
+            {
+                if (w.Kind == WorkKind.Write) _backend.SetPercent(w.Ch.Id, w.Percent);
+                else _backend.SetAuto(w.Ch.Id);
+                w.Success = true;
+            }
+            catch (Exception ex) { w.Error = ex; }
+        }
+    }
+
+    private void ApplyWriteOutcomeLocked(Work w, ref List<Work>? failSafe)
+    {
+        var rt = w.Rt;
+        if (w.Success)
+        {
+            rt.LastWritten = w.Percent;
+            rt.Failures = 0;
+            rt.Status = FanChannelStatus.Active;
+            return;
+        }
+        rt.Failures++;
+        rt.Status = FanChannelStatus.WriteFailed;
+        Trace.WriteLine($"[Stats.FanController] write {w.Ch.Id}={w.Percent} failed ({rt.Failures}/{MaxWriteFailures}): {w.Error!.Message}");
+        if (rt.Failures < MaxWriteFailures) return;
+        if (w.Pref is not null)
+        {
+            w.Pref.Mode = FanMode.Auto;
+            _pendingSave = true; // persist the fail-safe mode flip at the end of the tick, still under _gate
+        }
+        rt.FailedOver = true; // keep the Auto branch reporting WriteFailed until the user changes something
+        Trace.WriteLine($"[Stats.FanController] {w.Ch.Id} set to Auto after repeated write failures");
+        (failSafe ??= new()).Add(new Work { Kind = WorkKind.Release, Ch = w.Ch, Rt = rt, Status = FanChannelStatus.WriteFailed });
+    }
+
+    /// <summary>
+    /// Applies a SetAuto outcome exactly as the old single-phase ReleaseLocked did: tracking (InSoftware/
+    /// LastWritten) is only cleared on success — a failure leaves the channel pinned in software so the next
+    /// Tick or RestoreAll retries the release.
+    /// </summary>
+    private void ApplyReleaseOutcomeLocked(Work w)
+    {
+        var rt = w.Rt;
+        if (w.Success)
+        {
+            rt.InSoftware = false;
+            rt.LastWritten = null;
+            rt.Target = null;
+            rt.Status = w.Status;
+            return;
+        }
+        Trace.WriteLine($"[Stats.FanController] SetAuto {w.Ch.Id} failed: {w.Error!.Message}");
+        rt.Status = FanChannelStatus.WriteFailed;
+        rt.Target = null;
+    }
+
+    private void FinishTickLocked(List<(Runtime Rt, float? Reported)> pending)
+    {
+        foreach (var (rt, reported) in pending)
+            rt.Percent = reported ?? (rt.InSoftware ? rt.LastWritten : null);
+
+        UpdateMarkerLocked();
+
+        // Poll-thread save: the write fail-safe mode flip, or a game-mode profile switch. Kept inside _gate
+        // (which IS AppSettings.SyncRoot) so even a save callback that serializes straight from this thread
+        // cannot enumerate FanChannels while the UI thread's Mutate modifies it.
+        if (_pendingSave)
+        {
+            _pendingSave = false;
+            _save();
         }
     }
 
@@ -409,48 +555,13 @@ public sealed class FanController
         return true;
     }
 
-    /// <summary><paramref name="pref"/> is null when Identify pulses a channel that has no saved preference (an
-    /// Auto channel that was never touched) — the fail-safe below must not fabricate one, so it only flips a mode
-    /// that already exists.</summary>
-    private void WriteLocked(FanChannel ch, Runtime rt, float percent, FanChannelPref? pref)
-    {
-        // LHM's SetSoftware may switch the control into software mode before the hardware write itself fails
-        // (a "partial write"), so mark InSoftware before the call — otherwise a failed write would leave the
-        // channel pinned at whatever PWM it landed on while we believe it's still under device control.
-        rt.InSoftware = true;
-        // Only latch _armed once the marker is actually on disk — a transient failure (AV lock, disk full) must
-        // not disable crash recovery for the rest of the session; the next write retries the marker.
-        if (!_armed && _marker.Set()) _armed = true;
-        try
-        {
-            _backend.SetPercent(ch.Id, percent);
-            rt.LastWritten = percent;
-            rt.Failures = 0;
-            rt.Status = FanChannelStatus.Active;
-        }
-        catch (Exception ex)
-        {
-            rt.Failures++;
-            rt.Status = FanChannelStatus.WriteFailed;
-            Trace.WriteLine($"[Stats.FanController] write {ch.Id}={percent} failed ({rt.Failures}/{MaxWriteFailures}): {ex.Message}");
-            if (rt.Failures >= MaxWriteFailures)
-            {
-                if (pref is not null)
-                {
-                    pref.Mode = FanMode.Auto;
-                    _pendingSave = true; // persist the fail-safe mode flip at the end of the tick, still under _gate
-                }
-                rt.FailedOver = true; // keep the Auto branch reporting WriteFailed until the user changes something
-                ReleaseLocked(ch.Id, rt, FanChannelStatus.WriteFailed);
-                Trace.WriteLine($"[Stats.FanController] {ch.Id} set to Auto after repeated write failures");
-            }
-        }
-    }
-
     /// <summary>
-    /// Hands the channel back to device control if we were driving it. Only clears InSoftware/LastWritten when
-    /// SetAuto actually succeeds — if it throws, the channel is still pinned in software, so we keep tracking
-    /// it (and keep reporting WriteFailed) so the next Tick or RestoreAll retries the release. One attempt per call.
+    /// Synchronous release used only by <see cref="RestoreAll"/> and (inline, without this helper) by
+    /// <see cref="RecoverFromUncleanShutdown(out bool)"/> — both run with the poller stopped, so there is no UI
+    /// contention to avoid and no need for Tick's phased split. Hands the channel back to device control if we
+    /// were driving it. Only clears InSoftware/LastWritten when SetAuto actually succeeds — if it throws, the
+    /// channel is still pinned in software, so we keep tracking it (and keep reporting WriteFailed) so the next
+    /// Tick or RestoreAll retries the release. One attempt per call.
     /// </summary>
     private void ReleaseLocked(string id, Runtime rt, FanChannelStatus status)
     {

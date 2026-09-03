@@ -13,9 +13,13 @@ public class FanControllerTests
         public Func<string, bool>? FailWrite;
         public Func<string, bool>? FailAuto;
         public bool RecordBeforeThrow; // models a partial write: the hardware saw it, then the call still threw
+        /// <summary>Test hook invoked at the top of every SetPercent call — i.e. from phase 2, on the poller
+        /// thread, with the controller's gate released.</summary>
+        public Action? OnSetPercent;
         public IReadOnlyList<FanChannel> Channels => Chans;
         public void SetPercent(string id, float p)
         {
+            OnSetPercent?.Invoke();
             bool fail = FailWrite?.Invoke(id) == true;
             if (fail && RecordBeforeThrow) Writes.Add((id, p));
             if (fail) throw new InvalidOperationException("io");
@@ -779,5 +783,105 @@ public class FanControllerTests
         poll.Join();
 
         Assert.Null(failure);
+    }
+
+    // ---- Fan lock scope: backend I/O runs outside _gate (Tick's phase 2) ----
+
+    [Fact]
+    public void BackendWrite_RunsWithGateReleased_AnotherThreadCanAcquireItMidCall()
+    {
+        var h = new H();
+        h.C.SetMode(Case, FanMode.Manual); h.C.SetManualPercent(Case, 40);
+        var acquired = new ManualResetEventSlim(false);
+        bool gotLock = false;
+        h.B.OnSetPercent = () =>
+        {
+            var t = new Thread(() =>
+            {
+                // If Tick still held _gate while calling into the backend, this — a different thread, so the
+                // reentrant Monitor gives it no free pass — would block until the lock is released.
+                gotLock = Monitor.TryEnter(h.S.SyncRoot, TimeSpan.FromSeconds(3));
+                if (gotLock) Monitor.Exit(h.S.SyncRoot);
+                acquired.Set();
+            });
+            t.IsBackground = true;
+            t.Start();
+            Assert.True(acquired.Wait(TimeSpan.FromSeconds(5)), "a concurrent thread never got a chance to acquire the gate");
+        };
+
+        h.Tick(50);
+
+        Assert.True(gotLock, "SetPercent ran while _gate was held, which would stall a concurrent UI-thread setter/save");
+        Assert.Equal((Case, 40f), h.WritesFor(Case).Single());
+    }
+
+    [Fact]
+    public void UiMutation_FromInsideBackendCall_DoesNotDeadlock()
+    {
+        var h = new H();
+        h.C.SetMode(Case, FanMode.Manual); h.C.SetManualPercent(Case, 40);
+        // Models a UI-thread setter racing the poller's backend call. If Tick held _gate across SetPercent, this
+        // (a different thread taking the same lock) would hang until the test's own timeout killed the run.
+        h.B.OnSetPercent = () =>
+        {
+            var t = new Thread(() => h.C.SetManualPercent(Gpu, 77));
+            t.IsBackground = true;
+            t.Start();
+            Assert.True(t.Join(TimeSpan.FromSeconds(5)), "UI-thread mutation from inside the backend call deadlocked");
+        };
+
+        h.Tick(50);
+
+        Assert.Equal(77f, h.S.FanChannels[Gpu].ManualPercent);
+    }
+
+    [Fact]
+    public void Marker_LatchedBeforeTheFirstBackendCall()
+    {
+        var h = new H();
+        h.C.SetMode(Case, FanMode.Manual); h.C.SetManualPercent(Case, 40);
+        bool? markerPresentDuringCall = null;
+        h.B.OnSetPercent = () => markerPresentDuringCall ??= h.M.Present;
+
+        h.Tick(50);
+
+        Assert.True(markerPresentDuringCall, "InSoftware/the armed marker must be latched in phase 1, before phase 2's backend call");
+    }
+
+    [Fact]
+    public void PrefMutatedDuringBackendCall_OutcomeStillAppliesToTheChannelActuallyWritten()
+    {
+        var h = new H();
+        h.C.SetMode(Case, FanMode.Manual); h.C.SetManualPercent(Case, 40);
+        // "The UI" changes the channel's mode mid-write (between phase 1's decision and phase 3's bookkeeping).
+        // Phase 3 must still apply the write's outcome via the Runtime object captured in phase 1, not by
+        // re-deriving anything from the pref's current (now different) mode.
+        h.B.OnSetPercent = () => h.C.SetMode(Case, FanMode.Curve);
+
+        h.Tick(50);
+
+        Assert.Equal((Case, 40f), h.WritesFor(Case).Single());
+        var v = h.C.Views().Single(x => x.Id == Case);
+        Assert.Equal(FanChannelStatus.Active, v.Status);   // the write succeeded — not overwritten by the mode change
+        Assert.Equal(40f, v.Percent);                      // LastWritten applied to the right Runtime
+        Assert.Equal(FanMode.Curve, h.S.FanChannels[Case].Mode); // the concurrent edit itself still landed
+    }
+
+    [Fact]
+    public void ThreeStrikesFailSafe_ReleaseIsNotASecondWriteInTheSameTick()
+    {
+        var h = new H();
+        h.B.FailWrite = id => id == Case;
+        h.C.SetMode(Case, FanMode.Manual); h.C.SetManualPercent(Case, 40);
+        h.Tick(50); h.Tick(50); // two failures banked
+
+        int percentWrites = 0, autoWrites = 0;
+        h.B.OnSetPercent = () => percentWrites++;
+        h.Tick(50); // 3rd failure: fail-safe trips and releases the channel via a follow-up SetAuto round
+
+        autoWrites = h.WritesFor(Case).Count(w => w.Item2 is null);
+        Assert.Equal(1, percentWrites);                          // exactly one write attempt this tick
+        Assert.Equal(1, autoWrites);                              // exactly one release, not a second write
+        Assert.Equal(FanMode.Auto, h.S.FanChannels[Case].Mode);
     }
 }
