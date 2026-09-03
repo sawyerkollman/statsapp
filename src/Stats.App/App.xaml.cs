@@ -15,6 +15,7 @@ using Stats.Core.Alerts;
 using Stats.Core.Fans;
 using Stats.Core.Frames;
 using Stats.Core.Metrics;
+using Stats.Core.Refresh;
 using Stats.Core.Sensors;
 using Stats.Core.Settings;
 using Stats.Core.Startup;
@@ -75,10 +76,15 @@ public partial class App : Application
     /// <summary>Cancelled by OnExit() so an in-flight manual "Check for updates" doesn't try to touch a
     /// tearing-down SettingsViewModel.</summary>
     private CancellationTokenSource? _manualCheckCts;
-    /// <summary>True until the first ShowDashboard() call (tray click or Settings/Open dashboard) — that call
-    /// performs one immediate RefreshAll() against already-polled data before showing, since a --minimized
-    /// launch skipped the initial Show() and its first snapshot dispatch race.</summary>
-    private bool _pendingFirstShowRefresh;
+    /// <summary>Latest snapshot from the poller, applied by the coalesced Dispatcher refresh action below — see
+    /// <see cref="_refreshCoalescer"/>. Written with Volatile.Write on the poll thread, read with Volatile.Read on
+    /// the UI thread.</summary>
+    private SensorSnapshot? _latestSnapshot;
+    /// <summary>"At most one refresh in flight" latch (v1.8 §10 "Coalescing") — the poll thread's
+    /// SnapshotAvailable handler posts a Dispatcher.BeginInvoke only when <see cref="RefreshCoalescer.TryPost"/>
+    /// returns true, so a UI thread that's still processing an earlier tick never accumulates a backlog of queued
+    /// refreshes; the posted action always applies whatever the *latest* snapshot is by the time it runs.</summary>
+    private readonly RefreshCoalescer _refreshCoalescer = new();
     /// <summary>Cancelled by ExitApp()/OnExit() so an in-flight install download bails out (and resets the busy
     /// state) instead of racing app shutdown; a fresh instance per "Update now" click.</summary>
     private CancellationTokenSource? _installCts;
@@ -235,18 +241,14 @@ public partial class App : Application
             try { fanController.Tick(snapshot, DateTime.UtcNow); }
             catch (Exception ex) { System.Diagnostics.Trace.WriteLine("[Stats] FanController.Tick failed: " + ex); }
         };
-        _poller.SnapshotAvailable += snapshot => Dispatcher.BeginInvoke(() =>
+        // Coalesced (v1.8 §10 "Coalescing"): every snapshot updates _latestSnapshot, but only the first one since
+        // the UI thread last caught up gets a BeginInvoke — a busy UI thread never queues up a backlog, and the
+        // action that does run always applies whatever is newest by the time it runs, never a stale snapshot.
+        _poller.SnapshotAvailable += snapshot =>
         {
-            _store.Apply(snapshot);
-            _dashboardVm.RefreshAll();
-            _dashboardVm.SetGroupStatus(MetricGroup.Game, FrameStatus());
-            _overlayVm?.RefreshAll();
-            UpdateTrayTooltip();
-            if (_settings.AlertsEnabled) EvaluateAlerts();
-            if (_peaks is { IsVisible: true }) _peaksVm?.Refresh();
-            if (_fans is { IsVisible: true }) _fansVm?.Refresh();
-            if (_detail is { IsVisible: true }) _detailVm?.Refresh();
-        });
+            Volatile.Write(ref _latestSnapshot, snapshot);
+            if (_refreshCoalescer.TryPost()) Dispatcher.BeginInvoke(RunCoalescedRefresh);
+        };
         // HealthChanged fires on the poll thread (see SensorPoller); dispatch its already-immutable state to the
         // dashboard VM the same way every other poll-thread → UI signal here is marshaled.
         _poller.HealthChanged += state => Dispatcher.BeginInvoke(() => _dashboardVm.SetSensorHealth(state));
@@ -254,8 +256,12 @@ public partial class App : Application
         _dashboard.AllowClose = false; // close button hides to tray; exit via tray menu
         _dashboard.LocationChanged += (_, _) => SaveWindowBounds();
         _dashboard.SizeChanged += (_, _) => SaveWindowBounds();
+        // Visibility gating (v1.8 §10): RefreshAll only runs against a visible window, but also runs once
+        // immediately whenever the window *becomes* visible — including a --minimized launch's first ShowDashboard()
+        // and every subsequent hide/show — so a freshly shown window is never stale for a whole poll interval.
+        _dashboard.IsVisibleChanged += (_, e) => { if (e.NewValue is true) { _dashboardVm.RefreshAll(); _dashboardVm.SetGroupStatus(MetricGroup.Game, FrameStatus()); } };
+        _overlay.IsVisibleChanged += (_, e) => { if (e.NewValue is true) _overlayVm?.RefreshAll(); };
         SessionEnding += (_, _) => ExitApp();
-        _pendingFirstShowRefresh = true; // consumed by the first ShowDashboard() call, whether that's now or a later tray click
         if (!startMinimized) _dashboard.Show(); // --minimized: dashboard/tray/services/poller are still fully constructed above, just not shown
         _poller.Start();
         StartUpdateChecks();
@@ -518,6 +524,32 @@ public partial class App : Application
         catch { /* keep previous icon */ }
     }
 
+    /// <summary>The Dispatcher-side half of the poll-thread → UI coalescing latch (v1.8 §10 "Coalescing"): clears
+    /// <see cref="_refreshCoalescer"/> *before* reading <see cref="_latestSnapshot"/> (see RefreshCoalescer.Take)
+    /// so a snapshot that lands mid-refresh is never lost, applies that snapshot to the store, evaluates alerts,
+    /// and updates the tray unconditionally — those never depend on any window being visible (§1) — then refreshes
+    /// the dashboard/overlay/Peaks/Fans/Detail only while each is actually visible (§10 "Visibility gating"); a
+    /// hidden window catches up in one shot via its own IsVisibleChanged handler instead (see OnStartup).</summary>
+    private void RunCoalescedRefresh()
+    {
+        _refreshCoalescer.Take();
+        var snapshot = Volatile.Read(ref _latestSnapshot);
+        if (snapshot is null || _store is null || _dashboardVm is null || _dashboard is null) return;
+
+        _store.Apply(snapshot);
+        if (_dashboard.IsVisible)
+        {
+            _dashboardVm.RefreshAll();
+            _dashboardVm.SetGroupStatus(MetricGroup.Game, FrameStatus());
+        }
+        if (_overlay is { IsVisible: true }) _overlayVm?.RefreshAll();
+        UpdateTrayTooltip();
+        if (_settings?.AlertsEnabled == true) EvaluateAlerts();
+        if (_peaks is { IsVisible: true }) _peaksVm?.Refresh();
+        if (_fans is { IsVisible: true }) _fansVm?.Refresh();
+        if (_detail is { IsVisible: true }) _detailVm?.Refresh();
+    }
+
     /// <summary>Builds one <see cref="AlertSample"/> per metric in the union of the dashboard and overlay
     /// selections (evaluated regardless of whether either window is visible), ticks <see cref="_alertEngine"/>,
     /// and surfaces any raised alert as a tray balloon (optionally with a chime) plus a log row. A balloon failure
@@ -527,12 +559,14 @@ public partial class App : Application
         if (_store is null || _settings is null || _alertEngine is null || _alertLog is null) return;
         var defsById = _store.Definitions.ToDictionary(d => d.Id);
         var ids = _settings.DashboardMetrics.Concat(_settings.OverlayMetrics).Distinct();
+        // Built once for this tick's whole sample set rather than per metric — see v1.8 §10 "Cheap extras".
+        var thresholds = ThresholdIndex.Build(_settings);
         var samples = new List<AlertSample>();
         foreach (var id in ids)
         {
             if (!defsById.TryGetValue(id, out var def) || !_store.TryGet(id, out var history)) continue;
-            var rule = ThresholdEvaluator.RuleFor(def, _settings);
-            var severity = ThresholdEvaluator.Evaluate(def, history.Current, _settings);
+            var rule = thresholds.RuleFor(def);
+            var severity = thresholds.Evaluate(def, history.Current);
             samples.Add(new AlertSample(def, history.Current, severity, rule));
         }
 
@@ -546,18 +580,12 @@ public partial class App : Application
         }
     }
 
-    /// <summary>Tray icon left-click, "Open dashboard", and "Settings" all funnel through here. The very first
-    /// call refreshes the dashboard VM against the already-current MetricStore before showing/activating —
-    /// closes the gap between a --minimized launch's skipped initial Show() and whatever poll tick last ran.
-    /// </summary>
+    /// <summary>Tray icon left-click, "Open dashboard", and "Settings" all funnel through here. Show() alone
+    /// covers the "not stale for a poll interval" refresh via the Dashboard window's IsVisibleChanged handler
+    /// (see OnStartup) — including the very first show after a --minimized launch.</summary>
     private void ShowDashboard()
     {
         if (_dashboard is null) return;
-        if (_pendingFirstShowRefresh)
-        {
-            _pendingFirstShowRefresh = false;
-            _dashboardVm?.RefreshAll();
-        }
         _dashboard.Show();
         _dashboard.WindowState = WindowState.Normal;
         _dashboard.Activate();
