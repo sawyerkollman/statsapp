@@ -226,7 +226,7 @@ public partial class App : Application
         _trayRenderer = new TrayIconRenderer();
         SetupTray();
 
-        _dashboard = new DashboardWindow { DataContext = _dashboardVm };
+        _dashboard = new DashboardWindow { DataContext = _dashboardVm, Settings = _settings };
         RestoreWindowBounds();
 
         var fanController = _fanController;

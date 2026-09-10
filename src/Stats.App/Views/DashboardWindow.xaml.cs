@@ -24,6 +24,13 @@ public partial class DashboardWindow : Window
     /// <summary>Set by App: true only when exiting via tray menu; otherwise close hides to tray.</summary>
     public bool AllowClose { get; set; }
 
+    /// <summary>Raw settings the tile context menu reads (unresolved TilePref kind, threshold rules/overrides).
+    /// Set by the composition root; a non-production host (tools/Stats.UiPreview) sets it too. Falls back to the
+    /// production <see cref="App.Settings"/> when unset so existing behavior is unchanged.</summary>
+    public AppSettings? Settings { get; set; }
+
+    private AppSettings? EffectiveSettings => Settings ?? (Application.Current as App)?.Settings;
+
     private DashboardViewModel? Vm => DataContext as DashboardViewModel;
 
     public DashboardWindow()
@@ -217,8 +224,8 @@ public partial class DashboardWindow : Window
     }
 
     /// <summary>The raw (unresolved) pref kind — the tile's Kind property is the *resolved* kind.</summary>
-    private static TileKind CurrentPrefKind(string id) =>
-        (Application.Current as App)?.Settings?.TilePrefs.TryGetValue(id, out var p) == true ? p.Kind : TileKind.Auto;
+    private TileKind CurrentPrefKind(string id) =>
+        EffectiveSettings?.TilePrefs.TryGetValue(id, out var p) == true ? p.Kind : TileKind.Auto;
 
     private void PromptRename(DashboardViewModel vm, MetricTileViewModel tile)
     {
@@ -237,7 +244,7 @@ public partial class DashboardWindow : Window
 
     private void PromptThresholds(DashboardViewModel vm, MetricTileViewModel tile)
     {
-        var settings = (Application.Current as App)?.Settings;
+        var settings = EffectiveSettings;
         if (settings is null) return;
         var def = tile.Definition;
         var groupRule = settings.ThresholdRules.FirstOrDefault(r => r.Group == def.Group && r.Unit == def.Unit);

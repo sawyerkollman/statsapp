@@ -4,8 +4,9 @@
              ShutdownMode="OnExplicitShutdown">
     <Application.Resources>
         <ResourceDictionary>
-            <!-- Merges must come first: StaticResource resolves in parse order,
-                 and the styles below reference the palette from Theme.xaml. -->
+            <!-- Merge order matters: StaticResource resolves in parse order, and later dictionaries reference
+                 the palette from Theme.xaml. tools/Stats.UiPreview merges this exact sequence so previews
+                 resolve resources identically to production (see Views/AppStyles.xaml). -->
             <ResourceDictionary.MergedDictionaries>
                 <ResourceDictionary Source="pack://application:,,,/Stats.App;component/Views/Theme.xaml"/>
                 <!-- Controls.xaml owns the hand-rolled implicit styles/templates for ScrollBar, Slider,
@@ -14,71 +15,9 @@
                      content) per docs/superpowers/specs/2026-08-27-v1.7-trust-polish-design.md. -->
                 <ResourceDictionary Source="pack://application:,,,/Stats.App;component/Views/Controls.xaml"/>
                 <ResourceDictionary Source="pack://application:,,,/Stats.App;component/Views/TileTemplates.xaml"/>
+                <!-- App-level text / TextBox / TabControl / ToolTip styles (formerly declared inline here). -->
+                <ResourceDictionary Source="pack://application:,,,/Stats.App;component/Views/AppStyles.xaml"/>
             </ResourceDictionary.MergedDictionaries>
-
-            <!-- Text -->
-            <Style TargetType="TextBlock" x:Key="GroupHeader">
-                <Setter Property="Foreground" Value="{DynamicResource AccentBrush}"/>
-                <Setter Property="FontSize" Value="14"/>
-                <Setter Property="FontWeight" Value="SemiBold"/>
-                <Setter Property="Margin" Value="8,14,0,4"/>
-            </Style>
-            <Style TargetType="TextBlock" x:Key="SettingsHeader">
-                <Setter Property="Foreground" Value="{DynamicResource AccentBrush}"/>
-                <Setter Property="FontSize" Value="13"/>
-                <Setter Property="FontWeight" Value="SemiBold"/>
-                <Setter Property="Margin" Value="0,14,0,6"/>
-            </Style>
-            <Style TargetType="TextBlock" x:Key="SettingsLabel">
-                <Setter Property="Foreground" Value="{DynamicResource TextSecondary}"/>
-                <Setter Property="FontSize" Value="12"/>
-                <Setter Property="VerticalAlignment" Value="Center"/>
-                <Setter Property="Margin" Value="0,0,8,0"/>
-            </Style>
-
-            <!-- Dark control styles. HeaderButton lives in Controls.xaml: TileTemplates.xaml derives from it with
-                 StaticResource, and a merged dictionary can only see keys merged before it, not App.xaml-level ones. -->
-            <Style TargetType="TextBox">
-                <Setter Property="Background" Value="{DynamicResource ControlBg}"/>
-                <Setter Property="Foreground" Value="{DynamicResource TextPrimary}"/>
-                <Setter Property="BorderBrush" Value="{DynamicResource BorderDim}"/>
-                <Setter Property="CaretBrush" Value="{DynamicResource TextPrimary}"/>
-                <Setter Property="Padding" Value="4,2"/>
-                <Setter Property="VerticalContentAlignment" Value="Center"/>
-            </Style>
-            <!-- CheckBox, ComboBox, ComboBoxItem, RadioButton, and Expander styles now live in Controls.xaml
-                 (hand-rolled templates covering focus/hover/pressed/checked/disabled states — see that file's
-                 header comment). -->
-            <Style TargetType="TabControl">
-                <Setter Property="Background" Value="Transparent"/>
-                <Setter Property="BorderThickness" Value="0"/>
-                <Setter Property="Padding" Value="0"/>
-            </Style>
-            <Style TargetType="TabItem">
-                <Setter Property="Template">
-                    <Setter.Value>
-                        <ControlTemplate TargetType="TabItem">
-                            <Border x:Name="Bd" Padding="12,6" Margin="0,0,4,0" CornerRadius="4,4,0,0" Background="Transparent">
-                                <ContentPresenter ContentSource="Header"
-                                                  TextElement.Foreground="{DynamicResource TextSecondary}"
-                                                  TextElement.FontSize="13"/>
-                            </Border>
-                            <ControlTemplate.Triggers>
-                                <Trigger Property="IsSelected" Value="True">
-                                    <Setter TargetName="Bd" Property="Background" Value="{DynamicResource TileBg}"/>
-                                    <Setter TargetName="Bd" Property="TextElement.Foreground" Value="{DynamicResource TextPrimary}"/>
-                                </Trigger>
-                            </ControlTemplate.Triggers>
-                        </ControlTemplate>
-                    </Setter.Value>
-                </Setter>
-            </Style>
-            <Style TargetType="ToolTip">
-                <Setter Property="Background" Value="{DynamicResource FlyoutBg}"/>
-                <Setter Property="Foreground" Value="{DynamicResource TextPrimary}"/>
-                <Setter Property="BorderBrush" Value="{DynamicResource BorderDim}"/>
-            </Style>
-            <!-- ContextMenu (and MenuItem) styling now lives in Controls.xaml. -->
         </ResourceDictionary>
     </Application.Resources>
 </Application>
