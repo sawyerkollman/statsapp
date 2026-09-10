@@ -1,0 +1,37 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Dev-only WPF preview harness (docs/ui-polish/PREVIEW_HARNESS.md). Deliberately has NO <ApplicationManifest>
+       (default asInvoker, unlike Stats.App's requireAdministrator app.manifest) and no App.xaml — its own
+       Application subclass (PreviewApp) is built entirely in code so this executable never constructs
+       Stats.App.App, loads its startup URI, or requires elevation. -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <UseWPF>true</UseWPF>
+    <AssemblyName>Stats.UiPreview</AssemblyName>
+    <RootNamespace>Stats.UiPreview</RootNamespace>
+    <InvariantGlobalization>false</InvariantGlobalization>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Stats.Core\Stats.Core.csproj" />
+    <ProjectReference Include="..\..\src\Stats.App\Stats.App.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- The screen capture method uses System.Drawing.Graphics.CopyFromScreen; version pinned to match Stats.App's
+         own reference so both projects resolve to a single assembly version. -->
+    <PackageReference Include="System.Drawing.Common" Version="10.0.11" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="captures\baseline.json" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Stats.UiPreview.Tests" />
+  </ItemGroup>
+
+</Project>
