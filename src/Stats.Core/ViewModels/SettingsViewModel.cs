@@ -10,7 +10,7 @@ namespace Stats.Core.ViewModels;
 
 // No GameMode member: the game-mode controls live in the Fans window, which re-applies frame tracing through
 // FansViewModel.GameModeChanged. A member nothing raises only invites the next feature onto a dead channel.
-public enum SettingsChange { PollInterval, HistoryWindow, Thresholds, Limits, Overlay, Hotkey, CoreMatrix, Hardware, Updates, Theme, Alerts, Tray, UiScale }
+public enum SettingsChange { PollInterval, HistoryWindow, Thresholds, Limits, Overlay, Hotkey, CoreMatrix, Hardware, Updates, Theme, Alerts, Tray, UiScale, Graphs }
 
 /// <summary>One editable metric limit (PPT/TDC/EDC/GPU power). Empty text = no limit.</summary>
 public sealed partial class LimitItemViewModel : ObservableObject
@@ -80,6 +80,8 @@ public sealed partial class SettingsViewModel : ObservableObject
         _alertHoldSeconds = settings.AlertHoldSeconds;
         _alertSoundEnabled = settings.AlertSoundEnabled;
         _dashboardUiScale = settings.DashboardUiScale;
+        _smoothLines = settings.SmoothLines;
+        _graphEffects = settings.GraphEffects;
 
         foreach (var def in definitions.Where(IsLimitCandidate))
         {
@@ -165,6 +167,10 @@ public sealed partial class SettingsViewModel : ObservableObject
     [ObservableProperty] private double _dashboardUiScale;
     /// <summary>Selected entry of <see cref="TrayMetricOptions"/>; the first entry (Id null) is "Auto".</summary>
     [ObservableProperty] private TrayMetricOption _selectedTrayMetric;
+    /// <summary>Smooth monotone-cubic curve instead of a jagged polyline; see <see cref="AppSettings.SmoothLines"/>.</summary>
+    [ObservableProperty] private bool _smoothLines;
+    /// <summary>Glow, gradients, pulse, and eased bar/gauge fills; see <see cref="AppSettings.GraphEffects"/>.</summary>
+    [ObservableProperty] private bool _graphEffects;
 
     public IReadOnlyList<string> ThemePresetNames => ThemePresets.Names;
     public IReadOnlyList<string> AccentSwatches => ThemePresets.AccentSwatches;
@@ -323,6 +329,20 @@ public sealed partial class SettingsViewModel : ObservableObject
         if (clamped != value) { DashboardUiScale = clamped; return; } // re-enters with clamped
         _s.DashboardUiScale = clamped;
         Raise(SettingsChange.UiScale);
+    }
+
+    partial void OnSmoothLinesChanged(bool value)
+    {
+        if (!_loaded) return;
+        _s.SmoothLines = value;
+        Raise(SettingsChange.Graphs);
+    }
+
+    partial void OnGraphEffectsChanged(bool value)
+    {
+        if (!_loaded) return;
+        _s.GraphEffects = value;
+        Raise(SettingsChange.Graphs);
     }
 
     /// <summary>The checkbox is bound TwoWay, so a user click lands here first. Deliberately does not write to

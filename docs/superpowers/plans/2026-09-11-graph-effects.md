@@ -4,7 +4,7 @@ Spec: `docs/superpowers/specs/2026-09-11-graph-effects-design.md`. Branch `featu
 `75115aa`, worked in the `Stats-timescale` worktree. Gates at every checkpoint: `dotnet build --nologo`
 (0 warnings) and `dotnet test --nologo` (green, 0 warnings). Commit prefixes per CLAUDE.md.
 
-- [ ] **Task 1 — Core math + settings** (`feat(core):`): `CurveSmoothing`, `SampleAxis`,
+- [x] **Task 1 — Core math + settings** (`feat(core):`): `CurveSmoothing`, `SampleAxis`,
       `AppSettings.SmoothLines/GraphEffects`, `SettingsViewModel` toggles + `SettingsChange.Graphs`,
       `MetricTileViewModel.HistoryCapacity` (+ detail VM). Tests per the spec's acceptance list.
 - [ ] **Task 2 — Controls** (`feat(app):`): `GraphStyle`, `Sparkline`/`HistoryChart` fixed axis + curve + glow +

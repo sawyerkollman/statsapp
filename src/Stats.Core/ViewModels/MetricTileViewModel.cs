@@ -44,6 +44,9 @@ public sealed partial class MetricTileViewModel : ObservableObject
     [ObservableProperty] private string _maxText = "";
     [ObservableProperty] private string _historyWindowTag = "";
     [ObservableProperty] private float[] _historyValues = Array.Empty<float>();
+    /// <summary>The backing <see cref="MetricHistory"/>'s ring-buffer capacity, so Sparkline can lay samples out
+    /// on <see cref="Metrics.SampleAxis"/>'s fixed axis instead of stretching across however many samples exist.</summary>
+    [ObservableProperty] private int _historyCapacity;
     [ObservableProperty] private Severity _severity;
     [ObservableProperty] private TileKind _kind = TileKind.Sparkline;
     [ObservableProperty] private TileSize _size = TileSize.M;
@@ -89,9 +92,11 @@ public sealed partial class MetricTileViewModel : ObservableObject
             ? string.Create(CultureInfo.InvariantCulture, $"{cur / lim * 100:F0}% of {ValueFormatter.Format(Definition, lim)}")
             : "";
         HistoryValues = NextHistoryBuffer();
+        HistoryCapacity = _history.Capacity;
         // The requested window can be clamped (HistoryCapacity.Compute) to fit the [30, 3600]-sample buffer, so
         // the tag reports what the buffer actually covers — capacity × current poll interval — not the request.
-        HistoryWindowTag = HistoryCapacity.FormatWindow(_history.Capacity * _settings.PollIntervalSeconds);
+        // Fully qualified: the HistoryCapacity property above shadows the Metrics.HistoryCapacity type by name.
+        HistoryWindowTag = global::Stats.Core.Metrics.HistoryCapacity.FormatWindow(_history.Capacity * _settings.PollIntervalSeconds);
 
         SeverityGlyph = Severity switch { Severity.Crit => "‼", Severity.Warn => "▲", _ => "" };
         AutomationLabel = $"{DisplayName}, {CurrentText}, {Severity}";

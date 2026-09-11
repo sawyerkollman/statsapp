@@ -40,6 +40,15 @@ public class MetricTileViewModelTests
     }
 
     [Fact]
+    public void Refresh_HistoryCapacity_ComesFromHistoryBuffer()
+    {
+        var store = NewStore(CpuTemp);
+        var tile = new MetricTileViewModel(CpuTemp, store["cpu.temp"], new AppSettings());
+        tile.Refresh();
+        Assert.Equal(store["cpu.temp"].Capacity, tile.HistoryCapacity);
+    }
+
+    [Fact]
     public void Refresh_MissingValue_ValueTextIsDash_UnitTextEmpty()
     {
         var store = NewStore(CpuTemp);

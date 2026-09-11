@@ -50,6 +50,14 @@ public class MetricDetailViewModelTests
     }
 
     [Fact]
+    public void HistoryCapacity_ComesFromHistoryBuffer()
+    {
+        var h = new MetricHistory(37);
+        var vm = new MetricDetailViewModel(CpuTemp, h, SettingsWithDefaults());
+        Assert.Equal(37, vm.HistoryCapacity);
+    }
+
+    [Fact]
     public void TimeAxisLabels_FiveLabels_OldestToNow()
     {
         var h = new MetricHistory(10);
