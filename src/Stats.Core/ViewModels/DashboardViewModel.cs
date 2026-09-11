@@ -81,6 +81,13 @@ public sealed partial class DashboardViewModel : ObservableObject
     [ObservableProperty] private bool _isPickerOpen;
     [ObservableProperty] private int _flyoutTabIndex;
     [ObservableProperty] private string _pickerFilter = "";
+    /// <summary>Set by the composition root's overlay <c>IsVisibleChanged</c> handler — the header Overlay
+    /// button's persistent on/off indicator reads this (T4).</summary>
+    [ObservableProperty] private bool _isOverlayVisible;
+
+    /// <summary>True when <see cref="RebuildSections"/> produced no sections at all (no dashboard metrics
+    /// selected and no core matrix) — drives the dashboard empty state (T4).</summary>
+    public bool IsEmpty => Sections.Count == 0;
     /// <summary>Set by the composition root once the SettingsViewModel exists; bound by the Settings tab.</summary>
     [ObservableProperty] private SettingsViewModel? _settingsPanel;
     /// <summary>Dashboard-wide UI scale — set by the composition root (initial value, and again on every
@@ -409,6 +416,7 @@ public sealed partial class DashboardViewModel : ObservableObject
             Sections.Add(section);
         }
         RaiseFpsHintChanged();
+        OnPropertyChanged(nameof(IsEmpty));
     }
 
     private void OnSectionExpandedChanged(string name, bool expanded)

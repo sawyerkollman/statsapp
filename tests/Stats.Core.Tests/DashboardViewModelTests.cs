@@ -533,4 +533,34 @@ public class DashboardViewModelTests
         vm.UiScale = 1.2;
         Assert.Equal(1.2, vm.UiScale);
     }
+
+    // ---- empty state (T4) ----
+
+    [Fact]
+    public void IsEmpty_TrueWhenNoSectionsAndNoCoreMatrix()
+    {
+        var store = new MetricStore(Defs);
+        var s = new AppSettings { DashboardMetrics = new(), ShowCoreMatrix = false };
+        var vm = new DashboardViewModel(store, s, () => { });
+        Assert.True(vm.IsEmpty);
+        Assert.Empty(vm.Sections);
+    }
+
+    [Fact]
+    public void IsEmpty_FalseWhenAnySectionExists()
+    {
+        var (vm, _, _, _) = Make("cpu.temp");
+        Assert.False(vm.IsEmpty);
+    }
+
+    [Fact]
+    public void IsEmpty_UpdatesAfterRemovingLastTile()
+    {
+        var store = new MetricStore(Defs);
+        var s = new AppSettings { DashboardMetrics = new() { "disk.c" }, ShowCoreMatrix = false };
+        var vm = new DashboardViewModel(store, s, () => { });
+        Assert.False(vm.IsEmpty);
+        vm.RemoveTileCommand.Execute("disk.c");
+        Assert.True(vm.IsEmpty);
+    }
 }

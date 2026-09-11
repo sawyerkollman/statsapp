@@ -3,17 +3,35 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:views="clr-namespace:Stats.App.Views"
         xmlns:vm="clr-namespace:Stats.Core.ViewModels;assembly=Stats.Core"
-        Title="Stats" Width="1180" Height="720"
+        Title="Stats" Width="1180" Height="720" MinWidth="860" MinHeight="600"
         Background="{DynamicResource WindowBg}">
 
+    <Window.Resources>
+        <!-- Overlay header button: persistent on/off indicator (DESIGN.md §3 "Overlay must communicate its on/off
+             state through the existing source of truth") — a 2-unit AccentBrush bottom border drawn on the
+             existing neutral HeaderButton surface (never an accent fill), matching the "accent only ever drawn on
+             a neutral surface" rule documented on HeaderButton in Controls.xaml. -->
+        <Style x:Key="OverlayHeaderButton" TargetType="Button" BasedOn="{StaticResource HeaderButton}">
+            <Setter Property="BorderThickness" Value="0,0,0,2"/>
+            <Setter Property="BorderBrush" Value="Transparent"/>
+            <Setter Property="ToolTip" Value="Overlay off — click to show"/>
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding IsOverlayVisible}" Value="True">
+                    <Setter Property="BorderBrush" Value="{DynamicResource AccentBrush}"/>
+                    <Setter Property="ToolTip" Value="Overlay on — click to hide"/>
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+    </Window.Resources>
+
     <DockPanel>
-        <Border DockPanel.Dock="Top" Background="{DynamicResource ControlBg}" BorderBrush="{DynamicResource AccentBrush}" BorderThickness="0,0,0,1" Padding="10,6"
+        <Border DockPanel.Dock="Top" Background="{DynamicResource ControlBg}" BorderBrush="{DynamicResource AccentBrush}" BorderThickness="0,0,0,1" Padding="12,8"
                 Visibility="{Binding UpdateAvailable, Converter={StaticResource BoolToVis}}">
             <DockPanel LastChildFill="False">
                 <!-- Right-docked children declared first so they claim their space before the (unbounded, wrapping)
                      notice text — otherwise a long notice can push the buttons off-screen. -->
                 <Button DockPanel.Dock="Right" Content="Update now" Command="{Binding InstallUpdateCommand}"
-                        Style="{StaticResource HeaderButton}" IsEnabled="{Binding UpdateBusy, Converter={StaticResource InverseBool}}" Margin="6,0,0,0"/>
+                        Style="{StaticResource PrimaryButton}" IsEnabled="{Binding UpdateBusy, Converter={StaticResource InverseBool}}" Margin="6,0,0,0"/>
                 <Button DockPanel.Dock="Right" Content="Later" Command="{Binding DismissUpdateCommand}"
                         Style="{StaticResource HeaderButton}" IsEnabled="{Binding UpdateBusy, Converter={StaticResource InverseBool}}"/>
                 <ProgressBar DockPanel.Dock="Right" Width="120" Height="14" Minimum="0" Maximum="1" Value="{Binding UpdateProgress, Mode=OneWay}"
@@ -30,74 +48,146 @@
                     </TextBlock.Style>
                     <Hyperlink Command="{Binding OpenReleasePageCommand}" Foreground="{DynamicResource AccentBrush}">What's new</Hyperlink>
                 </TextBlock>
+                <Path DockPanel.Dock="Left" Style="{StaticResource IconGlyph}" Data="{StaticResource Icon.Info}"
+                      Fill="{DynamicResource AccentBrush}" Margin="0,0,10,0"/>
                 <TextBlock DockPanel.Dock="Left" Text="{Binding UpdateNotice}" Foreground="{DynamicResource TextPrimary}"
-                           VerticalAlignment="Center" TextWrapping="Wrap" Margin="0,0,10,0"/>
+                           FontSize="{StaticResource FontSizeBody}" VerticalAlignment="Center" TextWrapping="Wrap" Margin="0,0,10,0"/>
                 <TextBlock DockPanel.Dock="Left" Text="{Binding ReleasePageError}" Foreground="{DynamicResource CritBrush}"
-                           VerticalAlignment="Center" TextWrapping="Wrap" Margin="0,0,10,0"/>
+                           FontSize="{StaticResource FontSizeBody}" VerticalAlignment="Center" TextWrapping="Wrap" Margin="0,0,10,0"/>
             </DockPanel>
         </Border>
 
 
-        <Border DockPanel.Dock="Top" Background="#7A2D2D" Padding="10,6"
+        <Border DockPanel.Dock="Top" Background="#7A2D2D" Padding="12,8"
                 Visibility="{Binding IsDegraded, Converter={StaticResource BoolToVis}}">
-            <TextBlock Foreground="White" TextWrapping="Wrap"
-                       Text="CPU sensor driver (PawnIO) is not installed or could not load — degraded mode: CPU temperatures, clocks, power, and voltages read 0 or are missing. Install PawnIO (winget install namazso.PawnIO, or pawnio.eu), close other monitoring tools, and restart Stats."/>
+            <DockPanel>
+                <!-- Fixed dark-safe surface (never theme-tinted): the icon fill is pinned White rather than the
+                     usual DynamicResource TextPrimary IconGlyph default, matching the pinned white text below. -->
+                <Path DockPanel.Dock="Left" Style="{StaticResource IconGlyph}" Data="{StaticResource Icon.Warn}"
+                      Fill="White" VerticalAlignment="Top" Margin="0,2,10,0"/>
+                <StackPanel>
+                    <TextBlock Foreground="White" TextWrapping="Wrap" FontSize="{StaticResource FontSizeBody}"
+                               Text="CPU sensor driver (PawnIO) is not installed or could not load — degraded mode: CPU temperatures, clocks, power, and voltages read 0 or are missing."/>
+                    <TextBlock Foreground="White" TextWrapping="Wrap" FontSize="{StaticResource FontSizeDense}" Margin="0,4,0,0"
+                               Text="Install PawnIO (winget install namazso.PawnIO, or pawnio.eu), close other monitoring tools, and restart Stats."/>
+                </StackPanel>
+            </DockPanel>
         </Border>
 
         <!-- Runtime sensor-read health: transient, independent of the startup-only degraded banner above.
              Shown only once SensorPoller reports >=3 consecutive unhealthy reads; auto-clears on recovery. -->
-        <Border DockPanel.Dock="Top" Background="#6B4E12" Padding="10,6"
+        <Border DockPanel.Dock="Top" Background="#6B4E12" Padding="12,8"
                 Visibility="{Binding SensorHealthWarningVisible, Converter={StaticResource BoolToVis}}">
-            <TextBlock Foreground="White" TextWrapping="Wrap" Text="{Binding SensorHealthNotice}"/>
+            <DockPanel>
+                <Path DockPanel.Dock="Left" Style="{StaticResource IconGlyph}" Data="{StaticResource Icon.Warn}" Fill="White" Margin="0,0,10,0"/>
+                <TextBlock Foreground="White" TextWrapping="Wrap" FontSize="{StaticResource FontSizeBody}" Text="{Binding SensorHealthNotice}"/>
+            </DockPanel>
         </Border>
 
         <!-- FPS discoverability hint (v1.8 §8): shown while Game-group metrics were discovered, none is selected
              on the dashboard or overlay yet, and the user hasn't dismissed it before. -->
-        <Border DockPanel.Dock="Top" Background="{DynamicResource ControlBg}" BorderBrush="{DynamicResource AccentBrush}" BorderThickness="0,0,0,1" Padding="10,6"
+        <Border DockPanel.Dock="Top" Background="{DynamicResource ControlBg}" BorderBrush="{DynamicResource AccentBrush}" BorderThickness="0,0,0,1" Padding="12,8"
                 Visibility="{Binding ShowFpsHint, Converter={StaticResource BoolToVis}}">
             <DockPanel LastChildFill="False">
                 <Button DockPanel.Dock="Right" Content="Got it" Command="{Binding DismissFpsHintCommand}" Style="{StaticResource HeaderButton}"/>
-                <TextBlock DockPanel.Dock="Left" Text="Gaming? Add FPS, 1% lows and frame time from ☰ Metrics"
-                           Foreground="{DynamicResource TextPrimary}" VerticalAlignment="Center" TextWrapping="Wrap"/>
+                <Path DockPanel.Dock="Left" Style="{StaticResource IconGlyph}" Data="{StaticResource Icon.Info}"
+                      Fill="{DynamicResource AccentBrush}" Margin="0,0,10,0"/>
+                <TextBlock DockPanel.Dock="Left" Text="Gaming? Add FPS, 1% lows and frame time from Metrics"
+                           Foreground="{DynamicResource TextPrimary}" FontSize="{StaticResource FontSizeBody}" VerticalAlignment="Center" TextWrapping="Wrap"/>
             </DockPanel>
         </Border>
 
-        <Border DockPanel.Dock="Top" Padding="14,10">
+        <Border DockPanel.Dock="Top" Padding="16,10">
             <DockPanel>
-                <Button DockPanel.Dock="Right" Content="⚙  Settings" Command="{Binding OpenSettingsCommand}" Style="{StaticResource HeaderButton}"/>
-                <Button DockPanel.Dock="Right" Content="☰  Metrics" Command="{Binding TogglePickerCommand}" Style="{StaticResource HeaderButton}"/>
-                <Button DockPanel.Dock="Right" Content="▤  Peaks" Command="{Binding OpenPeaksCommand}" Style="{StaticResource HeaderButton}"/>
-                <Button DockPanel.Dock="Right" Content="✢  Fans" Command="{Binding OpenFansCommand}" Style="{StaticResource HeaderButton}"/>
-                <Button DockPanel.Dock="Right" Content="▣  Overlay" Command="{Binding ToggleOverlayCommand}" Style="{StaticResource HeaderButton}"/>
-                <Button DockPanel.Dock="Right" Content="Expand all" Command="{Binding ExpandAllCommand}" Style="{StaticResource HeaderButton}" FontSize="11"/>
-                <Button DockPanel.Dock="Right" Content="Collapse all" Command="{Binding CollapseAllCommand}" Style="{StaticResource HeaderButton}" FontSize="11"/>
-                <TextBlock Text="Stats" FontSize="20" FontWeight="Bold" Foreground="{DynamicResource TextPrimary}"/>
+                <TextBlock DockPanel.Dock="Left" Text="Stats" FontSize="{StaticResource FontSizeTitle}" FontWeight="SemiBold"
+                           Foreground="{DynamicResource TextPrimary}" VerticalAlignment="Center" Margin="0,0,16,0"/>
+
+                <!-- Actions wrap to a deliberate second row at narrow widths instead of truncating
+                     (DESIGN.md §3) — the title above stays docked left/unaffected. -->
+                <WrapPanel HorizontalAlignment="Right">
+                    <Button x:Name="ViewButton" Style="{StaticResource HeaderButton}" Click="ViewButton_Click"
+                            AutomationProperties.Name="View: collapse or expand all sections">
+                        <StackPanel Orientation="Horizontal">
+                            <Path Style="{StaticResource IconGlyph}" Data="{StaticResource Icon.View}"/>
+                            <TextBlock Text="View" FontSize="{StaticResource FontSizeBody}" Foreground="{DynamicResource TextPrimary}" Margin="8,0,4,0" VerticalAlignment="Center"/>
+                            <Path Style="{StaticResource IconGlyph}" Data="{StaticResource Icon.ChevronDown}" Width="10" Height="10"/>
+                        </StackPanel>
+                    </Button>
+
+                    <StackPanel Orientation="Horizontal" Margin="16,0,0,0">
+                        <Button Style="{StaticResource OverlayHeaderButton}" Command="{Binding ToggleOverlayCommand}" AutomationProperties.Name="Overlay">
+                            <StackPanel Orientation="Horizontal">
+                                <Path Style="{StaticResource IconGlyph}" Data="{StaticResource Icon.Overlay}"/>
+                                <TextBlock Text="Overlay" FontSize="{StaticResource FontSizeBody}" Foreground="{DynamicResource TextPrimary}" Margin="8,0,0,0" VerticalAlignment="Center"/>
+                            </StackPanel>
+                        </Button>
+                        <Button Style="{StaticResource HeaderButton}" Command="{Binding OpenFansCommand}" AutomationProperties.Name="Fans">
+                            <StackPanel Orientation="Horizontal">
+                                <Path Style="{StaticResource IconGlyph}" Data="{StaticResource Icon.Fans}"/>
+                                <TextBlock Text="Fans" FontSize="{StaticResource FontSizeBody}" Foreground="{DynamicResource TextPrimary}" Margin="8,0,0,0" VerticalAlignment="Center"/>
+                            </StackPanel>
+                        </Button>
+                        <Button Style="{StaticResource HeaderButton}" Command="{Binding OpenPeaksCommand}" AutomationProperties.Name="Peaks">
+                            <StackPanel Orientation="Horizontal">
+                                <Path Style="{StaticResource IconGlyph}" Data="{StaticResource Icon.Peaks}"/>
+                                <TextBlock Text="Peaks" FontSize="{StaticResource FontSizeBody}" Foreground="{DynamicResource TextPrimary}" Margin="8,0,0,0" VerticalAlignment="Center"/>
+                            </StackPanel>
+                        </Button>
+                    </StackPanel>
+
+                    <StackPanel Orientation="Horizontal" Margin="16,0,0,0">
+                        <Button x:Name="MetricsButton" Style="{StaticResource HeaderButton}" Command="{Binding TogglePickerCommand}"
+                                Click="HeaderOpener_Click" AutomationProperties.Name="Metrics">
+                            <StackPanel Orientation="Horizontal">
+                                <Path Style="{StaticResource IconGlyph}" Data="{StaticResource Icon.Metrics}"/>
+                                <TextBlock Text="Metrics" FontSize="{StaticResource FontSizeBody}" Foreground="{DynamicResource TextPrimary}" Margin="8,0,0,0" VerticalAlignment="Center"/>
+                            </StackPanel>
+                        </Button>
+                        <Button x:Name="SettingsButton" Style="{StaticResource HeaderButton}" Command="{Binding OpenSettingsCommand}"
+                                Click="HeaderOpener_Click" AutomationProperties.Name="Settings">
+                            <StackPanel Orientation="Horizontal">
+                                <Path Style="{StaticResource IconGlyph}" Data="{StaticResource Icon.Settings}"/>
+                                <TextBlock Text="Settings" FontSize="{StaticResource FontSizeBody}" Foreground="{DynamicResource TextPrimary}" Margin="8,0,0,0" VerticalAlignment="Center"/>
+                            </StackPanel>
+                        </Button>
+                    </StackPanel>
+                </WrapPanel>
             </DockPanel>
         </Border>
 
-        <Grid>
+        <Grid x:Name="ScaledRoot">
             <Grid.LayoutTransform>
                 <ScaleTransform ScaleX="{Binding UiScale}" ScaleY="{Binding UiScale}"/>
             </Grid.LayoutTransform>
-            <ScrollViewer VerticalScrollBarVisibility="Auto">
-                <ItemsControl ItemsSource="{Binding Sections}">
+
+            <ScrollViewer VerticalScrollBarVisibility="Auto" Visibility="{Binding IsEmpty, Converter={StaticResource InverseBoolToVis}}">
+                <ItemsControl Margin="16,16,16,16" ItemsSource="{Binding Sections}">
                     <ItemsControl.ItemTemplate>
                         <DataTemplate>
-                            <Expander IsExpanded="{Binding IsExpanded, Mode=TwoWay}" Margin="8,6,0,0">
+                            <Expander IsExpanded="{Binding IsExpanded, Mode=TwoWay}" Margin="0,24,0,0">
                                 <Expander.Header>
                                     <!-- The status line lives in the HEADER, not the content: the user who collapses
                                          the Game group because its tiles are blank is exactly the one who needs to
-                                         read why (e.g. "PresentMon: access denied"). -->
+                                         read why (e.g. "PresentMon: access denied") — it stays visible collapsed. -->
                                     <StackPanel>
                                         <StackPanel Orientation="Horizontal">
                                             <TextBlock Text="{Binding Name}" Style="{StaticResource GroupHeader}" Margin="0"/>
                                             <TextBlock Text="{Binding Tiles.Count, StringFormat='{}  ({0})'}"
-                                                       Foreground="{DynamicResource TextSecondary}" FontSize="12" VerticalAlignment="Center"/>
+                                                       Foreground="{DynamicResource TextSecondary}" FontSize="{StaticResource FontSizeLabel}" VerticalAlignment="Center"/>
                                         </StackPanel>
-                                        <TextBlock Text="{Binding StatusText}" Foreground="{DynamicResource WarnBrush}" FontSize="11" Margin="0,0,0,2" TextWrapping="Wrap" Visibility="{Binding HasStatus, Converter={StaticResource BoolToVis}}"/>
+                                        <StackPanel Orientation="Horizontal" Margin="0,0,0,2"
+                                                    Visibility="{Binding HasStatus, Converter={StaticResource BoolToVis}}">
+                                            <Path Style="{StaticResource IconGlyph}" Data="{StaticResource Icon.Warn}" Width="12" Height="12"
+                                                  Fill="{DynamicResource WarnBrush}" Margin="0,0,4,0"/>
+                                            <TextBlock Text="{Binding StatusText}" Foreground="{DynamicResource WarnBrush}" FontSize="{StaticResource FontSizeDense}"
+                                                       TextWrapping="Wrap" VerticalAlignment="Center"/>
+                                        </StackPanel>
                                     </StackPanel>
                                 </Expander.Header>
-                                <StackPanel>
+                                <!-- Left margin lines tile content up with the header's group-name text (which sits
+                                     past the Expander's own padding + the chevron column — see Controls.xaml's
+                                     StatsExpanderToggle template); top margin is the header-to-content gap. -->
+                                <StackPanel Margin="20,8,0,0">
                                     <ContentControl Content="{Binding CoreMatrix}">
                                         <ContentControl.Resources>
                                             <DataTemplate DataType="{x:Type vm:CoreMatrixViewModel}">
@@ -137,336 +227,398 @@
                 </ItemsControl>
             </ScrollViewer>
 
-            <Border x:Name="PickerFlyout" HorizontalAlignment="Right" Width="440"
+            <!-- Empty state (DESIGN.md §3 "If no dashboard metrics are selected, show a clear empty state and an
+                 Open Metrics action"). No fake measurements are ever shown here. -->
+            <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" MaxWidth="360"
+                        Visibility="{Binding IsEmpty, Converter={StaticResource BoolToVis}}">
+                <TextBlock Text="No metrics on the dashboard" Style="{StaticResource GroupHeader}" HorizontalAlignment="Center" Margin="0,0,0,4"/>
+                <TextBlock Text="Choose sensors to monitor from the metrics picker." Foreground="{DynamicResource TextSecondary}"
+                           FontSize="{StaticResource FontSizeBody}" HorizontalAlignment="Center" TextWrapping="Wrap" TextAlignment="Center" Margin="0,0,0,12"/>
+                <Button Content="Open Metrics" Command="{Binding TogglePickerCommand}" Style="{StaticResource PrimaryButton}" HorizontalAlignment="Center"/>
+            </StackPanel>
+
+            <Border x:Name="PickerFlyout" HorizontalAlignment="Right" Width="480" MaxWidth="{Binding ActualWidth, ElementName=ScaledRoot}"
                     Background="{DynamicResource FlyoutBg}"
-                    Visibility="{Binding IsPickerOpen, Converter={StaticResource BoolToVis}}">
-                <TabControl SelectedIndex="{Binding FlyoutTabIndex, Mode=TwoWay}" Margin="12">
+                    Visibility="{Binding IsPickerOpen, Converter={StaticResource BoolToVis}}"
+                    KeyDown="PickerFlyout_KeyDown" IsVisibleChanged="PickerFlyout_IsVisibleChanged">
+                <DockPanel>
+                    <DockPanel DockPanel.Dock="Top" Margin="12,12,12,0">
+                        <Button DockPanel.Dock="Right" Style="{StaticResource HeaderButton}" Click="PickerClose_Click" AutomationProperties.Name="Close">
+                            <Path Style="{StaticResource IconGlyph}" Data="{StaticResource Icon.Close}" Width="12" Height="12"/>
+                        </Button>
+                        <TextBlock Text="Metrics &amp; Settings" Style="{StaticResource GroupHeader}" Margin="0" VerticalAlignment="Center"/>
+                    </DockPanel>
 
-                    <!-- ============ Metrics ============ -->
-                    <TabItem Header="Metrics">
-                        <DockPanel Margin="0,8,0,0">
-                            <TextBox DockPanel.Dock="Top" Margin="0,0,0,8" FontSize="12"
-                                     Text="{Binding PickerFilter, UpdateSourceTrigger=PropertyChanged}"
-                                     ToolTip="Filter by sensor, friendly name, or hardware"/>
-                            <Grid DockPanel.Dock="Top" Margin="0,0,0,4">
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="*"/>
-                                    <ColumnDefinition Width="70"/>
-                                    <ColumnDefinition Width="46"/>
-                                    <ColumnDefinition Width="52"/>
-                                </Grid.ColumnDefinitions>
-                                <TextBlock Text="Sensor" FontSize="11" Foreground="{DynamicResource TextSecondary}"/>
-                                <TextBlock Grid.Column="1" Text="Now" FontSize="11" Foreground="{DynamicResource TextSecondary}"/>
-                                <TextBlock Grid.Column="2" Text="Dash" FontSize="11" Foreground="{DynamicResource TextSecondary}" HorizontalAlignment="Center"/>
-                                <TextBlock Grid.Column="3" Text="Overlay" FontSize="11" Foreground="{DynamicResource TextSecondary}" HorizontalAlignment="Center"/>
-                            </Grid>
-                            <ScrollViewer VerticalScrollBarVisibility="Auto">
-                                <ItemsControl x:Name="PickerList">
-                                    <ItemsControl.GroupStyle>
-                                        <GroupStyle>
-                                            <GroupStyle.HeaderTemplate>
-                                                <DataTemplate>
-                                                    <StackPanel Margin="0,10,0,2">
-                                                        <DockPanel>
-                                                            <Button DockPanel.Dock="Right" Content="None" Tag="{Binding Name}" Click="PickerGroupNone_Click"
-                                                                    Style="{StaticResource HeaderButton}" FontSize="10" Padding="6,1" Margin="4,0,0,0"/>
-                                                            <Button DockPanel.Dock="Right" Content="All" Tag="{Binding Name}" Click="PickerGroupAll_Click"
-                                                                    Style="{StaticResource HeaderButton}" FontSize="10" Padding="6,1"/>
-                                                            <TextBlock Text="{Binding Name}" Style="{StaticResource GroupHeader}" Margin="0"/>
-                                                        </DockPanel>
-                                                        <!-- Game group only: PresentMon is bundled but only actually spawned while a Game
-                                                             metric is selected on the dashboard or overlay (v1.8 §8). -->
-                                                        <TextBlock Text="uses bundled PresentMon; runs only while selected"
-                                                                   Foreground="{DynamicResource TextSecondary}" FontSize="11" Margin="0,0,0,2">
-                                                            <TextBlock.Style>
-                                                                <Style TargetType="TextBlock">
-                                                                    <Setter Property="Visibility" Value="Collapsed"/>
-                                                                    <Style.Triggers>
-                                                                        <DataTrigger Binding="{Binding Name}" Value="Game — Foreground app">
-                                                                            <Setter Property="Visibility" Value="Visible"/>
-                                                                        </DataTrigger>
-                                                                    </Style.Triggers>
-                                                                </Style>
-                                                            </TextBlock.Style>
-                                                        </TextBlock>
-                                                    </StackPanel>
-                                                </DataTemplate>
-                                            </GroupStyle.HeaderTemplate>
-                                        </GroupStyle>
-                                    </ItemsControl.GroupStyle>
-                                    <ItemsControl.ItemTemplate>
-                                        <DataTemplate>
-                                            <Grid Margin="0,1">
-                                                <Grid.ColumnDefinitions>
-                                                    <ColumnDefinition Width="*"/>
-                                                    <ColumnDefinition Width="70"/>
-                                                    <ColumnDefinition Width="46"/>
-                                                    <ColumnDefinition Width="52"/>
-                                                </Grid.ColumnDefinitions>
-                                                <TextBlock Text="{Binding DisplayName}" FontSize="12" Foreground="{DynamicResource TextPrimary}"
-                                                           TextTrimming="CharacterEllipsis" ToolTip="{Binding Definition.DisplayName}" VerticalAlignment="Center"/>
-                                                <TextBlock Grid.Column="1" Text="{Binding CurrentText}" FontSize="11" Foreground="{DynamicResource TextSecondary}" VerticalAlignment="Center"/>
-                                                <CheckBox Grid.Column="2" IsChecked="{Binding IsChecked}" HorizontalAlignment="Center"/>
-                                                <CheckBox Grid.Column="3" IsChecked="{Binding IsOnOverlay}" HorizontalAlignment="Center"/>
-                                            </Grid>
-                                        </DataTemplate>
-                                    </ItemsControl.ItemTemplate>
-                                </ItemsControl>
-                            </ScrollViewer>
-                        </DockPanel>
-                    </TabItem>
+                    <TabControl x:Name="FlyoutTabs" SelectedIndex="{Binding FlyoutTabIndex, Mode=TwoWay}" Margin="12">
 
-                    <!-- ============ Settings ============ -->
-                    <TabItem Header="Settings">
-                        <ScrollViewer VerticalScrollBarVisibility="Auto" Margin="0,8,0,0">
-                            <StackPanel DataContext="{Binding SettingsPanel}" Margin="0,0,8,16">
-
-                                <TextBlock Text="Polling" Style="{StaticResource SettingsHeader}" Margin="0,0,0,6"/>
-                                <DockPanel>
-                                    <TextBlock DockPanel.Dock="Right" Width="44" TextAlignment="Right" Style="{StaticResource SettingsLabel}"
-                                               Text="{Binding PollIntervalSeconds, StringFormat='{}{0:0.0} s'}"/>
-                                    <Slider Minimum="0.5" Maximum="5" TickFrequency="0.5" IsSnapToTickEnabled="True"
-                                            Value="{Binding PollIntervalSeconds, Delay=250}"/>
-                                </DockPanel>
-
-                                <TextBlock Text="Dashboard" Style="{StaticResource SettingsHeader}"/>
-                                <DockPanel Margin="0,2">
-                                    <TextBlock Text="UI scale" Width="90" Style="{StaticResource SettingsLabel}"/>
-                                    <TextBlock DockPanel.Dock="Right" Width="40" TextAlignment="Right" Style="{StaticResource SettingsLabel}"
-                                               Text="{Binding DashboardUiScale, StringFormat='{}{0:0.0}×'}"/>
-                                    <Slider Minimum="0.9" Maximum="1.3" TickFrequency="0.1" IsSnapToTickEnabled="True" Value="{Binding DashboardUiScale, Delay=250}"/>
-                                </DockPanel>
-
-                                <TextBlock Text="History window" Style="{StaticResource SettingsHeader}"/>
-                                <StackPanel Orientation="Horizontal">
-                                    <RadioButton Content="2 min" IsChecked="{Binding HistoryWindowMinutes, Converter={StaticResource Equals}, ConverterParameter=2}"/>
-                                    <RadioButton Content="5 min" IsChecked="{Binding HistoryWindowMinutes, Converter={StaticResource Equals}, ConverterParameter=5}"/>
-                                    <RadioButton Content="15 min" IsChecked="{Binding HistoryWindowMinutes, Converter={StaticResource Equals}, ConverterParameter=15}"/>
-                                    <RadioButton Content="60 min" IsChecked="{Binding HistoryWindowMinutes, Converter={StaticResource Equals}, ConverterParameter=60}"/>
-                                </StackPanel>
-
-                                <TextBlock Text="Thresholds (warn / crit)" Style="{StaticResource SettingsHeader}"/>
-                                <ItemsControl ItemsSource="{Binding ThresholdRuleItems}">
-                                    <ItemsControl.ItemTemplate>
-                                        <DataTemplate>
-                                            <StackPanel Margin="0,2,0,4">
-                                                <Grid>
-                                                    <Grid.ColumnDefinitions>
-                                                        <ColumnDefinition Width="110"/>
-                                                        <ColumnDefinition Width="46"/>
-                                                        <ColumnDefinition Width="66"/>
-                                                        <ColumnDefinition Width="16"/>
-                                                        <ColumnDefinition Width="66"/>
-                                                        <ColumnDefinition Width="*"/>
-                                                    </Grid.ColumnDefinitions>
-                                                    <TextBlock Text="{Binding GroupName}" Style="{StaticResource SettingsLabel}" TextTrimming="CharacterEllipsis"/>
-                                                    <TextBlock Grid.Column="1" Text="{Binding Unit}" Style="{StaticResource SettingsLabel}"/>
-                                                    <TextBox Grid.Column="2" Margin="0,1,0,1" Text="{Binding WarnText, UpdateSourceTrigger=LostFocus}"/>
-                                                    <TextBlock Grid.Column="3" Text="/" Style="{StaticResource SettingsLabel}" HorizontalAlignment="Center" Margin="0"/>
-                                                    <TextBox Grid.Column="4" Margin="0,1,6,1" Text="{Binding CritText, UpdateSourceTrigger=LostFocus}"/>
-                                                    <TextBlock Grid.Column="5" Text="{Binding DirectionText}" Style="{StaticResource SettingsLabel}" FontStyle="Italic" VerticalAlignment="Center"/>
-                                                </Grid>
-                                                <TextBlock Text="{Binding Error}" Foreground="{DynamicResource CritBrush}" FontSize="11"/>
-                                            </StackPanel>
-                                        </DataTemplate>
-                                    </ItemsControl.ItemTemplate>
-                                </ItemsControl>
-                                <StackPanel Orientation="Horizontal" Margin="0,4,0,0" Visibility="{Binding HasAddableRulePairs, Converter={StaticResource BoolToVis}}">
-                                    <ComboBox ItemsSource="{Binding AddableRulePairs}" SelectedItem="{Binding SelectedAddablePair}" MinWidth="150" VerticalAlignment="Center"/>
-                                    <Button Content="Add rule…" Command="{Binding AddRuleCommand}" Style="{StaticResource HeaderButton}"/>
-                                </StackPanel>
-
-                                <TextBlock Text="Limits (for % of limit / gauges)" Style="{StaticResource SettingsHeader}"/>
-                                <TextBlock Text="Enter your PBO PPT/TDC/EDC or GPU power limit. Blank = none."
-                                           Foreground="{DynamicResource TextSecondary}" FontSize="11" TextWrapping="Wrap" Margin="0,0,0,4"/>
-                                <ItemsControl ItemsSource="{Binding LimitItems}">
-                                    <ItemsControl.ItemTemplate>
-                                        <DataTemplate>
-                                            <DockPanel Margin="0,2">
-                                                <TextBox DockPanel.Dock="Right" Width="80" Text="{Binding ValueText, UpdateSourceTrigger=LostFocus}">
-                                                    <TextBox.Style>
-                                                        <Style TargetType="TextBox" BasedOn="{StaticResource {x:Type TextBox}}">
-                                                            <Style.Triggers>
-                                                                <DataTrigger Binding="{Binding IsInvalid}" Value="True">
-                                                                    <Setter Property="BorderBrush" Value="{DynamicResource CritBrush}"/>
-                                                                </DataTrigger>
-                                                            </Style.Triggers>
-                                                        </Style>
-                                                    </TextBox.Style>
-                                                </TextBox>
-                                                <TextBlock Text="{Binding Label}" Style="{StaticResource SettingsLabel}" TextTrimming="CharacterEllipsis"/>
-                                            </DockPanel>
-                                        </DataTemplate>
-                                    </ItemsControl.ItemTemplate>
-                                </ItemsControl>
-
-                                <TextBlock Text="Overlay" Style="{StaticResource SettingsHeader}"/>
-                                <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
-                                    <RadioButton Content="Horizontal" IsChecked="{Binding OverlayIsVertical, Converter={StaticResource InverseBool}}"/>
-                                    <RadioButton Content="Vertical" IsChecked="{Binding OverlayIsVertical}"/>
-                                </StackPanel>
-                                <DockPanel Margin="0,2">
-                                    <TextBlock Text="Font scale" Width="90" Style="{StaticResource SettingsLabel}"/>
-                                    <TextBlock DockPanel.Dock="Right" Width="40" TextAlignment="Right" Style="{StaticResource SettingsLabel}"
-                                               Text="{Binding OverlayFontScale, StringFormat='{}{0:0.0}×'}"/>
-                                    <Slider Minimum="0.8" Maximum="1.6" TickFrequency="0.1" IsSnapToTickEnabled="True" Value="{Binding OverlayFontScale, Delay=250}"/>
-                                </DockPanel>
-                                <DockPanel Margin="0,2">
-                                    <TextBlock Text="Opacity" Width="90" Style="{StaticResource SettingsLabel}"/>
-                                    <TextBlock DockPanel.Dock="Right" Width="40" TextAlignment="Right" Style="{StaticResource SettingsLabel}"
-                                               Text="{Binding OverlayOpacity, StringFormat='{}{0:P0}'}"/>
-                                    <Slider Minimum="0.3" Maximum="1.0" TickFrequency="0.05" IsSnapToTickEnabled="True" Value="{Binding OverlayOpacity}"/>
-                                </DockPanel>
-                                <CheckBox Content="Click-through (mouse passes through the overlay; turn off to drag it)" Margin="0,4"
-                                          IsChecked="{Binding OverlayClickThrough}"/>
-                                <DockPanel Margin="0,4">
-                                    <TextBlock Text="Toggle hotkey" Width="90" Style="{StaticResource SettingsLabel}"/>
-                                    <Button DockPanel.Dock="Right" Content="Clear" Click="HotkeyClear_Click" Style="{StaticResource HeaderButton}" FontSize="11"/>
-                                    <TextBox x:Name="HotkeyBox" IsReadOnly="True" Text="{Binding OverlayHotkey, Mode=OneWay}"
-                                             PreviewKeyDown="HotkeyBox_PreviewKeyDown" ToolTip="Click, then press the key combination"/>
-                                </DockPanel>
-                                <TextBlock Text="{Binding HotkeyStatus}" Foreground="{DynamicResource WarnBrush}" FontSize="11"/>
-                                <Button Content="Reset overlay position" Command="{Binding ResetOverlayPositionCommand}"
-                                        Style="{StaticResource HeaderButton}" HorizontalAlignment="Left" Margin="0,6,0,0" FontSize="11"/>
-
-                                <TextBlock Text="Dashboard" Style="{StaticResource SettingsHeader}"/>
-                                <CheckBox Content="Show CPU core matrix" IsChecked="{Binding ShowCoreMatrix}"/>
-
-                                <TextBlock Text="Tray" Style="{StaticResource SettingsHeader}"/>
-                                <DockPanel Margin="0,0,0,4">
-                                    <TextBlock Text="Icon shows" Width="90" Style="{StaticResource SettingsLabel}"/>
-                                    <ComboBox ItemsSource="{Binding TrayMetricOptions}" SelectedItem="{Binding SelectedTrayMetric}"
-                                              MinWidth="200" HorizontalAlignment="Left"/>
-                                </DockPanel>
-
-                                <TextBlock Text="Alerts" Style="{StaticResource SettingsHeader}"/>
-                                <CheckBox Content="Notify on sustained critical readings" IsChecked="{Binding AlertsEnabled}"/>
-                                <DockPanel Margin="0,4,0,0">
-                                    <TextBlock Text="Hold time" Width="90" Style="{StaticResource SettingsLabel}"/>
-                                    <TextBlock DockPanel.Dock="Right" Width="34" TextAlignment="Right" Style="{StaticResource SettingsLabel}"
-                                               Text="{Binding AlertHoldSeconds, StringFormat='{}{0}s'}"/>
-                                    <Slider Minimum="1" Maximum="120" TickFrequency="1" IsSnapToTickEnabled="True"
-                                            Value="{Binding AlertHoldSeconds, Delay=250}"/>
-                                </DockPanel>
-                                <CheckBox Content="Play a sound with the notification" IsChecked="{Binding AlertSoundEnabled}" Margin="0,4,0,0"/>
-
-                                <TextBlock Text="Theme" Style="{StaticResource SettingsHeader}"/>
-                                <ComboBox ItemsSource="{Binding ThemePresetNames}" SelectedItem="{Binding SelectedThemePreset}"
-                                          MinWidth="160" HorizontalAlignment="Left" Margin="0,0,0,8"/>
-                                <TextBlock Text="Accent colour" Style="{StaticResource SettingsLabel}" Margin="0,0,0,4"/>
-                                <ItemsControl ItemsSource="{Binding AccentSwatches}" Margin="0,0,0,6">
-                                    <ItemsControl.ItemsPanel>
-                                        <ItemsPanelTemplate><WrapPanel/></ItemsPanelTemplate>
-                                    </ItemsControl.ItemsPanel>
-                                    <ItemsControl.ItemTemplate>
-                                        <DataTemplate>
-                                            <Button Command="{Binding DataContext.SetAccentCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
-                                                    CommandParameter="{Binding}" ToolTip="{Binding}"
-                                                    Width="22" Height="22" Margin="0,0,6,6" Padding="0" BorderThickness="1"
-                                                    BorderBrush="{DynamicResource BorderDim}"
-                                                    Background="{Binding Converter={StaticResource HexToBrush}}" Cursor="Hand">
-                                                <!-- Border-only template: the system ControlTemplate repaints a hover-blue highlight
-                                                     over the swatch colour, defeating the point of a colour picker. A keyboard-focus
-                                                     trigger restores a visible focus ring (the default template's dotted rectangle is
-                                                     gone along with the rest of the chrome) so Tab-navigating the swatches stays usable. -->
-                                                <Button.Template>
-                                                    <ControlTemplate TargetType="Button">
-                                                        <Border x:Name="SwatchBorder"
-                                                                Background="{TemplateBinding Background}"
-                                                                BorderBrush="{TemplateBinding BorderBrush}"
-                                                                BorderThickness="{TemplateBinding BorderThickness}"/>
-                                                        <ControlTemplate.Triggers>
-                                                            <Trigger Property="IsKeyboardFocused" Value="True">
-                                                                <Setter TargetName="SwatchBorder" Property="BorderBrush" Value="{DynamicResource AccentBrush}"/>
-                                                                <Setter TargetName="SwatchBorder" Property="BorderThickness" Value="2"/>
-                                                            </Trigger>
-                                                        </ControlTemplate.Triggers>
-                                                    </ControlTemplate>
-                                                </Button.Template>
-                                            </Button>
-                                        </DataTemplate>
-                                    </ItemsControl.ItemTemplate>
-                                </ItemsControl>
-                                <DockPanel Margin="0,0,0,4">
-                                    <Button DockPanel.Dock="Right" Content="Reset" Command="{Binding ResetAccentCommand}"
-                                            Style="{StaticResource HeaderButton}" FontSize="11"/>
-                                    <TextBox Text="{Binding AccentHex, UpdateSourceTrigger=PropertyChanged}" MaxLength="7"
-                                             Width="90" HorizontalAlignment="Left">
-                                        <TextBox.Style>
-                                            <Style TargetType="TextBox" BasedOn="{StaticResource {x:Type TextBox}}">
+                        <!-- ============ Metrics ============ -->
+                        <TabItem Header="Metrics">
+                            <DockPanel Margin="0,8,0,0">
+                                <Grid DockPanel.Dock="Top" Margin="0,0,0,8">
+                                    <TextBox x:Name="PickerFilterBox" FontSize="{StaticResource FontSizeLabel}" Padding="26,3,26,3"
+                                             Text="{Binding PickerFilter, UpdateSourceTrigger=PropertyChanged}"
+                                             ToolTip="Filter by sensor, friendly name, or hardware"/>
+                                    <Path Data="{StaticResource Icon.Search}" Width="14" Height="14" Stretch="Uniform"
+                                          Fill="{DynamicResource TextSecondary}" HorizontalAlignment="Left" Margin="8,0,0,0" IsHitTestVisible="False"/>
+                                    <!-- Visible placeholder (DESIGN.md §5 "add a visible search label/placeholder"),
+                                         collapsed as soon as the user types. -->
+                                    <TextBlock Text="Search sensors, names, hardware" Foreground="{DynamicResource TextSecondary}"
+                                               FontSize="{StaticResource FontSizeLabel}" Margin="28,0,0,0" VerticalAlignment="Center" IsHitTestVisible="False">
+                                        <TextBlock.Style>
+                                            <Style TargetType="TextBlock">
+                                                <Setter Property="Visibility" Value="Collapsed"/>
                                                 <Style.Triggers>
-                                                    <DataTrigger Binding="{Binding IsAccentInvalid}" Value="True">
-                                                        <Setter Property="BorderBrush" Value="{DynamicResource CritBrush}"/>
+                                                    <DataTrigger Binding="{Binding PickerFilter}" Value="">
+                                                        <Setter Property="Visibility" Value="Visible"/>
                                                     </DataTrigger>
                                                 </Style.Triggers>
                                             </Style>
-                                        </TextBox.Style>
-                                    </TextBox>
-                                </DockPanel>
-                                <TextBlock Text="Blank = use the preset's own accent colour." Foreground="{DynamicResource TextSecondary}" FontSize="11"/>
+                                        </TextBlock.Style>
+                                    </TextBlock>
+                                    <Button HorizontalAlignment="Right" Padding="4" MinHeight="0" Margin="0,0,2,0"
+                                            Click="PickerFilterClear_Click" AutomationProperties.Name="Clear search">
+                                        <Button.Style>
+                                            <Style TargetType="Button" BasedOn="{StaticResource HeaderButton}">
+                                                <Setter Property="Visibility" Value="Visible"/>
+                                                <Style.Triggers>
+                                                    <DataTrigger Binding="{Binding PickerFilter}" Value="">
+                                                        <Setter Property="Visibility" Value="Collapsed"/>
+                                                    </DataTrigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </Button.Style>
+                                        <Path Style="{StaticResource IconGlyph}" Data="{StaticResource Icon.Clear}" Width="12" Height="12"/>
+                                    </Button>
+                                </Grid>
+                                <Grid DockPanel.Dock="Top" Margin="0,0,0,4">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="70"/>
+                                        <ColumnDefinition Width="46"/>
+                                        <ColumnDefinition Width="52"/>
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Text="Sensor" FontSize="11" Foreground="{DynamicResource TextSecondary}"/>
+                                    <TextBlock Grid.Column="1" Text="Now" FontSize="11" Foreground="{DynamicResource TextSecondary}"/>
+                                    <TextBlock Grid.Column="2" Text="Dash" FontSize="11" Foreground="{DynamicResource TextSecondary}" HorizontalAlignment="Center"/>
+                                    <TextBlock Grid.Column="3" Text="Overlay" FontSize="11" Foreground="{DynamicResource TextSecondary}" HorizontalAlignment="Center"/>
+                                </Grid>
+                                <Grid>
+                                    <ScrollViewer VerticalScrollBarVisibility="Auto">
+                                        <ItemsControl x:Name="PickerList">
+                                            <ItemsControl.GroupStyle>
+                                                <GroupStyle>
+                                                    <GroupStyle.HeaderTemplate>
+                                                        <DataTemplate>
+                                                            <StackPanel Margin="0,10,0,2">
+                                                                <DockPanel>
+                                                                    <Button DockPanel.Dock="Right" Content="None" Tag="{Binding Name}" Click="PickerGroupNone_Click"
+                                                                            Style="{StaticResource HeaderButton}" FontSize="10" Padding="6,1" Margin="4,0,0,0"/>
+                                                                    <Button DockPanel.Dock="Right" Content="All" Tag="{Binding Name}" Click="PickerGroupAll_Click"
+                                                                            Style="{StaticResource HeaderButton}" FontSize="10" Padding="6,1"/>
+                                                                    <TextBlock Text="{Binding Name}" Style="{StaticResource GroupHeader}" Margin="0"/>
+                                                                </DockPanel>
+                                                                <!-- Game group only: PresentMon is bundled but only actually spawned while a Game
+                                                                     metric is selected on the dashboard or overlay (v1.8 §8). -->
+                                                                <TextBlock Text="uses bundled PresentMon; runs only while selected"
+                                                                           Foreground="{DynamicResource TextSecondary}" FontSize="11" Margin="0,0,0,2">
+                                                                    <TextBlock.Style>
+                                                                        <Style TargetType="TextBlock">
+                                                                            <Setter Property="Visibility" Value="Collapsed"/>
+                                                                            <Style.Triggers>
+                                                                                <DataTrigger Binding="{Binding Name}" Value="Game — Foreground app">
+                                                                                    <Setter Property="Visibility" Value="Visible"/>
+                                                                                </DataTrigger>
+                                                                            </Style.Triggers>
+                                                                        </Style>
+                                                                    </TextBlock.Style>
+                                                                </TextBlock>
+                                                            </StackPanel>
+                                                        </DataTemplate>
+                                                    </GroupStyle.HeaderTemplate>
+                                                </GroupStyle>
+                                            </ItemsControl.GroupStyle>
+                                            <ItemsControl.ItemTemplate>
+                                                <DataTemplate>
+                                                    <Grid Margin="0,1">
+                                                        <Grid.ColumnDefinitions>
+                                                            <ColumnDefinition Width="*"/>
+                                                            <ColumnDefinition Width="70"/>
+                                                            <ColumnDefinition Width="46"/>
+                                                            <ColumnDefinition Width="52"/>
+                                                        </Grid.ColumnDefinitions>
+                                                        <TextBlock Text="{Binding DisplayName}" FontSize="12" Foreground="{DynamicResource TextPrimary}"
+                                                                   TextTrimming="CharacterEllipsis" ToolTip="{Binding Definition.DisplayName}" VerticalAlignment="Center"/>
+                                                        <TextBlock Grid.Column="1" Text="{Binding CurrentText}" FontSize="11" Foreground="{DynamicResource TextSecondary}" VerticalAlignment="Center"/>
+                                                        <CheckBox Grid.Column="2" IsChecked="{Binding IsChecked}" HorizontalAlignment="Center"/>
+                                                        <CheckBox Grid.Column="3" IsChecked="{Binding IsOnOverlay}" HorizontalAlignment="Center"/>
+                                                    </Grid>
+                                                </DataTemplate>
+                                            </ItemsControl.ItemTemplate>
+                                        </ItemsControl>
+                                    </ScrollViewer>
+                                    <!-- No-results state (DESIGN.md §5): visibility toggled in code-behind from
+                                         ListCollectionView.IsEmpty after every filter change. -->
+                                    <StackPanel x:Name="PickerNoResults" HorizontalAlignment="Center" VerticalAlignment="Center" Visibility="Collapsed">
+                                        <TextBlock Text="No sensors match" Foreground="{DynamicResource TextPrimary}" FontSize="{StaticResource FontSizeBody}"
+                                                   HorizontalAlignment="Center" Margin="0,0,0,8"/>
+                                        <Button Content="Clear search" Style="{StaticResource HeaderButton}" Click="PickerFilterClear_Click" HorizontalAlignment="Center"/>
+                                    </StackPanel>
+                                </Grid>
+                            </DockPanel>
+                        </TabItem>
 
-                                <TextBlock Text="Hardware" Style="{StaticResource SettingsHeader}"/>
-                                <CheckBox IsChecked="{Binding ReadMotherboardAndCoolers}">
-                                    <TextBlock Text="Read motherboard fan headers and USB coolers (needed for fan control; restart to apply)"
-                                               Foreground="{DynamicResource TextPrimary}" TextWrapping="Wrap"/>
-                                </CheckBox>
-                                <DockPanel Margin="0,2,0,0">
-                                    <Button DockPanel.Dock="Left" Content="Restart now" Command="{Binding RestartNowCommand}"
-                                            Style="{StaticResource HeaderButton}" HorizontalAlignment="Left"/>
-                                    <TextBlock Text="{Binding HardwareStatus}" Foreground="{DynamicResource WarnBrush}" FontSize="11"
-                                               Margin="8,0,0,0" VerticalAlignment="Center" TextWrapping="Wrap"/>
-                                </DockPanel>
-                                <TextBlock Text="{Binding RestartError}" Foreground="{DynamicResource CritBrush}" FontSize="11" TextWrapping="Wrap"/>
+                        <!-- ============ Settings ============ -->
+                        <TabItem Header="Settings">
+                            <ScrollViewer VerticalScrollBarVisibility="Auto" Margin="0,8,0,0">
+                                <StackPanel DataContext="{Binding SettingsPanel}" Margin="0,0,8,16">
 
-                                <TextBlock Text="Startup" Style="{StaticResource SettingsHeader}"/>
-                                <CheckBox IsChecked="{Binding StartupEnabled}" IsEnabled="{Binding StartupBusy, Converter={StaticResource InverseBool}}">
-                                    <TextBlock Text="Start Stats when I sign in" Foreground="{DynamicResource TextPrimary}" TextWrapping="Wrap"/>
-                                </CheckBox>
-                                <TextBlock Text="Checking…" Visibility="{Binding StartupBusy, Converter={StaticResource BoolToVis}}"
-                                           Foreground="{DynamicResource TextSecondary}" FontSize="11"/>
-                                <TextBlock Text="{Binding StartupError}" Foreground="{DynamicResource CritBrush}" FontSize="11" TextWrapping="Wrap"/>
+                                    <TextBlock Text="Polling" Style="{StaticResource SettingsHeader}" Margin="0,0,0,6"/>
+                                    <DockPanel>
+                                        <TextBlock DockPanel.Dock="Right" Width="44" TextAlignment="Right" Style="{StaticResource SettingsLabel}"
+                                                   Text="{Binding PollIntervalSeconds, StringFormat='{}{0:0.0} s'}"/>
+                                        <Slider Minimum="0.5" Maximum="5" TickFrequency="0.5" IsSnapToTickEnabled="True"
+                                                Value="{Binding PollIntervalSeconds, Delay=250}"/>
+                                    </DockPanel>
 
-                                <TextBlock Text="Updates" Style="{StaticResource SettingsHeader}"/>
-                                <CheckBox Content="Check for updates automatically" IsChecked="{Binding CheckForUpdatesAutomatically}"/>
+                                    <TextBlock Text="Dashboard" Style="{StaticResource SettingsHeader}"/>
+                                    <DockPanel Margin="0,2">
+                                        <TextBlock Text="UI scale" Width="90" Style="{StaticResource SettingsLabel}"/>
+                                        <TextBlock DockPanel.Dock="Right" Width="40" TextAlignment="Right" Style="{StaticResource SettingsLabel}"
+                                                   Text="{Binding DashboardUiScale, StringFormat='{}{0:0.0}×'}"/>
+                                        <Slider Minimum="0.9" Maximum="1.3" TickFrequency="0.1" IsSnapToTickEnabled="True" Value="{Binding DashboardUiScale, Delay=250}"/>
+                                    </DockPanel>
 
-                                <TextBlock Text="Diagnostics" Style="{StaticResource SettingsHeader}"/>
-                                <DockPanel Margin="0,0,0,4">
-                                    <Button Content="Open log folder" Command="{Binding OpenLogFolderCommand}"
-                                            Style="{StaticResource HeaderButton}" HorizontalAlignment="Left"/>
-                                </DockPanel>
-                                <TextBlock Text="Crash and error details are written to %AppData%\Stats\logs (newest seven days kept)."
-                                           Foreground="{DynamicResource TextSecondary}" FontSize="11" TextWrapping="Wrap"/>
-                                <TextBlock Text="{Binding DiagnosticsError}" Foreground="{DynamicResource CritBrush}" FontSize="11" TextWrapping="Wrap"/>
+                                    <TextBlock Text="History window" Style="{StaticResource SettingsHeader}"/>
+                                    <StackPanel Orientation="Horizontal">
+                                        <RadioButton Content="2 min" IsChecked="{Binding HistoryWindowMinutes, Converter={StaticResource Equals}, ConverterParameter=2}"/>
+                                        <RadioButton Content="5 min" IsChecked="{Binding HistoryWindowMinutes, Converter={StaticResource Equals}, ConverterParameter=5}"/>
+                                        <RadioButton Content="15 min" IsChecked="{Binding HistoryWindowMinutes, Converter={StaticResource Equals}, ConverterParameter=15}"/>
+                                        <RadioButton Content="60 min" IsChecked="{Binding HistoryWindowMinutes, Converter={StaticResource Equals}, ConverterParameter=60}"/>
+                                    </StackPanel>
 
-                                <TextBlock Text="About" Style="{StaticResource SettingsHeader}"/>
-                                <TextBlock Text="{Binding AppVersionDisplay}" Foreground="{DynamicResource TextPrimary}"/>
-                                <TextBlock Text="Development build — update checks are disabled."
-                                           Foreground="{DynamicResource TextSecondary}" FontSize="11" TextWrapping="Wrap"
-                                           Visibility="{Binding IsDevBuild, Converter={StaticResource BoolToVis}}"/>
-                                <DockPanel Margin="0,4,0,0" Visibility="{Binding IsDevBuild, Converter={StaticResource InverseBoolToVis}}">
-                                    <Button DockPanel.Dock="Left" Content="Check for updates" Command="{Binding CheckForUpdatesCommand}"
-                                            Style="{StaticResource HeaderButton}" HorizontalAlignment="Left"
-                                            IsEnabled="{Binding UpdateCheckBusy, Converter={StaticResource InverseBool}}"/>
-                                    <TextBlock DockPanel.Dock="Left" Text="Checking…" Margin="8,0,0,0" VerticalAlignment="Center"
-                                               Foreground="{DynamicResource TextSecondary}" FontSize="11"
-                                               Visibility="{Binding UpdateCheckBusy, Converter={StaticResource BoolToVis}}"/>
-                                </DockPanel>
-                                <TextBlock Text="{Binding UpdateCheckResult}" FontSize="11" TextWrapping="Wrap">
-                                    <TextBlock.Style>
-                                        <Style TargetType="TextBlock">
-                                            <Setter Property="Foreground" Value="{DynamicResource TextSecondary}"/>
-                                            <Style.Triggers>
-                                                <DataTrigger Binding="{Binding UpdateCheckFailed}" Value="True">
-                                                    <Setter Property="Foreground" Value="{DynamicResource CritBrush}"/>
-                                                </DataTrigger>
-                                            </Style.Triggers>
-                                        </Style>
-                                    </TextBlock.Style>
-                                </TextBlock>
-                            </StackPanel>
-                        </ScrollViewer>
-                    </TabItem>
-                </TabControl>
+                                    <TextBlock Text="Thresholds (warn / crit)" Style="{StaticResource SettingsHeader}"/>
+                                    <ItemsControl ItemsSource="{Binding ThresholdRuleItems}">
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate>
+                                                <StackPanel Margin="0,2,0,4">
+                                                    <Grid>
+                                                        <Grid.ColumnDefinitions>
+                                                            <ColumnDefinition Width="110"/>
+                                                            <ColumnDefinition Width="46"/>
+                                                            <ColumnDefinition Width="66"/>
+                                                            <ColumnDefinition Width="16"/>
+                                                            <ColumnDefinition Width="66"/>
+                                                            <ColumnDefinition Width="*"/>
+                                                        </Grid.ColumnDefinitions>
+                                                        <TextBlock Text="{Binding GroupName}" Style="{StaticResource SettingsLabel}" TextTrimming="CharacterEllipsis"/>
+                                                        <TextBlock Grid.Column="1" Text="{Binding Unit}" Style="{StaticResource SettingsLabel}"/>
+                                                        <TextBox Grid.Column="2" Margin="0,1,0,1" Text="{Binding WarnText, UpdateSourceTrigger=LostFocus}"/>
+                                                        <TextBlock Grid.Column="3" Text="/" Style="{StaticResource SettingsLabel}" HorizontalAlignment="Center" Margin="0"/>
+                                                        <TextBox Grid.Column="4" Margin="0,1,6,1" Text="{Binding CritText, UpdateSourceTrigger=LostFocus}"/>
+                                                        <TextBlock Grid.Column="5" Text="{Binding DirectionText}" Style="{StaticResource SettingsLabel}" FontStyle="Italic" VerticalAlignment="Center"/>
+                                                    </Grid>
+                                                    <TextBlock Text="{Binding Error}" Foreground="{DynamicResource CritBrush}" FontSize="11"/>
+                                                </StackPanel>
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+                                    <StackPanel Orientation="Horizontal" Margin="0,4,0,0" Visibility="{Binding HasAddableRulePairs, Converter={StaticResource BoolToVis}}">
+                                        <ComboBox ItemsSource="{Binding AddableRulePairs}" SelectedItem="{Binding SelectedAddablePair}" MinWidth="150" VerticalAlignment="Center"/>
+                                        <Button Content="Add rule…" Command="{Binding AddRuleCommand}" Style="{StaticResource HeaderButton}"/>
+                                    </StackPanel>
+
+                                    <TextBlock Text="Limits (for % of limit / gauges)" Style="{StaticResource SettingsHeader}"/>
+                                    <TextBlock Text="Enter your PBO PPT/TDC/EDC or GPU power limit. Blank = none."
+                                               Foreground="{DynamicResource TextSecondary}" FontSize="11" TextWrapping="Wrap" Margin="0,0,0,4"/>
+                                    <ItemsControl ItemsSource="{Binding LimitItems}">
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate>
+                                                <DockPanel Margin="0,2">
+                                                    <TextBox DockPanel.Dock="Right" Width="80" Text="{Binding ValueText, UpdateSourceTrigger=LostFocus}">
+                                                        <TextBox.Style>
+                                                            <Style TargetType="TextBox" BasedOn="{StaticResource {x:Type TextBox}}">
+                                                                <Style.Triggers>
+                                                                    <DataTrigger Binding="{Binding IsInvalid}" Value="True">
+                                                                        <Setter Property="BorderBrush" Value="{DynamicResource CritBrush}"/>
+                                                                    </DataTrigger>
+                                                                </Style.Triggers>
+                                                            </Style>
+                                                        </TextBox.Style>
+                                                    </TextBox>
+                                                    <TextBlock Text="{Binding Label}" Style="{StaticResource SettingsLabel}" TextTrimming="CharacterEllipsis"/>
+                                                </DockPanel>
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+
+                                    <TextBlock Text="Overlay" Style="{StaticResource SettingsHeader}"/>
+                                    <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
+                                        <RadioButton Content="Horizontal" IsChecked="{Binding OverlayIsVertical, Converter={StaticResource InverseBool}}"/>
+                                        <RadioButton Content="Vertical" IsChecked="{Binding OverlayIsVertical}"/>
+                                    </StackPanel>
+                                    <DockPanel Margin="0,2">
+                                        <TextBlock Text="Font scale" Width="90" Style="{StaticResource SettingsLabel}"/>
+                                        <TextBlock DockPanel.Dock="Right" Width="40" TextAlignment="Right" Style="{StaticResource SettingsLabel}"
+                                                   Text="{Binding OverlayFontScale, StringFormat='{}{0:0.0}×'}"/>
+                                        <Slider Minimum="0.8" Maximum="1.6" TickFrequency="0.1" IsSnapToTickEnabled="True" Value="{Binding OverlayFontScale, Delay=250}"/>
+                                    </DockPanel>
+                                    <DockPanel Margin="0,2">
+                                        <TextBlock Text="Opacity" Width="90" Style="{StaticResource SettingsLabel}"/>
+                                        <TextBlock DockPanel.Dock="Right" Width="40" TextAlignment="Right" Style="{StaticResource SettingsLabel}"
+                                                   Text="{Binding OverlayOpacity, StringFormat='{}{0:P0}'}"/>
+                                        <Slider Minimum="0.3" Maximum="1.0" TickFrequency="0.05" IsSnapToTickEnabled="True" Value="{Binding OverlayOpacity}"/>
+                                    </DockPanel>
+                                    <CheckBox Content="Click-through (mouse passes through the overlay; turn off to drag it)" Margin="0,4"
+                                              IsChecked="{Binding OverlayClickThrough}"/>
+                                    <DockPanel Margin="0,4">
+                                        <TextBlock Text="Toggle hotkey" Width="90" Style="{StaticResource SettingsLabel}"/>
+                                        <Button DockPanel.Dock="Right" Content="Clear" Click="HotkeyClear_Click" Style="{StaticResource HeaderButton}" FontSize="11"/>
+                                        <TextBox x:Name="HotkeyBox" IsReadOnly="True" Text="{Binding OverlayHotkey, Mode=OneWay}"
+                                                 PreviewKeyDown="HotkeyBox_PreviewKeyDown" ToolTip="Click, then press the key combination"/>
+                                    </DockPanel>
+                                    <TextBlock Text="{Binding HotkeyStatus}" Foreground="{DynamicResource WarnBrush}" FontSize="11"/>
+                                    <Button Content="Reset overlay position" Command="{Binding ResetOverlayPositionCommand}"
+                                            Style="{StaticResource HeaderButton}" HorizontalAlignment="Left" Margin="0,6,0,0" FontSize="11"/>
+
+                                    <TextBlock Text="Dashboard" Style="{StaticResource SettingsHeader}"/>
+                                    <CheckBox Content="Show CPU core matrix" IsChecked="{Binding ShowCoreMatrix}"/>
+
+                                    <TextBlock Text="Tray" Style="{StaticResource SettingsHeader}"/>
+                                    <DockPanel Margin="0,0,0,4">
+                                        <TextBlock Text="Icon shows" Width="90" Style="{StaticResource SettingsLabel}"/>
+                                        <ComboBox ItemsSource="{Binding TrayMetricOptions}" SelectedItem="{Binding SelectedTrayMetric}"
+                                                  MinWidth="200" HorizontalAlignment="Left"/>
+                                    </DockPanel>
+
+                                    <TextBlock Text="Alerts" Style="{StaticResource SettingsHeader}"/>
+                                    <CheckBox Content="Notify on sustained critical readings" IsChecked="{Binding AlertsEnabled}"/>
+                                    <DockPanel Margin="0,4,0,0">
+                                        <TextBlock Text="Hold time" Width="90" Style="{StaticResource SettingsLabel}"/>
+                                        <TextBlock DockPanel.Dock="Right" Width="34" TextAlignment="Right" Style="{StaticResource SettingsLabel}"
+                                                   Text="{Binding AlertHoldSeconds, StringFormat='{}{0}s'}"/>
+                                        <Slider Minimum="1" Maximum="120" TickFrequency="1" IsSnapToTickEnabled="True"
+                                                Value="{Binding AlertHoldSeconds, Delay=250}"/>
+                                    </DockPanel>
+                                    <CheckBox Content="Play a sound with the notification" IsChecked="{Binding AlertSoundEnabled}" Margin="0,4,0,0"/>
+
+                                    <TextBlock Text="Theme" Style="{StaticResource SettingsHeader}"/>
+                                    <ComboBox ItemsSource="{Binding ThemePresetNames}" SelectedItem="{Binding SelectedThemePreset}"
+                                              MinWidth="160" HorizontalAlignment="Left" Margin="0,0,0,8"/>
+                                    <TextBlock Text="Accent colour" Style="{StaticResource SettingsLabel}" Margin="0,0,0,4"/>
+                                    <ItemsControl ItemsSource="{Binding AccentSwatches}" Margin="0,0,0,6">
+                                        <ItemsControl.ItemsPanel>
+                                            <ItemsPanelTemplate><WrapPanel/></ItemsPanelTemplate>
+                                        </ItemsControl.ItemsPanel>
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate>
+                                                <Button Command="{Binding DataContext.SetAccentCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
+                                                        CommandParameter="{Binding}" ToolTip="{Binding}"
+                                                        Width="22" Height="22" Margin="0,0,6,6" Padding="0" BorderThickness="1"
+                                                        BorderBrush="{DynamicResource BorderDim}"
+                                                        Background="{Binding Converter={StaticResource HexToBrush}}" Cursor="Hand">
+                                                    <!-- Border-only template: the system ControlTemplate repaints a hover-blue highlight
+                                                         over the swatch colour, defeating the point of a colour picker. A keyboard-focus
+                                                         trigger restores a visible focus ring (the default template's dotted rectangle is
+                                                         gone along with the rest of the chrome) so Tab-navigating the swatches stays usable. -->
+                                                    <Button.Template>
+                                                        <ControlTemplate TargetType="Button">
+                                                            <Border x:Name="SwatchBorder"
+                                                                    Background="{TemplateBinding Background}"
+                                                                    BorderBrush="{TemplateBinding BorderBrush}"
+                                                                    BorderThickness="{TemplateBinding BorderThickness}"/>
+                                                            <ControlTemplate.Triggers>
+                                                                <Trigger Property="IsKeyboardFocused" Value="True">
+                                                                    <Setter TargetName="SwatchBorder" Property="BorderBrush" Value="{DynamicResource AccentBrush}"/>
+                                                                    <Setter TargetName="SwatchBorder" Property="BorderThickness" Value="2"/>
+                                                                </Trigger>
+                                                            </ControlTemplate.Triggers>
+                                                        </ControlTemplate>
+                                                    </Button.Template>
+                                                </Button>
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+                                    <DockPanel Margin="0,0,0,4">
+                                        <Button DockPanel.Dock="Right" Content="Reset" Command="{Binding ResetAccentCommand}"
+                                                Style="{StaticResource HeaderButton}" FontSize="11"/>
+                                        <TextBox Text="{Binding AccentHex, UpdateSourceTrigger=PropertyChanged}" MaxLength="7"
+                                                 Width="90" HorizontalAlignment="Left">
+                                            <TextBox.Style>
+                                                <Style TargetType="TextBox" BasedOn="{StaticResource {x:Type TextBox}}">
+                                                    <Style.Triggers>
+                                                        <DataTrigger Binding="{Binding IsAccentInvalid}" Value="True">
+                                                            <Setter Property="BorderBrush" Value="{DynamicResource CritBrush}"/>
+                                                        </DataTrigger>
+                                                    </Style.Triggers>
+                                                </Style>
+                                            </TextBox.Style>
+                                        </TextBox>
+                                    </DockPanel>
+                                    <TextBlock Text="Blank = use the preset's own accent colour." Foreground="{DynamicResource TextSecondary}" FontSize="11"/>
+
+                                    <TextBlock Text="Hardware" Style="{StaticResource SettingsHeader}"/>
+                                    <CheckBox IsChecked="{Binding ReadMotherboardAndCoolers}">
+                                        <TextBlock Text="Read motherboard fan headers and USB coolers (needed for fan control; restart to apply)"
+                                                   Foreground="{DynamicResource TextPrimary}" TextWrapping="Wrap"/>
+                                    </CheckBox>
+                                    <DockPanel Margin="0,2,0,0">
+                                        <Button DockPanel.Dock="Left" Content="Restart now" Command="{Binding RestartNowCommand}"
+                                                Style="{StaticResource HeaderButton}" HorizontalAlignment="Left"/>
+                                        <TextBlock Text="{Binding HardwareStatus}" Foreground="{DynamicResource WarnBrush}" FontSize="11"
+                                                   Margin="8,0,0,0" VerticalAlignment="Center" TextWrapping="Wrap"/>
+                                    </DockPanel>
+                                    <TextBlock Text="{Binding RestartError}" Foreground="{DynamicResource CritBrush}" FontSize="11" TextWrapping="Wrap"/>
+
+                                    <TextBlock Text="Startup" Style="{StaticResource SettingsHeader}"/>
+                                    <CheckBox IsChecked="{Binding StartupEnabled}" IsEnabled="{Binding StartupBusy, Converter={StaticResource InverseBool}}">
+                                        <TextBlock Text="Start Stats when I sign in" Foreground="{DynamicResource TextPrimary}" TextWrapping="Wrap"/>
+                                    </CheckBox>
+                                    <TextBlock Text="Checking…" Visibility="{Binding StartupBusy, Converter={StaticResource BoolToVis}}"
+                                               Foreground="{DynamicResource TextSecondary}" FontSize="11"/>
+                                    <TextBlock Text="{Binding StartupError}" Foreground="{DynamicResource CritBrush}" FontSize="11" TextWrapping="Wrap"/>
+
+                                    <TextBlock Text="Updates" Style="{StaticResource SettingsHeader}"/>
+                                    <CheckBox Content="Check for updates automatically" IsChecked="{Binding CheckForUpdatesAutomatically}"/>
+
+                                    <TextBlock Text="Diagnostics" Style="{StaticResource SettingsHeader}"/>
+                                    <DockPanel Margin="0,0,0,4">
+                                        <Button Content="Open log folder" Command="{Binding OpenLogFolderCommand}"
+                                                Style="{StaticResource HeaderButton}" HorizontalAlignment="Left"/>
+                                    </DockPanel>
+                                    <TextBlock Text="Crash and error details are written to %AppData%\Stats\logs (newest seven days kept)."
+                                               Foreground="{DynamicResource TextSecondary}" FontSize="11" TextWrapping="Wrap"/>
+                                    <TextBlock Text="{Binding DiagnosticsError}" Foreground="{DynamicResource CritBrush}" FontSize="11" TextWrapping="Wrap"/>
+
+                                    <TextBlock Text="About" Style="{StaticResource SettingsHeader}"/>
+                                    <TextBlock Text="{Binding AppVersionDisplay}" Foreground="{DynamicResource TextPrimary}"/>
+                                    <TextBlock Text="Development build — update checks are disabled."
+                                               Foreground="{DynamicResource TextSecondary}" FontSize="11" TextWrapping="Wrap"
+                                               Visibility="{Binding IsDevBuild, Converter={StaticResource BoolToVis}}"/>
+                                    <DockPanel Margin="0,4,0,0" Visibility="{Binding IsDevBuild, Converter={StaticResource InverseBoolToVis}}">
+                                        <Button DockPanel.Dock="Left" Content="Check for updates" Command="{Binding CheckForUpdatesCommand}"
+                                                Style="{StaticResource HeaderButton}" HorizontalAlignment="Left"
+                                                IsEnabled="{Binding UpdateCheckBusy, Converter={StaticResource InverseBool}}"/>
+                                        <TextBlock DockPanel.Dock="Left" Text="Checking…" Margin="8,0,0,0" VerticalAlignment="Center"
+                                                   Foreground="{DynamicResource TextSecondary}" FontSize="11"
+                                                   Visibility="{Binding UpdateCheckBusy, Converter={StaticResource BoolToVis}}"/>
+                                    </DockPanel>
+                                    <TextBlock Text="{Binding UpdateCheckResult}" FontSize="11" TextWrapping="Wrap">
+                                        <TextBlock.Style>
+                                            <Style TargetType="TextBlock">
+                                                <Setter Property="Foreground" Value="{DynamicResource TextSecondary}"/>
+                                                <Style.Triggers>
+                                                    <DataTrigger Binding="{Binding UpdateCheckFailed}" Value="True">
+                                                        <Setter Property="Foreground" Value="{DynamicResource CritBrush}"/>
+                                                    </DataTrigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </TextBlock.Style>
+                                    </TextBlock>
+                                </StackPanel>
+                            </ScrollViewer>
+                        </TabItem>
+                    </TabControl>
+                </DockPanel>
             </Border>
         </Grid>
     </DockPanel>

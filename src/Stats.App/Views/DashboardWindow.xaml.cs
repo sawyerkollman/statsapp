@@ -2,9 +2,11 @@ using System.ComponentModel;
 using System.Globalization;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Controls.Primitives;
 using System.Windows.Data;
 using System.Windows.Documents;
 using System.Windows.Input;
+using System.Windows.Threading;
 using Stats.App.Controls;
 using Stats.App.Helpers;
 using Stats.Core.Settings;
@@ -20,6 +22,12 @@ public partial class DashboardWindow : Window
     /// <summary>The single live drag-reorder insertion-line adorner (v1.8 §7a) — always removed before a new one
     /// is added, and on DragLeave/Drop/drag end, so it can never leak or duplicate across tiles.</summary>
     private InsertionAdorner? _insertionAdorner;
+
+    /// <summary>Whichever header button (Metrics or Settings) most recently opened the flyout — Escape returns
+    /// keyboard focus here (DESIGN.md §5); falls back to the Metrics button if the flyout was opened some other
+    /// way (e.g. the empty-state "Open Metrics" button).</summary>
+    private Button? _pickerOpener;
+    private ListCollectionView? _pickerView;
 
     /// <summary>Set by App: true only when exiting via tray menu; otherwise close hides to tray.</summary>
     public bool AllowClose { get; set; }
@@ -43,12 +51,27 @@ public partial class DashboardWindow : Window
             var pickerView = new ListCollectionView(vm.PickerItems);
             pickerView.GroupDescriptions.Add(new PropertyGroupDescription(nameof(MetricPickerItem.GroupName)));
             pickerView.Filter = o => o is MetricPickerItem item && vm.PickerMatches(item);
+            _pickerView = pickerView;
             PickerList.ItemsSource = pickerView;
+            UpdatePickerNoResults();
             vm.PropertyChanged += (_, e) =>
             {
-                if (e.PropertyName == nameof(DashboardViewModel.PickerFilter)) pickerView.Refresh();
+                if (e.PropertyName == nameof(DashboardViewModel.PickerFilter))
+                {
+                    pickerView.Refresh();
+                    UpdatePickerNoResults();
+                }
             };
         };
+    }
+
+    /// <summary>Toggles the Metrics tab's no-results panel from <see cref="ListCollectionView.IsEmpty"/> — computed
+    /// after every filter change rather than bound, since the filtered-empty state depends on the live collection
+    /// view, not a view-model property (DESIGN.md §5 "helpful no-results state").</summary>
+    private void UpdatePickerNoResults()
+    {
+        if (_pickerView is null) return;
+        PickerNoResults.Visibility = _pickerView.IsEmpty ? Visibility.Visible : Visibility.Collapsed;
     }
 
     protected override void OnClosing(CancelEventArgs e)
@@ -299,5 +322,65 @@ public partial class DashboardWindow : Window
     private void HotkeyClear_Click(object sender, RoutedEventArgs e)
     {
         if (Vm?.SettingsPanel is SettingsViewModel svm) svm.OverlayHotkey = "";
+    }
+
+    // ---- header "View" menu (Collapse all / Expand all) ----
+
+    /// <summary>Same code-behind-built-menu pattern as <see cref="OpenTileMenu"/> — a ContextMenu placed under
+    /// the button rather than bound Command items, so it works regardless of ContextMenu's DataContext
+    /// inheritance quirks.</summary>
+    private void ViewButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (Vm is not DashboardViewModel vm || sender is not FrameworkElement target) return;
+        var menu = new ContextMenu { PlacementTarget = target, Placement = PlacementMode.Bottom };
+        var expand = new MenuItem { Header = "Expand all" };
+        expand.Click += (_, _) => vm.ExpandAllCommand.Execute(null);
+        var collapse = new MenuItem { Header = "Collapse all" };
+        collapse.Click += (_, _) => vm.CollapseAllCommand.Execute(null);
+        menu.Items.Add(expand);
+        menu.Items.Add(collapse);
+        menu.IsOpen = true;
+    }
+
+    // ---- flyout close / Escape / focus ----
+
+    /// <summary>Remembers whichever header button opened the flyout so Escape can return focus there.</summary>
+    private void HeaderOpener_Click(object sender, RoutedEventArgs e) => _pickerOpener = sender as Button;
+
+    private void PickerClose_Click(object sender, RoutedEventArgs e)
+    {
+        if (Vm is DashboardViewModel vm) vm.IsPickerOpen = false;
+        (_pickerOpener ?? MetricsButton).Focus();
+    }
+
+    /// <summary>Bubbling handler on the flyout Border (DESIGN.md §5): an open ComboBox dropdown or other child
+    /// popup/editor consumes Escape itself (marks it Handled) before it ever reaches here, so this only fires for
+    /// an Escape the flyout itself should act on.</summary>
+    private void PickerFlyout_KeyDown(object sender, KeyEventArgs e)
+    {
+        if (e.Key != Key.Escape || Vm is not DashboardViewModel vm || !vm.IsPickerOpen) return;
+        e.Handled = true;
+        vm.IsPickerOpen = false;
+        (_pickerOpener ?? MetricsButton).Focus();
+    }
+
+    /// <summary>Moves keyboard focus into the flyout as soon as it becomes visible: the search box for Metrics,
+    /// the active tab header for Settings (DESIGN.md §5). Deferred one dispatcher pass so the newly-visible
+    /// content is actually there to focus.</summary>
+    private void PickerFlyout_IsVisibleChanged(object sender, DependencyPropertyChangedEventArgs e)
+    {
+        if (e.NewValue is not true || Vm is not DashboardViewModel vm) return;
+        Dispatcher.BeginInvoke(new Action(() =>
+        {
+            if (vm.FlyoutTabIndex == 0) PickerFilterBox.Focus();
+            else if (FlyoutTabs.ItemContainerGenerator.ContainerFromIndex(vm.FlyoutTabIndex) is TabItem tab) tab.Focus();
+        }), DispatcherPriority.Loaded);
+    }
+
+    // ---- picker filter clear ----
+
+    private void PickerFilterClear_Click(object sender, RoutedEventArgs e)
+    {
+        if (Vm is DashboardViewModel vm) vm.PickerFilter = "";
     }
 }

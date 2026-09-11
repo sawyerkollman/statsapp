@@ -261,6 +261,7 @@ public partial class App : Application
         // and every subsequent hide/show — so a freshly shown window is never stale for a whole poll interval.
         _dashboard.IsVisibleChanged += (_, e) => { if (e.NewValue is true) { _dashboardVm.RefreshAll(); _dashboardVm.SetGroupStatus(MetricGroup.Game, FrameStatus()); } };
         _overlay.IsVisibleChanged += (_, e) => { if (e.NewValue is true) _overlayVm?.RefreshAll(); };
+        _overlay.IsVisibleChanged += (_, e) => _dashboardVm.IsOverlayVisible = e.NewValue is true;
         SessionEnding += (_, _) => ExitApp();
         if (!startMinimized) _dashboard.Show(); // --minimized: dashboard/tray/services/poller are still fully constructed above, just not shown
         _poller.Start();
