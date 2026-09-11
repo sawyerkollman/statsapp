@@ -18,4 +18,18 @@ public static class SampleAxis
         double denom = Math.Max(1, capacity - 1);
         return left + width - (count - 1 - index) * width / denom;
     }
+
+    /// <summary>Inverse of <see cref="X"/>: the sample index nearest pixel position <paramref name="x"/>, clamped
+    /// to <c>[0, count - 1]</c>. Used by both controls' hover handlers so the crosshair tracks the pointer under
+    /// the same fixed-axis rule <see cref="X"/> draws with (review B1) — computing <c>round(px / width * (count -
+    /// 1))</c> instead (the old, pre-fixed-axis mapping) detaches the crosshair from the cursor whenever the
+    /// buffer isn't full.</summary>
+    public static int IndexAt(double x, int count, int capacity, double left, double width)
+    {
+        capacity = Math.Max(capacity, count);
+        double denom = Math.Max(1, capacity - 1);
+        double raw = count - 1 - (left + width - x) * denom / width;
+        int idx = (int)Math.Round(raw, MidpointRounding.AwayFromZero);
+        return Math.Clamp(idx, 0, Math.Max(0, count - 1));
+    }
 }

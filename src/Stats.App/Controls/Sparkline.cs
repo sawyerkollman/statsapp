@@ -17,9 +17,10 @@ namespace Stats.App.Controls;
 /// Samples are laid out on the fixed <see cref="SampleAxis"/> (right-anchored, constant spacing) rather than
 /// stretched across the full width by however many samples currently exist — see <see cref="Capacity"/>. When
 /// <see cref="GraphStyle.SmoothLines"/> is on, each finite run is drawn as a monotone-cubic curve (Bézier
-/// segments from <see cref="CurveSmoothing"/>) instead of a straight polyline; when <see cref="GraphStyle.Effects"/>
-/// is on, the line gets an underlying glow pass, the fill gains a stronger top stop, and the last-value dot
-/// pulses on a new sample (subject to <see cref="GraphStyle.Motion"/>, i.e. OS animations enabled).
+/// segments from <see cref="CurveSmoothing"/>, via the shared <see cref="CurveRenderer"/>) instead of a straight
+/// polyline; when <see cref="GraphStyle.Effects"/> is on, the line gets an underlying glow pass, the fill gains a
+/// stronger top stop, and the last-value dot pulses on a new sample (subject to <see cref="GraphStyle.Motion"/>,
+/// i.e. OS animations enabled).
 /// </summary>
 public sealed class Sparkline : FrameworkElement
 {
@@ -58,6 +59,29 @@ public sealed class Sparkline : FrameworkElement
     private Pen _hoverLinePen;
     private Brush _hoverDotBrush;
     private int _hoverIndex = -1;
+
+    // S1/S5 render cache: the line/fill StreamGeometry plus the fill brush, glow pen and line pen are rebuilt
+    // only when Values, ActualWidth/ActualHeight, Stroke, Capacity or GraphStyle actually change — not on every
+    // OnRender. PulseProgress is AffectsRender and animates over ~30 frames per 500 ms pulse, so without this
+    // cache every one of those frames re-scanned min/max, rebuilt two StreamGeometry objects and allocated a
+    // fresh gradient brush + 2-3 pens; a pulse frame now only redraws the cached geometry/brushes plus the two
+    // small ellipses (the last-value dot and the pulse ring itself, whose radius/alpha genuinely change every
+    // frame and so can't be cached).
+    private StreamGeometry? _fillGeometry;
+    private StreamGeometry? _lineGeometry;
+    private Brush? _fillBrush;
+    private Pen? _glowPen;
+    private Pen? _linePen;
+    private readonly List<Point> _singlePointDots = new();
+    private float _cachedMin, _cachedMax, _cachedRange;
+    private bool _hasData;
+    private int _lastFiniteIndex = -1;
+
+    private IReadOnlyList<float>? _cacheValues;
+    private double _cacheWidth = -1, _cacheHeight = -1;
+    private Brush? _cacheStroke;
+    private int _cacheCapacity = -1;
+    private bool _cacheSmooth, _cacheEffects;
 
     public Sparkline()
     {
@@ -144,8 +168,7 @@ public sealed class Sparkline : FrameworkElement
         base.OnMouseMove(e);
         var values = Values;
         if (values is null || values.Count < 2 || ActualWidth <= 0) return;
-        int idx = (int)Math.Round(e.GetPosition(this).X / ActualWidth * (values.Count - 1));
-        idx = Math.Clamp(idx, 0, values.Count - 1);
+        int idx = SampleAxis.IndexAt(e.GetPosition(this).X, values.Count, Capacity, 0, ActualWidth);
         if (idx == _hoverIndex) return;
         _hoverIndex = idx;
         // A gap sample has nothing to report — no tooltip, and OnRender skips the crosshair/dot for it too.
@@ -161,68 +184,15 @@ public sealed class Sparkline : FrameworkElement
         InvalidateVisual();
     }
 
-    /// <summary>Maximal runs of consecutive finite (non-NaN) samples, oldest first — a NaN sample (a recorded
-    /// gap; see MetricHistory.Add) ends one run and starts the search for the next, so callers can draw each run
-    /// as its own polyline/fill figure and leave a visible break at every gap.</summary>
-    private static IEnumerable<(int Start, int Length)> FiniteRuns(IReadOnlyList<float> values)
+    /// <summary>Recomputes and caches everything derived from <paramref name="values"/>/size/stroke/style: the
+    /// min/max range, the line/fill geometry (per finite run, smoothed or straight), the single-point-run dot
+    /// positions (review S4), and the fill brush/glow pen/line pen (review S1/S5). Called from OnRender only when
+    /// the cache key (see the `_cache*` fields) actually changed.</summary>
+    private void RebuildGeometry(IReadOnlyList<float> values, double w, double h, Brush stroke, bool smooth, bool effects)
     {
-        int start = -1;
-        for (int i = 0; i < values.Count; i++)
-        {
-            if (float.IsNaN(values[i]))
-            {
-                if (start >= 0) { yield return (start, i - start); start = -1; }
-            }
-            else if (start < 0) start = i;
-        }
-        if (start >= 0) yield return (start, values.Count - start);
-    }
+        _singlePointDots.Clear();
+        _lastFiniteIndex = -1;
 
-    /// <summary>Decimated pixel points for one finite run (same stride logic and final-sample fix-up as before),
-    /// shared by the fill and line figures so a smoothed fill hugs the same curve as the line.</summary>
-    private static List<Point> RunPoints(int start, int last, int stride, Func<int, Point> at)
-    {
-        var pts = new List<Point>();
-        for (int i = start; i <= last; i += stride) pts.Add(at(i));
-        if ((last - start) % stride != 0) pts.Add(at(last));
-        return pts;
-    }
-
-    /// <summary>Emits the curve for one run's decimated points into an open figure (the first point is assumed
-    /// already placed by BeginFigure/a leading LineTo) — monotone-cubic Béziers when smoothing is on and the run
-    /// has 3+ points, otherwise straight LineTo segments. A single-point run (n &lt;= 1) draws nothing more.</summary>
-    private static void EmitCurve(StreamGeometryContext ctx, List<Point> pts, bool smooth, bool isStroked)
-    {
-        int n = pts.Count;
-        if (n <= 1) return;
-        if (!smooth || n == 2)
-        {
-            for (int i = 1; i < n; i++) ctx.LineTo(pts[i], isStroked, false);
-            return;
-        }
-
-        var xs = new double[n];
-        var ys = new double[n];
-        for (int i = 0; i < n; i++) { xs[i] = pts[i].X; ys[i] = pts[i].Y; }
-        var tangents = new double[n];
-        CurveSmoothing.MonotoneTangents(xs, ys, tangents);
-        for (int i = 1; i < n; i++)
-        {
-            var (c1x, c1y, c2x, c2y) = CurveSmoothing.BezierControlPoints(xs[i - 1], ys[i - 1], tangents[i - 1], xs[i], ys[i], tangents[i]);
-            ctx.BezierTo(new Point(c1x, c1y), new Point(c2x, c2y), pts[i], isStroked, true);
-        }
-    }
-
-    protected override void OnRender(DrawingContext dc)
-    {
-        double w = ActualWidth, h = ActualHeight;
-        if (w <= 0 || h <= 0) return;
-        dc.DrawRectangle(Brushes.Transparent, null, new Rect(0, 0, w, h)); // hit-test surface for hover
-
-        var values = Values;
-        if (values is null || values.Count < 2) return;
-
-        // Range is computed over finite samples only — a gap (NaN) must never distort the y-scale.
         float min = float.NaN, max = float.NaN;
         for (int i = 0; i < values.Count; i++)
         {
@@ -230,21 +200,28 @@ public sealed class Sparkline : FrameworkElement
             if (float.IsNaN(v)) continue;
             if (float.IsNaN(min) || v < min) min = v;
             if (float.IsNaN(max) || v > max) max = v;
+            _lastFiniteIndex = i;
         }
-        if (float.IsNaN(min)) return; // every sample is a gap — nothing to draw
+
+        _hasData = !float.IsNaN(min);
+        if (!_hasData)
+        {
+            _fillGeometry = null; _lineGeometry = null; _fillBrush = null; _glowPen = null; _linePen = null;
+            return;
+        }
+
+        _cachedMin = min; _cachedMax = max;
         float range = max - min;
         if (range < 1e-6f) range = 1f;
+        _cachedRange = range;
 
         double X(int i) => SampleAxis.X(i, values.Count, Capacity, 0, w);
         double Y(float v) => h - 2 - (v - min) / range * (h - 4);
         Point At(int i) => new(X(i), Y(values[i]));
 
-        bool smooth = GraphStyle.SmoothLines;
-        bool effects = GraphStyle.Effects;
-
         int stride = Math.Max(1, values.Count / Math.Max(1, (int)(w * 2)));
-        var runs = FiniteRuns(values).ToList();
-        var runPoints = runs.Select(r => RunPoints(r.Start, r.Start + r.Length - 1, stride, At)).ToList();
+        var runs = CurveRenderer.FiniteRuns(values).ToList();
+        var runPoints = runs.Select(r => CurveRenderer.RunPoints(r.Start, r.Start + r.Length - 1, stride, At)).ToList();
 
         // fill — one closed figure per finite run so a NaN run leaves a visible gap instead of bridging it. Uses
         // the same (possibly smoothed) curve as the line so the gradient hugs it.
@@ -257,21 +234,15 @@ public sealed class Sparkline : FrameworkElement
                 if (pts.Count == 0) continue;
                 ctx.BeginFigure(new Point(pts[0].X, h), true, true);
                 ctx.LineTo(pts[0], false, false);
-                EmitCurve(ctx, pts, smooth, false);
+                CurveRenderer.EmitCurve(ctx, pts, smooth, false);
                 ctx.LineTo(new Point(pts[^1].X, h), false, false);
             }
         }
         fill.Freeze();
-        dc.DrawGeometry(FillBrushFor(Stroke, effects), null, fill);
+        _fillGeometry = fill;
 
-        // guides
-        if (ShowGuides && max - min > 1e-6f)
-        {
-            dc.DrawLine(_guidePen, new Point(0, Y(max)), new Point(w, Y(max)));
-            dc.DrawLine(_guidePen, new Point(0, Y(min)), new Point(w, Y(min)));
-        }
-
-        // line — same per-run breakdown as the fill, above.
+        // line — same per-run breakdown as the fill, above. A single-point run draws no segment (EmitCurve is a
+        // no-op for n <= 1), so its point is recorded for a small dot in OnRender instead (review S4).
         var line = new StreamGeometry();
         using (var ctx = line.Open())
         {
@@ -280,31 +251,78 @@ public sealed class Sparkline : FrameworkElement
                 var pts = runPoints[r];
                 if (pts.Count == 0) continue;
                 ctx.BeginFigure(pts[0], false, false);
-                EmitCurve(ctx, pts, smooth, true);
+                CurveRenderer.EmitCurve(ctx, pts, smooth, true);
+                if (pts.Count == 1) _singlePointDots.Add(pts[0]);
             }
         }
         line.Freeze();
+        _lineGeometry = line;
+
+        _fillBrush = CurveRenderer.FillBrushFor(stroke, 0x55, 0x70, effects);
+        _glowPen = effects ? CurveRenderer.GlowPenFor(stroke) : null;
+        var linePen = new Pen(stroke, 1.5) { LineJoin = PenLineJoin.Round };
+        linePen.Freeze();
+        _linePen = linePen;
+    }
+
+    protected override void OnRender(DrawingContext dc)
+    {
+        double w = ActualWidth, h = ActualHeight;
+        if (w <= 0 || h <= 0) return;
+        dc.DrawRectangle(Brushes.Transparent, null, new Rect(0, 0, w, h)); // hit-test surface for hover
+
+        var values = Values;
+        if (values is null || values.Count < 2) return;
+
+        bool smooth = GraphStyle.SmoothLines;
+        bool effects = GraphStyle.Effects;
+        var stroke = Stroke;
+
+        if (!ReferenceEquals(_cacheValues, values) || _cacheWidth != w || _cacheHeight != h ||
+            !ReferenceEquals(_cacheStroke, stroke) || _cacheCapacity != Capacity ||
+            _cacheSmooth != smooth || _cacheEffects != effects)
+        {
+            RebuildGeometry(values, w, h, stroke, smooth, effects);
+            _cacheValues = values; _cacheWidth = w; _cacheHeight = h; _cacheStroke = stroke;
+            _cacheCapacity = Capacity; _cacheSmooth = smooth; _cacheEffects = effects;
+        }
+
+        if (!_hasData) return; // every sample is a gap — nothing to draw
+
+        double X(int i) => SampleAxis.X(i, values.Count, Capacity, 0, w);
+        double Y(float v) => h - 2 - (v - _cachedMin) / _cachedRange * (h - 4);
+
+        dc.DrawGeometry(_fillBrush, null, _fillGeometry);
+
+        // guides
+        if (ShowGuides && _cachedMax - _cachedMin > 1e-6f)
+        {
+            dc.DrawLine(_guidePen, new Point(0, Y(_cachedMax)), new Point(w, Y(_cachedMax)));
+            dc.DrawLine(_guidePen, new Point(0, Y(_cachedMin)), new Point(w, Y(_cachedMin)));
+        }
 
         // glow pass — same geometry, wide/low-alpha pen, drawn before the main line.
-        if (effects) dc.DrawGeometry(null, GlowPenFor(Stroke), line);
+        if (effects && _glowPen is not null) dc.DrawGeometry(null, _glowPen, _lineGeometry);
 
-        dc.DrawGeometry(null, new Pen(Stroke, 1.5) { LineJoin = PenLineJoin.Round }, line);
+        dc.DrawGeometry(null, _linePen, _lineGeometry);
+
+        // single-point finite runs (review S4) — a small dot instead of nothing.
+        foreach (var pt in _singlePointDots) dc.DrawEllipse(stroke, null, pt, 1.25, 1.25);
 
         // last-value dot — the newest *real* sample, which may not be the newest slot if it's currently a gap.
-        int lastFinite = -1;
-        for (int i = values.Count - 1; i >= 0; i--) { if (!float.IsNaN(values[i])) { lastFinite = i; break; } }
-        if (lastFinite >= 0)
+        if (_lastFiniteIndex >= 0)
         {
-            var dotCenter = new Point(X(lastFinite), Y(values[lastFinite]));
-            dc.DrawEllipse(Stroke, null, dotCenter, 2.5, 2.5);
+            var dotCenter = new Point(X(_lastFiniteIndex), Y(values[_lastFiniteIndex]));
+            dc.DrawEllipse(stroke, null, dotCenter, 2.5, 2.5);
 
-            // pulse ring — only while an animation is actually in flight (0 < p < 1); idle cost is zero.
+            // pulse ring — only while an animation is actually in flight (0 < p < 1); idle cost is zero. Radius
+            // and alpha change every frame, so this pen genuinely can't be cached like the others above.
             double p = PulseProgress;
             if (effects && p > 0 && p < 1)
             {
                 double radius = 2.5 + 6.5 * p;
                 byte alpha = (byte)Math.Round(0.6 * (1 - p) * 255);
-                dc.DrawEllipse(null, PulsePenFor(Stroke, alpha), dotCenter, radius, radius);
+                dc.DrawEllipse(null, CurveRenderer.PulsePenFor(stroke, alpha), dotCenter, radius, radius);
             }
         }
 
@@ -315,35 +333,5 @@ public sealed class Sparkline : FrameworkElement
             dc.DrawLine(_hoverLinePen, new Point(hx, 0), new Point(hx, h));
             dc.DrawEllipse(_hoverDotBrush, null, new Point(hx, Y(values[_hoverIndex])), 3, 3);
         }
-    }
-
-    private static Brush FillBrushFor(Brush stroke, bool effects)
-    {
-        var c = stroke is SolidColorBrush sc ? sc.Color : Colors.Orange;
-        byte top = effects ? (byte)0x70 : (byte)0x55;
-        var b = new LinearGradientBrush(
-            Color.FromArgb(top, c.R, c.G, c.B), Color.FromArgb(0x00, c.R, c.G, c.B), 90);
-        b.Freeze();
-        return b;
-    }
-
-    private static Pen GlowPenFor(Brush stroke)
-    {
-        var c = stroke is SolidColorBrush sc ? sc.Color : Colors.Orange;
-        var brush = new SolidColorBrush(Color.FromArgb(0x38, c.R, c.G, c.B));
-        brush.Freeze();
-        var pen = new Pen(brush, 4.5) { LineJoin = PenLineJoin.Round, StartLineCap = PenLineCap.Round, EndLineCap = PenLineCap.Round };
-        pen.Freeze();
-        return pen;
-    }
-
-    private static Pen PulsePenFor(Brush stroke, byte alpha)
-    {
-        var c = stroke is SolidColorBrush sc ? sc.Color : Colors.Orange;
-        var brush = new SolidColorBrush(Color.FromArgb(alpha, c.R, c.G, c.B));
-        brush.Freeze();
-        var pen = new Pen(brush, 1.5);
-        pen.Freeze();
-        return pen;
     }
 }

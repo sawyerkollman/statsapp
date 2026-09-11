@@ -40,12 +40,12 @@ public class MetricTileViewModelTests
     }
 
     [Fact]
-    public void Refresh_HistoryCapacity_ComesFromHistoryBuffer()
+    public void Refresh_HistorySampleCapacity_ComesFromHistoryBuffer()
     {
         var store = NewStore(CpuTemp);
         var tile = new MetricTileViewModel(CpuTemp, store["cpu.temp"], new AppSettings());
         tile.Refresh();
-        Assert.Equal(store["cpu.temp"].Capacity, tile.HistoryCapacity);
+        Assert.Equal(store["cpu.temp"].Capacity, tile.HistorySampleCapacity);
     }
 
     [Fact]

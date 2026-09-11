@@ -63,4 +63,49 @@ public class SampleAxisTests
         Assert.False(double.IsNaN(x));
         Assert.False(double.IsInfinity(x));
     }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(4)]
+    [InlineData(9)]
+    public void IndexAt_FullBuffer_RoundTripsAgainstX(int index)
+    {
+        const int count = 10, capacity = 10;
+        const double left = 20, width = 100;
+        double x = SampleAxis.X(index, count, capacity, left, width);
+        Assert.Equal(index, SampleAxis.IndexAt(x, count, capacity, left, width));
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(2)]
+    [InlineData(4)]
+    public void IndexAt_HalfFullBuffer_RoundTripsAgainstX(int index)
+    {
+        const int count = 5, capacity = 20;
+        const double left = 0, width = 200;
+        double x = SampleAxis.X(index, count, capacity, left, width);
+        Assert.Equal(index, SampleAxis.IndexAt(x, count, capacity, left, width));
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(5)]
+    [InlineData(9)]
+    public void IndexAt_CapacityLessThanCount_RoundTripsAgainstX(int index)
+    {
+        const int count = 10, capacity = 4;
+        const double left = 0, width = 90;
+        double x = SampleAxis.X(index, count, capacity, left, width);
+        Assert.Equal(index, SampleAxis.IndexAt(x, count, capacity, left, width));
+    }
+
+    [Fact]
+    public void IndexAt_ClampsToValidRange()
+    {
+        const int count = 5, capacity = 20;
+        const double left = 0, width = 200;
+        Assert.Equal(0, SampleAxis.IndexAt(left - 1000, count, capacity, left, width));
+        Assert.Equal(count - 1, SampleAxis.IndexAt(left + width + 1000, count, capacity, left, width));
+    }
 }

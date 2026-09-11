@@ -63,8 +63,10 @@ public class GraphEffectsSubstateTests : IDisposable
         var c = PreviewComposition.Build("normal", NewSubRoot(), new[] { "graphs-warmup" });
         var def = c.Definitions.First(d => c.Settings.DashboardMetrics.Contains(d.Id));
         Assert.True(c.Store.TryGet(def.Id, out var history));
-        Assert.Equal(120, history.Capacity);
-        Assert.Equal(30, history.ToArray().Length); // 25% of the 120-sample capacity
+        // Review S2: store capacity now matches the fixture's tick count (60) instead of a hardcoded 120, so
+        // every non-warmup capture is a full buffer; "graphs-warmup" still sits at exactly 25% of that capacity.
+        Assert.Equal(60, history.Capacity);
+        Assert.Equal(15, history.ToArray().Length); // 25% of the 60-sample capacity
         Assert.NotNull(history.Current); // still lands on the fixture's exact "current" value
     }
 
@@ -75,6 +77,7 @@ public class GraphEffectsSubstateTests : IDisposable
         var def = c.Definitions.First(d => c.Settings.DashboardMetrics.Contains(d.Id));
         Assert.True(c.Store.TryGet(def.Id, out var history));
         Assert.Equal(60, history.ToArray().Length);
+        Assert.Equal(60, history.Capacity); // full buffer — capacity == sample count (review S2)
     }
 
     [Fact]
@@ -85,7 +88,7 @@ public class GraphEffectsSubstateTests : IDisposable
         Assert.False(c.Settings.GraphEffects);
         var def = c.Definitions.First(d => c.Settings.DashboardMetrics.Contains(d.Id));
         Assert.True(c.Store.TryGet(def.Id, out var history));
-        Assert.Equal(30, history.ToArray().Length);
+        Assert.Equal(15, history.ToArray().Length);
     }
 
     [Theory]
@@ -94,8 +97,21 @@ public class GraphEffectsSubstateTests : IDisposable
     [InlineData("dashboard", "graphs-warmup")]
     [InlineData("details", "detail-plain")]
     [InlineData("details", "detail-smooth")]
+    [InlineData("details", "detail-warmup")]
     public void SubstateCatalog_AcceptsTheNewSubstatesForTheirView(string view, string substate)
     {
         SubstateCatalog.Validate(view, new[] { substate }); // throws on failure
+    }
+
+    [Fact]
+    public void DetailWarmupSubstate_FillsHistoryBufferToOneQuarterOfCapacity()
+    {
+        // Details-view counterpart of GraphsWarmupSubstate_FillsHistoryBufferToOneQuarterOfCapacity — same
+        // store-level trim, so HistoryChart (fed from the same MetricStore) shows the same 25%-full buffer.
+        var c = PreviewComposition.Build("normal", NewSubRoot(), new[] { "detail-warmup" });
+        var def = c.Definitions.First(d => c.Settings.DashboardMetrics.Contains(d.Id));
+        Assert.True(c.Store.TryGet(def.Id, out var history));
+        Assert.Equal(60, history.Capacity);
+        Assert.Equal(15, history.ToArray().Length); // 25% of the 60-sample capacity
     }
 }

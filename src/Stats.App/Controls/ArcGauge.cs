@@ -36,6 +36,15 @@ public sealed class ArcGauge : FrameworkElement
     private const double SweepAngle = 270.0;
     private const double GlowCapDegrees = 12.0;
 
+    // Review S5: the track/value pens were allocated fresh (and unfrozen) on every OnRender. Cached and frozen
+    // here, rebuilt only when Stroke/Track/Thickness change — the glow pen already only exists when GraphStyle
+    // .Effects is on and is cheap/rare enough (12° of a 270° arc) to keep building fresh per render.
+    private Pen? _trackPen;
+    private Pen? _valuePen;
+    private Brush? _pensStroke;
+    private Brush? _pensTrack;
+    private double _pensThickness = -1;
+
     public double Fraction { get => (double)GetValue(FractionProperty); set => SetValue(FractionProperty, value); }
     public Brush Stroke { get => (Brush)GetValue(StrokeProperty); set => SetValue(StrokeProperty, value); }
     public Brush Track { get => (Brush)GetValue(TrackProperty); set => SetValue(TrackProperty, value); }
@@ -98,8 +107,18 @@ public sealed class ArcGauge : FrameworkElement
         double r = size / 2 - Thickness / 2;
         if (r <= 0) return;
 
-        var trackPen = new Pen(Track, Thickness) { StartLineCap = PenLineCap.Round, EndLineCap = PenLineCap.Round };
-        dc.DrawGeometry(null, trackPen, Arc(center, r, StartAngle, SweepAngle));
+        if (!ReferenceEquals(_pensStroke, Stroke) || !ReferenceEquals(_pensTrack, Track) || _pensThickness != Thickness)
+        {
+            var trackPen = new Pen(Track, Thickness) { StartLineCap = PenLineCap.Round, EndLineCap = PenLineCap.Round };
+            trackPen.Freeze();
+            var valuePen = new Pen(Stroke, Thickness) { StartLineCap = PenLineCap.Round, EndLineCap = PenLineCap.Round };
+            valuePen.Freeze();
+            _trackPen = trackPen;
+            _valuePen = valuePen;
+            _pensStroke = Stroke; _pensTrack = Track; _pensThickness = Thickness;
+        }
+
+        dc.DrawGeometry(null, _trackPen, Arc(center, r, StartAngle, SweepAngle));
 
         double f = Math.Clamp(AnimatedFraction, 0.0, 1.0);
         if (f > 0.001)
@@ -109,15 +128,15 @@ public sealed class ArcGauge : FrameworkElement
             if (GraphStyle.Effects)
             {
                 // glow cap — a short arc segment at the end of the value sweep, wider and low-alpha, under the
-                // main value arc (same double-draw trick as the line glow).
+                // main value arc (same double-draw trick as the line glow). Its sweep depends on the
+                // continuously-eased AnimatedFraction, so it's rebuilt fresh every render rather than cached.
                 double capSweep = Math.Min(valueSweep, GlowCapDegrees);
                 var glowPen = new Pen(GlowBrushFor(Stroke), Thickness + 4) { StartLineCap = PenLineCap.Round, EndLineCap = PenLineCap.Round };
                 glowPen.Freeze();
                 dc.DrawGeometry(null, glowPen, Arc(center, r, StartAngle + valueSweep - capSweep, capSweep));
             }
 
-            var valuePen = new Pen(Stroke, Thickness) { StartLineCap = PenLineCap.Round, EndLineCap = PenLineCap.Round };
-            dc.DrawGeometry(null, valuePen, Arc(center, r, StartAngle, valueSweep));
+            dc.DrawGeometry(null, _valuePen, Arc(center, r, StartAngle, valueSweep));
         }
     }
 

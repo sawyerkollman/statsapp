@@ -40,8 +40,8 @@ public sealed partial class MetricDetailViewModel : ObservableObject
     [ObservableProperty] private string _maxText = "—";
     [ObservableProperty] private float[] _values = Array.Empty<float>();
     /// <summary>The backing <see cref="MetricHistory"/>'s ring-buffer capacity — same role as
-    /// <see cref="MetricTileViewModel.HistoryCapacity"/>, for HistoryChart's fixed axis.</summary>
-    [ObservableProperty] private int _historyCapacity;
+    /// <see cref="MetricTileViewModel.HistorySampleCapacity"/>, for HistoryChart's fixed axis.</summary>
+    [ObservableProperty] private int _historySampleCapacity;
     [ObservableProperty] private double _secondsPerSample = 1.0;
     [ObservableProperty] private IReadOnlyList<string> _timeAxisLabels = Array.Empty<string>();
     [ObservableProperty] private IReadOnlyList<string> _yAxisLabels = Array.Empty<string>();
@@ -87,7 +87,7 @@ public sealed partial class MetricDetailViewModel : ObservableObject
         MaxText = ValueFormatter.Format(_definition, float.IsNaN(_history.SessionMax) ? null : _history.SessionMax);
 
         Values = NextValuesBuffer();
-        HistoryCapacity = _history.Capacity;
+        HistorySampleCapacity = _history.Capacity;
         SecondsPerSample = _settings.PollIntervalSeconds;
 
         var rule = _settings.ThresholdOverrides.TryGetValue(_definition.Id, out var o)
@@ -97,7 +97,7 @@ public sealed partial class MetricDetailViewModel : ObservableObject
         CritValue = rule?.Crit;
         LowerIsWorse = rule?.LowerIsWorse ?? false;
 
-        TimeAxisLabels = BuildTimeAxisLabels(Values.Length, SecondsPerSample);
+        TimeAxisLabels = BuildTimeAxisLabels(Values.Length, HistorySampleCapacity, SecondsPerSample);
         YAxisLabels = BuildYAxisLabels(Values);
     }
 
@@ -115,14 +115,19 @@ public sealed partial class MetricDetailViewModel : ObservableObject
         return $"{valueText} at {FormatWhen(secondsAgo)}";
     }
 
-    // Fully qualified: the HistoryCapacity property above shadows the Metrics.HistoryCapacity type by name.
     private static string FormatWhen(double secondsAgo) =>
-        secondsAgo < 0.5 ? "now" : "-" + global::Stats.Core.Metrics.HistoryCapacity.FormatWindow(secondsAgo);
+        secondsAgo < 0.5 ? "now" : "-" + HistoryCapacity.FormatWindow(secondsAgo);
 
-    private static IReadOnlyList<string> BuildTimeAxisLabels(int sampleCount, double secondsPerSample)
+    /// <summary>Labels line up with where HistoryChart actually draws sample <c>i</c> — <see cref="SampleAxis.X"/>
+    /// lays samples out over <c>max(capacity, sampleCount) - 1</c> spacings, right-anchored, not
+    /// <c>sampleCount - 1</c> (review B2): during warm-up (before the ring buffer fills) the data only occupies
+    /// the right portion of the plot, so basing the axis window on sampleCount alone stretched every label across
+    /// the full width while the line stayed right-anchored — every reading was off by up to 2x.</summary>
+    private static IReadOnlyList<string> BuildTimeAxisLabels(int sampleCount, int capacity, double secondsPerSample)
     {
         if (sampleCount < 2) return new[] { "now" };
-        double totalSeconds = (sampleCount - 1) * secondsPerSample;
+        int axisCount = Math.Max(capacity, sampleCount);
+        double totalSeconds = (axisCount - 1) * secondsPerSample;
         var labels = new string[TimeAxisLabelCount];
         for (int i = 0; i < TimeAxisLabelCount; i++)
         {

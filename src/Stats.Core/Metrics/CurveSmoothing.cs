@@ -20,9 +20,18 @@ public static class CurveSmoothing
         if (n == 0) return;
         if (n == 1) { tangents[0] = 0; return; }
 
+        // 128 doubles = 1 KiB, comfortably inside the ~1 MiB default thread stack even nested a few calls deep;
+        // beyond that (a run longer than 129 samples — larger than any stride-decimated run this codebase
+        // produces, see Sparkline/HistoryChart's `stride` calc) fall back to a heap array instead of growing the
+        // stackalloc unbounded.
         Span<double> d = n - 1 <= 128 ? stackalloc double[n - 1] : new double[n - 1];
         for (int k = 0; k < n - 1; k++)
         {
+            // A zero-dx (two samples projected to the same pixel X) degenerate-secant of 0 forces both
+            // neighbouring tangents flat below rather than skipping the segment — unreachable today (SampleAxis
+            // spacing is always stride·width/denom > 0, so xs is always strictly increasing) but documented and
+            // tested (CurveSmoothingTests.MonotoneTangents_ZeroDx_DoesNotThrowOrNaN) so a future caller that can
+            // produce ties knows what happens: no exception, no NaN, just a flat tangent at the tie.
             double dx = xs[k + 1] - xs[k];
             d[k] = dx == 0 ? 0 : (ys[k + 1] - ys[k]) / dx;
         }

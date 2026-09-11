@@ -96,6 +96,54 @@ public class CurveSmoothingTests
     }
 
     [Fact]
+    public void MonotoneTangents_ZeroDx_DoesNotThrowOrNaN()
+    {
+        // Two samples projected to the same pixel X (a zero-dx segment) — documents the chosen behaviour (review
+        // N1): the degenerate secant is treated as 0, which zeroes both of its neighbouring tangents, same as any
+        // other flat secant. Unreachable via SampleAxis today (spacing is always > 0) but must not throw or NaN.
+        double[] xs = { 0, 1, 1, 2 };
+        double[] ys = { 0, 5, 8, 10 };
+        var tangents = new double[4];
+        CurveSmoothing.MonotoneTangents(xs, ys, tangents);
+        Assert.All(tangents, t => Assert.False(double.IsNaN(t)));
+        Assert.Equal(0, tangents[1], 10);
+        Assert.Equal(0, tangents[2], 10);
+    }
+
+    [Fact]
+    public void Curve_SpikySeries_NeverOvershootsItsSegmentRange()
+    {
+        // Review S3: nothing previously evaluated the resulting cubic itself — only tangent properties. Walk the
+        // Bézier for every segment of a spiky series at t = 0..1 in 0.02 steps and assert every point stays
+        // within that segment's [min(y_k, y_k+1), max(y_k, y_k+1)] — the property the feature actually promises
+        // ("a spike still reads as a spike", never overshooting between two samples).
+        double[] xs = { 0, 1, 2, 3, 4 };
+        double[] ys = { 0, 10, 0.2, 9, 1 };
+        var tangents = new double[xs.Length];
+        CurveSmoothing.MonotoneTangents(xs, ys, tangents);
+
+        for (int k = 0; k < xs.Length - 1; k++)
+        {
+            var (c1x, c1y, c2x, c2y) = CurveSmoothing.BezierControlPoints(
+                xs[k], ys[k], tangents[k], xs[k + 1], ys[k + 1], tangents[k + 1]);
+            double lo = Math.Min(ys[k], ys[k + 1]);
+            double hi = Math.Max(ys[k], ys[k + 1]);
+            for (double t = 0; t <= 1.0; t += 0.02)
+            {
+                double y = CubicBezier(ys[k], c1y, c2y, ys[k + 1], t);
+                Assert.True(y >= lo - 1e-9 && y <= hi + 1e-9,
+                    $"segment {k} overshot at t={t}: y={y}, expected within [{lo}, {hi}]");
+            }
+        }
+    }
+
+    private static double CubicBezier(double p0, double p1, double p2, double p3, double t)
+    {
+        double u = 1 - t;
+        return u * u * u * p0 + 3 * u * u * t * p1 + 3 * u * t * t * p2 + t * t * t * p3;
+    }
+
+    [Fact]
     public void BezierControlPoints_StraightLine_ControlsAreCollinear()
     {
         var (c1x, c1y, c2x, c2y) = CurveSmoothing.BezierControlPoints(0, 0, 2, 1, 2, 2);

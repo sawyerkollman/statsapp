@@ -9,13 +9,18 @@ so only the sections that apply are kept.
 
 - Date/time: 2026-09-11 (Windows 11 Pro, this session's worktree)
 - Repo/branch: `feature/graph-effects` (worktree `C:\claude-projects\Stats-timescale`)
-- Candidate commit: `2e5d5fb` ("feat(app): smooth curves, fixed time axis, glow, pulse, and eased bars/gauges" —
-  Tasks 1–2). T3 (this task) adds harness/test/doc changes on top, uncommitted at capture time.
-- Dirty files at capture time: `tools/Stats.UiPreview/PreviewComposition.cs`,
-  `tools/Stats.UiPreview/SubstateCatalog.cs`, `tools/Stats.UiPreview/Views/CaptureHost.cs`,
-  `tools/Stats.UiPreview/captures/baseline.json`, `tests/Stats.UiPreview.Tests/GraphEffectsSubstateTests.cs` (new).
+- Candidate commit: branch tip `7913bc7` ("feat(tools): graph-effects preview substates, captures, and evidence")
+  **+ this fix wave (uncommitted)** — review N5: the previous revision of this document understated the
+  candidate as `2e5d5fb` with T3 uncommitted; T3 (harness/tests/evidence) was committed as `7913bc7` before the
+  whole-branch review ran, so the fix wave below starts from the branch tip, not from `2e5d5fb`.
+- Dirty files at fix-wave capture time (uncommitted, on top of `7913bc7`): see "Fix wave" section of
+  `docs/graph-effects/REVIEW.md` for the full list of source/test changes; the harness-facing subset is
+  `tools/Stats.UiPreview/PreviewComposition.cs`, `tools/Stats.UiPreview/SubstateCatalog.cs`,
+  `tools/Stats.UiPreview/captures/baseline.json`, `tests/Stats.UiPreview.Tests/GraphEffectsSubstateTests.cs`.
 - .NET SDK: 9.0.316 (targeting `net8.0-windows`); Windows 11 Pro 10.0.26220.
-- Overall status: implemented, captured, visually inspected.
+- Overall status: implemented, captured, visually inspected. See "Fix wave re-captures" below for the
+  post-review state; the "Captures" table further down is the original T3 capture pass and is kept for history
+  (some of it — notably the half-width dashboard/details captures — is exactly what review S2 found wrong).
 
 ## What changed in the harness (Task 3 scope)
 
@@ -82,6 +87,42 @@ fake reader/backend/marker/startup/update/settings entries (no production servic
 - **CPU cost at idle** — the spec's owner checklist calls for a Task Manager check (~1% or less) that only makes
   sense against the running production app, not this fixture-driven preview host.
 
+## Fix wave re-captures
+
+Per `docs/graph-effects/REVIEW.md`'s "Fix wave" section (added by this pass) — B1/B2/S1–S6/N1–N5 fixed. S2's
+fixture fix (store capacity now matches the fixture's own tick count instead of a hardcoded 120, so a capture
+that doesn't opt into a "warmup" substate renders a full buffer) changes every dashboard/details capture's
+sparkline width, so the whole `baseline.json` manifest was re-run, not just the `graph-effects/` entries.
+
+Command: `dotnet run --project tools/Stats.UiPreview -- --batch tools/Stats.UiPreview/captures/baseline.json`.
+`baseline.json` previously had no `"Method"` field on any entry, so every capture silently defaulted to
+`CaptureSpec.Method = "screen"` — real desktop screenshot, per `docs/ui-polish/PREVIEW_HARNESS.md`'s "Use an
+actual visible-window capture when validating native title bars, dropdowns, context menus, or tooltips". In this
+worktree's shell there is no real interactive desktop session behind the batch run, so `"screen"` silently
+captured whatever was on the physical/virtual screen (a desktop wallpaper gradient, not the app window at all) —
+confirmed by reading the resulting PNGs, which showed a smooth colour gradient with no UI whatsoever. Added
+`"Method": "rtb"` to every entry (matching what this document already claimed the T3 captures used) and re-ran;
+every output then matched its logical `Width`/`Height` exactly (e.g. `1180x720`, not some screen-resolution
+crop) and showed the actual rendered view. This also means the original "Captures" table below, despite its own
+`Method: rtb` claim, was almost certainly captured the same broken way in whatever environment produced it —
+worth a spot-check before trusting any pre-fix-wave PNG from this branch.
+
+Batch result: 58 manifest entries → 63 capture(s) written (one entry, `v6-theme-cycle`, fans out into 6 themed
+captures), 0 failed, run time ~16s (a second, warmed-up run measured this; a cold run after a `dotnet build` was
+~23s — both well under a minute for the full manifest). No `--filter`/subset flag exists on the batch command
+(`Program.cs`'s `RunBatch` takes only a manifest path), so per the task instructions the whole manifest was run
+rather than a hand-picked subset.
+
+Re-inspected PNGs (`Read` tool, `artifacts/graph-effects/` and `artifacts/ui-polish/before/`, both git-ignored):
+
+| File | Observation |
+| --- | --- |
+| `v13-dashboard-graphs-effects-dark-amber.png` | Every tile's sparkline now spans the tile's full width — review S2's fix confirmed: store capacity (60) matches the fixture's 60 ticks, so this is a full buffer, not the half-width line the pre-fix-wave capture showed. |
+| `v13-dashboard-graphs-warmup-dark-amber.png` | Every sparkline occupies only the right ~25% of its track (15 of 60 samples), line flush with the track's right edge, empty space to the left — `SampleAxis`'s right-anchored fixed axis confirmed still correct after the capacity change. |
+| `v13-details-detail-smooth-dark-amber.png` | HistoryChart line spans the full plot width; the five time-axis labels (`-59s … -44s … -30s … -15s … now`) are evenly spaced across that same full width and land where the (now full-width) data actually is — review B2's fix confirmed on a full buffer. |
+| `v13-details-detail-warmup-dark-amber.png` (new substate, added this pass — review B2/S2's owner-checklist item 5) | Buffer is 25% full (15/60); the line occupies only the chart's right quarter, and — critically — its left (oldest) end sits right at the `-15s` label, not partway across the plot: `BuildTimeAxisLabels` now bases the axis window on `max(capacity, sampleCount) = 60`, so the labels still span the *full* 59-second axis window even though the data only fills the most recent ~14 seconds of it. This is exactly the B2 fix wave's target scenario. |
+| `v1-dashboard-normal.png`, `v11-details-thresholds-dark.png` (spot-checked `ui-polish` baselines affected by the capacity change) | Full-width sparklines/history line, labels aligned with data start — consistent with the graph-effects captures above; no regression from the capacity fix. |
+
 ## Gate outcomes
 
 | Gate | Result | Evidence |
@@ -89,6 +130,14 @@ fake reader/backend/marker/startup/update/settings entries (no production servic
 | Build | Pass | `dotnet build --nologo` — 0 warnings, 0 errors. |
 | Tests | Pass | `dotnet test --nologo` — Stats.Core.Tests 714/714, Stats.UiPreview.Tests 185/185 (172 pre-existing + 13 new in `GraphEffectsSubstateTests.cs`), 0 failures. |
 | Captures | Pass | 7/7 written, 0 failed, every sidecar `Warnings: []`. |
+
+### Fix wave gate re-run
+
+| Gate | Result | Evidence |
+| --- | --- | --- |
+| Build | Pass | `dotnet build --nologo` — 0 warnings, 0 errors. |
+| Tests | Pass | `dotnet test --nologo` — Stats.Core.Tests 727/727 (714 + 13 new: `SampleAxisTests.IndexAt_*` ×7, `CurveSmoothingTests` ×2, `MetricDetailViewModelTests.TimeAxisLabels_WarmUpBuffer_*` ×1, `MetricDetailViewModelTests`/`MetricTileViewModelTests` renames ×2, net +13), Stats.UiPreview.Tests 187/187 (185 + 2 new: `DetailWarmupSubstate_*`, `SubstateCatalog` theory row for `detail-warmup`), 0 failures, 0 warnings. |
+| Captures | Pass | Full `baseline.json` batch (58 entries → 63 captures) re-run with `Method: rtb`, 0 failed, run time ~16–23s. |
 
 ## Final handoff
 

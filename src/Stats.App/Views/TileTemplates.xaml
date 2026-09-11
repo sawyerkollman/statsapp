@@ -170,7 +170,7 @@
                     <TextBlock Style="{StaticResource TileSeverityGlyph}"/>
                 </StackPanel>
                 <TextBlock DockPanel.Dock="Top" Text="{Binding LimitText}" Style="{StaticResource TileOptionalText}"/>
-                <controls:Sparkline Values="{Binding HistoryValues}" Unit="{Binding Unit}" Capacity="{Binding HistoryCapacity}"
+                <controls:Sparkline Values="{Binding HistoryValues}" Unit="{Binding Unit}" Capacity="{Binding HistorySampleCapacity}"
                                     Stroke="{Binding Severity, Converter={StaticResource SeverityToBrush}, ConverterParameter=accent}"
                                     Margin="0,4"/>
             </DockPanel>
