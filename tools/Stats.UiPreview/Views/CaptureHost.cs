@@ -33,7 +33,7 @@ public static class CaptureHost
 
         bool themeCycle = spec.SubstateList.Contains("theme-cycle");
         var buildSubstates = spec.SubstateList
-            .Where(s => s != "theme-cycle")
+            .Where(s => s != "theme-cycle" && !s.StartsWith("category-", StringComparison.Ordinal))
             .Select(s => spec.View == "settings" && s == "update-error" ? "settings-update-error" : s)
             .ToArray();
 
@@ -203,10 +203,19 @@ public static class CaptureHost
 
     // ---- substates that need a real visual tree ----
 
+    /// <summary>--substate category-<name> for --view settings (T5): the category name maps 1:1 to the nested
+    /// TabControl's TabItem order (Appearance, Monitoring, Alerts, Overlay, System) in DashboardWindow.xaml.</summary>
+    private static readonly string[] SettingsCategoryOrder = { "appearance", "monitoring", "alerts", "overlay", "system" };
+
     private static void ApplyVisualSubstates(Window window, CaptureSpec spec, PreviewComposition c)
     {
         foreach (var substate in spec.SubstateList)
         {
+            if (substate.StartsWith("category-", StringComparison.Ordinal) && window is DashboardWindow categoryWindow)
+            {
+                SelectSettingsCategory(categoryWindow, substate["category-".Length..]);
+                continue;
+            }
             switch (substate)
             {
                 case "tile-menu" when window is DashboardWindow:
@@ -219,6 +228,17 @@ public static class CaptureHost
             }
         }
         if (spec.View == "alerts" && window is PeaksWindow pw) SelectAlertsTab(pw);
+    }
+
+    private static void SelectSettingsCategory(Window window, string category)
+    {
+        var tabs = VisualTreeUtil.FirstDescendant<TabControl>(window, t => t.Name == "SettingsCategoryTabs");
+        if (tabs is null) return;
+        var index = Array.IndexOf(SettingsCategoryOrder, category.ToLowerInvariant());
+        if (index < 0 || index >= tabs.Items.Count)
+            throw new ArgumentException($"--substate 'category-{category}' does not match a settings category. Valid: {string.Join(", ", SettingsCategoryOrder)}");
+        tabs.SelectedIndex = index;
+        DispatcherUtil.WaitFrames();
     }
 
     private static void OpenFirstTileContextMenu(Window window)

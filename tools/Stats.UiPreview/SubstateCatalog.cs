@@ -9,7 +9,8 @@ internal static class SubstateCatalog
     {
         ["dashboard"] = new[] { "collapsed-all", "tile-menu", "degraded", "sensor-failure", "update-offered", "update-progress", "update-error", "fps-hint", "theme-cycle" },
         ["picker"] = new[] { "no-results", "filtered" },
-        ["settings"] = new[] { "theme-dropdown", "invalid-threshold", "invalid-limit", "invalid-hotkey", "restart-required", "startup-checking", "startup-error", "update-checking", "update-error" },
+        ["settings"] = new[] { "theme-dropdown", "invalid-threshold", "invalid-limit", "invalid-hotkey", "restart-required", "startup-checking", "startup-error", "update-checking", "update-error",
+            "category-appearance", "category-monitoring", "category-alerts", "category-overlay", "category-system" },
         ["fans"] = new[] { "off", "on", "manual", "curve", "pump", "modified", "no-channels", "conflict", "recovery", "write-failed" },
         ["peaks"] = new[] { "empty", "populated", "long-names" },
         ["alerts"] = new[] { "empty", "ongoing" },
