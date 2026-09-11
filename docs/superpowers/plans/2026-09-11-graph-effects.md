@@ -7,7 +7,7 @@ Spec: `docs/superpowers/specs/2026-09-11-graph-effects-design.md`. Branch `featu
 - [x] **Task 1 — Core math + settings** (`feat(core):`): `CurveSmoothing`, `SampleAxis`,
       `AppSettings.SmoothLines/GraphEffects`, `SettingsViewModel` toggles + `SettingsChange.Graphs`,
       `MetricTileViewModel.HistoryCapacity` (+ detail VM). Tests per the spec's acceptance list.
-- [ ] **Task 2 — Controls** (`feat(app):`): `GraphStyle`, `Sparkline`/`HistoryChart` fixed axis + curve + glow +
+- [x] **Task 2 — Controls** (`feat(app):`): `GraphStyle`, `Sparkline`/`HistoryChart` fixed axis + curve + glow +
       pulse, `LevelBar`/`ArcGauge` gradient/glow + eased fraction, `Capacity` bindings, Settings tab "Graphs"
       header, `App.xaml.cs` wiring.
 - [ ] **Task 3 — Harness + docs** (`feat(tools):`/`docs:`): substates, warm-up fixture, `baseline.json`,

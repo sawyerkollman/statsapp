@@ -452,6 +452,10 @@
 
                                             <CheckBox Margin="0,6,0,0" Content="Show CPU core matrix" IsChecked="{Binding ShowCoreMatrix}"/>
 
+                                            <TextBlock Text="Graphs" Style="{StaticResource SettingsHeader}"/>
+                                            <CheckBox Margin="0,6,0,0" Content="Smooth lines" IsChecked="{Binding SmoothLines}"/>
+                                            <CheckBox Margin="0,6,0,0" Content="Glow and motion effects" IsChecked="{Binding GraphEffects}"/>
+
                                         </StackPanel>
                                     </ScrollViewer>
                                 </TabItem>

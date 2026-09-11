@@ -3,6 +3,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
+using System.Windows.Media.Animation;
 using Stats.App.Helpers;
 using Stats.Core.Metrics;
 
@@ -14,12 +15,14 @@ namespace Stats.App.Controls;
 /// value and time. Values is IReadOnlyList&lt;float&gt; (array-typed DPs can't be bound inside DataTemplates —
 /// MC4102). A NaN entry is a recorded gap (see MetricHistory.Add): the min/max range and the polyline/fill all
 /// ignore it, and the line/fill are broken into one figure per run of finite samples so a gap is a visible break.
+/// Samples are laid out on the fixed <see cref="SampleAxis"/> (right-anchored, constant spacing) — see
+/// <see cref="Capacity"/>. Smoothing/glow/pulse follow <see cref="GraphStyle"/>, same as Sparkline.
 /// </summary>
 public sealed class HistoryChart : FrameworkElement
 {
     public static readonly DependencyProperty ValuesProperty = DependencyProperty.Register(
         nameof(Values), typeof(IReadOnlyList<float>), typeof(HistoryChart),
-        new FrameworkPropertyMetadata(null, FrameworkPropertyMetadataOptions.AffectsRender));
+        new FrameworkPropertyMetadata(null, FrameworkPropertyMetadataOptions.AffectsRender, OnValuesChanged));
 
     public static readonly DependencyProperty StrokeProperty = DependencyProperty.Register(
         nameof(Stroke), typeof(Brush), typeof(HistoryChart),
@@ -53,6 +56,18 @@ public sealed class HistoryChart : FrameworkElement
         nameof(YAxisLabels), typeof(IReadOnlyList<string>), typeof(HistoryChart),
         new FrameworkPropertyMetadata(null, FrameworkPropertyMetadataOptions.AffectsRender));
 
+    /// <summary>Ring-buffer capacity behind <see cref="Values"/> — 0 (default) behaves as before (samples
+    /// stretched across the full plot width). See <see cref="SampleAxis"/>.</summary>
+    public static readonly DependencyProperty CapacityProperty = DependencyProperty.Register(
+        nameof(Capacity), typeof(int), typeof(HistoryChart),
+        new FrameworkPropertyMetadata(0, FrameworkPropertyMetadataOptions.AffectsRender));
+
+    /// <summary>0→1 progress of the last-value pulse ring; started by <see cref="OnValuesChanged"/> and driven by
+    /// a <see cref="DoubleAnimation"/>, never a timer — idle (no new sample) costs nothing.</summary>
+    private static readonly DependencyProperty PulseProgressProperty = DependencyProperty.Register(
+        nameof(PulseProgress), typeof(double), typeof(HistoryChart),
+        new FrameworkPropertyMetadata(0.0, FrameworkPropertyMetadataOptions.AffectsRender));
+
     private const double LeftMargin = 50, RightMargin = 8, TopMargin = 8, BottomMargin = 20;
     private static readonly Typeface Typeface = new("Segoe UI");
 
@@ -69,8 +84,16 @@ public sealed class HistoryChart : FrameworkElement
     public HistoryChart()
     {
         (_guidePen, _hoverLinePen, _hoverDotBrush, _warnPen, _critPen) = BuildThemeBrushes(out _textBrush);
-        Loaded += (_, _) => { ThemeManager.Changed -= OnThemeChanged; ThemeManager.Changed += OnThemeChanged; OnThemeChanged(); };
-        Unloaded += (_, _) => ThemeManager.Changed -= OnThemeChanged;
+        Loaded += (_, _) =>
+        {
+            ThemeManager.Changed -= OnThemeChanged; ThemeManager.Changed += OnThemeChanged; OnThemeChanged();
+            GraphStyle.Changed -= OnGraphStyleChanged; GraphStyle.Changed += OnGraphStyleChanged;
+        };
+        Unloaded += (_, _) =>
+        {
+            ThemeManager.Changed -= OnThemeChanged;
+            GraphStyle.Changed -= OnGraphStyleChanged;
+        };
     }
 
     private void OnThemeChanged()
@@ -78,6 +101,8 @@ public sealed class HistoryChart : FrameworkElement
         (_guidePen, _hoverLinePen, _hoverDotBrush, _warnPen, _critPen) = BuildThemeBrushes(out _textBrush);
         InvalidateVisual();
     }
+
+    private void OnGraphStyleChanged() => InvalidateVisual();
 
     private static (Pen Guide, Pen HoverLine, Brush HoverDot, Pen Warn, Pen Crit) BuildThemeBrushes(out Brush textBrush)
     {
@@ -114,6 +139,31 @@ public sealed class HistoryChart : FrameworkElement
     public float? CritValue { get => (float?)GetValue(CritValueProperty); set => SetValue(CritValueProperty, value); }
     public IReadOnlyList<string>? TimeAxisLabels { get => (IReadOnlyList<string>?)GetValue(TimeAxisLabelsProperty); set => SetValue(TimeAxisLabelsProperty, value); }
     public IReadOnlyList<string>? YAxisLabels { get => (IReadOnlyList<string>?)GetValue(YAxisLabelsProperty); set => SetValue(YAxisLabelsProperty, value); }
+    public int Capacity { get => (int)GetValue(CapacityProperty); set => SetValue(CapacityProperty, value); }
+    private double PulseProgress { get => (double)GetValue(PulseProgressProperty); set => SetValue(PulseProgressProperty, value); }
+
+    /// <summary>Starts the last-value pulse ring when a new sample arrives (a changed last-finite value, or a
+    /// changed count) and motion is allowed. One short DoubleAnimation per poll tick that finishes and stops
+    /// (FillBehavior.Stop) — nothing runs between ticks, so idle cost is zero.</summary>
+    private static void OnValuesChanged(DependencyObject d, DependencyPropertyChangedEventArgs e)
+    {
+        if (!GraphStyle.Motion) return;
+        var ctrl = (HistoryChart)d;
+        var oldValues = e.OldValue as IReadOnlyList<float>;
+        var newValues = e.NewValue as IReadOnlyList<float>;
+        if (newValues is null) return;
+        bool countChanged = (oldValues?.Count ?? -1) != newValues.Count;
+        bool lastChanged = LastFinite(oldValues) != LastFinite(newValues);
+        if (!countChanged && !lastChanged) return;
+        ctrl.BeginAnimation(PulseProgressProperty, new DoubleAnimation(0, 1, TimeSpan.FromMilliseconds(500)) { FillBehavior = FillBehavior.Stop });
+    }
+
+    private static float? LastFinite(IReadOnlyList<float>? values)
+    {
+        if (values is null) return null;
+        for (int i = values.Count - 1; i >= 0; i--) { if (!float.IsNaN(values[i])) return values[i]; }
+        return null;
+    }
 
     protected override void OnMouseMove(MouseEventArgs e)
     {
@@ -149,6 +199,41 @@ public sealed class HistoryChart : FrameworkElement
             else if (start < 0) start = i;
         }
         if (start >= 0) yield return (start, values.Count - start);
+    }
+
+    /// <summary>Decimated pixel points for one finite run (same stride logic and final-sample fix-up as before),
+    /// shared by the fill and line figures so a smoothed fill hugs the same curve as the line.</summary>
+    private static List<Point> RunPoints(int start, int last, int stride, Func<int, Point> at)
+    {
+        var pts = new List<Point>();
+        for (int i = start; i <= last; i += stride) pts.Add(at(i));
+        if ((last - start) % stride != 0) pts.Add(at(last));
+        return pts;
+    }
+
+    /// <summary>Emits the curve for one run's decimated points into an open figure (the first point is assumed
+    /// already placed by a leading LineTo) — monotone-cubic Béziers when smoothing is on and the run has 3+
+    /// points, otherwise straight LineTo segments. A single-point run (n &lt;= 1) draws nothing more.</summary>
+    private static void EmitCurve(StreamGeometryContext ctx, List<Point> pts, bool smooth, bool isStroked)
+    {
+        int n = pts.Count;
+        if (n <= 1) return;
+        if (!smooth || n == 2)
+        {
+            for (int i = 1; i < n; i++) ctx.LineTo(pts[i], isStroked, false);
+            return;
+        }
+
+        var xs = new double[n];
+        var ys = new double[n];
+        for (int i = 0; i < n; i++) { xs[i] = pts[i].X; ys[i] = pts[i].Y; }
+        var tangents = new double[n];
+        CurveSmoothing.MonotoneTangents(xs, ys, tangents);
+        for (int i = 1; i < n; i++)
+        {
+            var (c1x, c1y, c2x, c2y) = CurveSmoothing.BezierControlPoints(xs[i - 1], ys[i - 1], tangents[i - 1], xs[i], ys[i], tangents[i]);
+            ctx.BezierTo(new Point(c1x, c1y), new Point(c2x, c2y), pts[i], isStroked, true);
+        }
     }
 
     protected override void OnRender(DrawingContext dc)
@@ -189,50 +274,74 @@ public sealed class HistoryChart : FrameworkElement
         float range = max - min;
         if (range < 1e-6f) range = 1f;
 
-        double X(int i) => plotLeft + plotW * i / (values.Count - 1);
+        double X(int i) => SampleAxis.X(i, values.Count, Capacity, plotLeft, plotW);
         double Y(float v) => plotTop + plotH - (v - min) / range * plotH;
+        Point At(int i) => new(X(i), Y(values[i]));
+
+        bool smooth = GraphStyle.SmoothLines;
+        bool effects = GraphStyle.Effects;
 
         DrawGuide(dc, WarnValue, min, max, Y, plotLeft, plotW, _warnPen);
         DrawGuide(dc, CritValue, min, max, Y, plotLeft, plotW, _critPen);
 
         int stride = Math.Max(1, values.Count / Math.Max(1, (int)(plotW * 2)));
         var runs = FiniteRuns(values).ToList();
+        var runPoints = runs.Select(r => RunPoints(r.Start, r.Start + r.Length - 1, stride, At)).ToList();
 
-        // fill — one closed figure per finite run so a NaN run leaves a visible gap instead of bridging it.
+        // fill — one closed figure per finite run so a NaN run leaves a visible gap instead of bridging it. Uses
+        // the same (possibly smoothed) curve as the line so the gradient hugs it.
         var fill = new StreamGeometry();
         using (var ctx = fill.Open())
         {
-            foreach (var (start, len) in runs)
+            for (int r = 0; r < runs.Count; r++)
             {
-                int last = start + len - 1;
-                ctx.BeginFigure(new Point(X(start), plotTop + plotH), true, true);
-                for (int i = start; i <= last; i += stride) ctx.LineTo(new Point(X(i), Y(values[i])), false, false);
-                if ((last - start) % stride != 0) ctx.LineTo(new Point(X(last), Y(values[last])), false, false);
-                ctx.LineTo(new Point(X(last), plotTop + plotH), false, false);
+                var pts = runPoints[r];
+                if (pts.Count == 0) continue;
+                ctx.BeginFigure(new Point(pts[0].X, plotTop + plotH), true, true);
+                ctx.LineTo(pts[0], false, false);
+                EmitCurve(ctx, pts, smooth, false);
+                ctx.LineTo(new Point(pts[^1].X, plotTop + plotH), false, false);
             }
         }
         fill.Freeze();
-        dc.DrawGeometry(FillBrushFor(Stroke), null, fill);
+        dc.DrawGeometry(FillBrushFor(Stroke, effects), null, fill);
 
         // line — same per-run breakdown as the fill, above.
         var line = new StreamGeometry();
         using (var ctx = line.Open())
         {
-            foreach (var (start, len) in runs)
+            for (int r = 0; r < runs.Count; r++)
             {
-                int last = start + len - 1;
-                ctx.BeginFigure(new Point(X(start), Y(values[start])), false, false);
-                for (int i = start + stride; i <= last; i += stride) ctx.LineTo(new Point(X(i), Y(values[i])), true, false);
-                if ((last - start) % stride != 0) ctx.LineTo(new Point(X(last), Y(values[last])), true, false);
+                var pts = runPoints[r];
+                if (pts.Count == 0) continue;
+                ctx.BeginFigure(pts[0], false, false);
+                EmitCurve(ctx, pts, smooth, true);
             }
         }
         line.Freeze();
+
+        // glow pass — same geometry, wide/low-alpha pen, drawn before the main line.
+        if (effects) dc.DrawGeometry(null, GlowPenFor(Stroke), line);
+
         dc.DrawGeometry(null, new Pen(Stroke, 1.75) { LineJoin = PenLineJoin.Round }, line);
 
         // last-value dot — the newest *real* sample, which may not be the newest slot if it's currently a gap.
         int lastFinite = -1;
         for (int i = values.Count - 1; i >= 0; i--) { if (!float.IsNaN(values[i])) { lastFinite = i; break; } }
-        if (lastFinite >= 0) dc.DrawEllipse(Stroke, null, new Point(X(lastFinite), Y(values[lastFinite])), 3, 3);
+        if (lastFinite >= 0)
+        {
+            var dotCenter = new Point(X(lastFinite), Y(values[lastFinite]));
+            dc.DrawEllipse(Stroke, null, dotCenter, 3, 3);
+
+            // pulse ring — only while an animation is actually in flight (0 < p < 1); idle cost is zero.
+            double p = PulseProgress;
+            if (effects && p > 0 && p < 1)
+            {
+                double radius = 2.5 + 6.5 * p;
+                byte alpha = (byte)Math.Round(0.6 * (1 - p) * 255);
+                dc.DrawEllipse(null, PulsePenFor(Stroke, alpha), dotCenter, radius, radius);
+            }
+        }
 
         // hover crosshair + value/time label — a gap sample still shows the crosshair (so the user can see where
         // the gap is) but no dot, and the label reports "—" for its value (see HoverLabel).
@@ -290,12 +399,33 @@ public sealed class HistoryChart : FrameworkElement
         dc.DrawText(ft, new Point(tx, Math.Max(0, top - ft.Height - 2)));
     }
 
-    private static Brush FillBrushFor(Brush stroke)
+    private static Brush FillBrushFor(Brush stroke, bool effects)
     {
         var c = stroke is SolidColorBrush sc ? sc.Color : Colors.Orange;
+        byte top = effects ? (byte)0x58 : (byte)0x40;
         var b = new LinearGradientBrush(
-            Color.FromArgb(0x40, c.R, c.G, c.B), Color.FromArgb(0x00, c.R, c.G, c.B), 90);
+            Color.FromArgb(top, c.R, c.G, c.B), Color.FromArgb(0x00, c.R, c.G, c.B), 90);
         b.Freeze();
         return b;
+    }
+
+    private static Pen GlowPenFor(Brush stroke)
+    {
+        var c = stroke is SolidColorBrush sc ? sc.Color : Colors.Orange;
+        var brush = new SolidColorBrush(Color.FromArgb(0x38, c.R, c.G, c.B));
+        brush.Freeze();
+        var pen = new Pen(brush, 4.5) { LineJoin = PenLineJoin.Round, StartLineCap = PenLineCap.Round, EndLineCap = PenLineCap.Round };
+        pen.Freeze();
+        return pen;
+    }
+
+    private static Pen PulsePenFor(Brush stroke, byte alpha)
+    {
+        var c = stroke is SolidColorBrush sc ? sc.Color : Colors.Orange;
+        var brush = new SolidColorBrush(Color.FromArgb(alpha, c.R, c.G, c.B));
+        brush.Freeze();
+        var pen = new Pen(brush, 1.5);
+        pen.Freeze();
+        return pen;
     }
 }
