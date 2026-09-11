@@ -2,40 +2,75 @@
                     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
 
     <!-- Application-level shared styles, extracted from App.xaml (ui-polish T0) so a non-production host
-         (tools/Stats.UiPreview) can merge exactly the same dictionaries — Theme → Controls → TileTemplates →
-         AppStyles — without constructing Stats.App.App. Every palette reference is DynamicResource so live
-         theme switching (ThemeManager.Apply replacing top-level brush entries) keeps working; see Theme.xaml. -->
+         (tools/Stats.UiPreview) can merge exactly the same dictionaries — Theme → Icons → Controls →
+         TileTemplates → AppStyles — without constructing Stats.App.App. Every palette reference is
+         DynamicResource so live theme switching (ThemeManager.Apply replacing top-level brush entries) keeps
+         working; see Theme.xaml. -->
 
 
     <!-- Text -->
     <Style TargetType="TextBlock" x:Key="GroupHeader">
-        <Setter Property="Foreground" Value="{DynamicResource AccentBrush}"/>
-        <Setter Property="FontSize" Value="14"/>
+        <Setter Property="Foreground" Value="{DynamicResource TextPrimary}"/>
+        <Setter Property="FontSize" Value="{StaticResource FontSizeSection}"/>
         <Setter Property="FontWeight" Value="SemiBold"/>
         <Setter Property="Margin" Value="8,14,0,4"/>
     </Style>
     <Style TargetType="TextBlock" x:Key="SettingsHeader">
-        <Setter Property="Foreground" Value="{DynamicResource AccentBrush}"/>
-        <Setter Property="FontSize" Value="13"/>
+        <Setter Property="Foreground" Value="{DynamicResource TextPrimary}"/>
+        <Setter Property="FontSize" Value="{StaticResource FontSizeBody}"/>
         <Setter Property="FontWeight" Value="SemiBold"/>
         <Setter Property="Margin" Value="0,14,0,6"/>
     </Style>
     <Style TargetType="TextBlock" x:Key="SettingsLabel">
         <Setter Property="Foreground" Value="{DynamicResource TextSecondary}"/>
-        <Setter Property="FontSize" Value="12"/>
+        <Setter Property="FontSize" Value="{StaticResource FontSizeLabel}"/>
         <Setter Property="VerticalAlignment" Value="Center"/>
         <Setter Property="Margin" Value="0,0,8,0"/>
     </Style>
 
     <!-- Dark control styles. HeaderButton lives in Controls.xaml: TileTemplates.xaml derives from it with
-         StaticResource, and a merged dictionary can only see keys merged before it, not App.xaml-level ones. -->
+         StaticResource, and a merged dictionary can only see keys merged before it, not App.xaml-level ones.
+         Hand-rolled template (Border + PART_ContentHost) so focus/hover/invalid states are visible and
+         corners match RadiusControl; the existing per-usage BasedOn="{StaticResource {x:Type TextBox}}"
+         derivations in DashboardWindow.xaml (DataTrigger BorderBrush=CritBrush for invalid input) keep working
+         because they set the TextBox.BorderBrush dependency property, which the template's Border forwards via
+         TemplateBinding whenever a template trigger below isn't itself overriding it (hover/focus take
+         precedence over the invalid border only while the mouse/keyboard focus is actually there). -->
     <Style TargetType="TextBox">
         <Setter Property="Background" Value="{DynamicResource ControlBg}"/>
         <Setter Property="Foreground" Value="{DynamicResource TextPrimary}"/>
         <Setter Property="BorderBrush" Value="{DynamicResource BorderDim}"/>
+        <Setter Property="BorderThickness" Value="1"/>
         <Setter Property="CaretBrush" Value="{DynamicResource TextPrimary}"/>
-        <Setter Property="Padding" Value="4,2"/>
+        <Setter Property="Padding" Value="6,3"/>
+        <Setter Property="MinHeight" Value="{StaticResource ControlMinHeightDense}"/>
         <Setter Property="VerticalContentAlignment" Value="Center"/>
+        <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="TextBox">
+                    <Border x:Name="Bd" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}"
+                            BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="{StaticResource RadiusControl}"
+                            SnapsToDevicePixels="True">
+                        <ScrollViewer x:Name="PART_ContentHost" Margin="{TemplateBinding Padding}"/>
+                    </Border>
+                    <ControlTemplate.Triggers>
+                        <!-- Hover: subtle border brighten. -->
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="Bd" Property="BorderBrush" Value="{DynamicResource TextSecondary}"/>
+                        </Trigger>
+                        <!-- Focus: visible accent outline, independent of hover. -->
+                        <Trigger Property="IsKeyboardFocusWithin" Value="True">
+                            <Setter TargetName="Bd" Property="BorderBrush" Value="{DynamicResource AccentBrush}"/>
+                        </Trigger>
+                        <!-- Disabled: recognizable without hiding the text. -->
+                        <Trigger Property="IsEnabled" Value="False">
+                            <Setter Property="Opacity" Value="0.5"/>
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
     </Style>
     <!-- CheckBox, ComboBox, ComboBoxItem, RadioButton, and Expander styles now live in Controls.xaml
          (hand-rolled templates covering focus/hover/pressed/checked/disabled states — see that file's
@@ -46,18 +81,26 @@
         <Setter Property="Padding" Value="0"/>
     </Style>
     <Style TargetType="TabItem">
+        <Setter Property="FocusVisualStyle" Value="{StaticResource StatsFocusVisual}"/>
         <Setter Property="Template">
             <Setter.Value>
                 <ControlTemplate TargetType="TabItem">
-                    <Border x:Name="Bd" Padding="12,6" Margin="0,0,4,0" CornerRadius="4,4,0,0" Background="Transparent">
-                        <ContentPresenter ContentSource="Header"
-                                          TextElement.Foreground="{DynamicResource TextSecondary}"
-                                          TextElement.FontSize="13"/>
-                    </Border>
+                    <Grid>
+                        <Border x:Name="Bd" Padding="12,6" Margin="0,0,4,0" CornerRadius="4,4,0,0" Background="Transparent">
+                            <ContentPresenter ContentSource="Header"
+                                              TextElement.Foreground="{DynamicResource TextSecondary}"
+                                              TextElement.FontSize="{StaticResource FontSizeBody}"/>
+                        </Border>
+                        <!-- Selected-state indicator: a 2-unit accent bar drawn on the neutral TileBg surface
+                             behind it, never accent-as-text-background. -->
+                        <Border x:Name="Indicator" Height="2" Margin="0,0,4,0" VerticalAlignment="Bottom"
+                                Background="{DynamicResource AccentBrush}" Visibility="Collapsed"/>
+                    </Grid>
                     <ControlTemplate.Triggers>
                         <Trigger Property="IsSelected" Value="True">
                             <Setter TargetName="Bd" Property="Background" Value="{DynamicResource TileBg}"/>
                             <Setter TargetName="Bd" Property="TextElement.Foreground" Value="{DynamicResource TextPrimary}"/>
+                            <Setter TargetName="Indicator" Property="Visibility" Value="Visible"/>
                         </Trigger>
                     </ControlTemplate.Triggers>
                 </ControlTemplate>
@@ -68,6 +111,8 @@
         <Setter Property="Background" Value="{DynamicResource FlyoutBg}"/>
         <Setter Property="Foreground" Value="{DynamicResource TextPrimary}"/>
         <Setter Property="BorderBrush" Value="{DynamicResource BorderDim}"/>
+        <Setter Property="BorderThickness" Value="1"/>
+        <Setter Property="Padding" Value="8,4"/>
     </Style>
     <!-- ContextMenu (and MenuItem) styling now lives in Controls.xaml. -->
 

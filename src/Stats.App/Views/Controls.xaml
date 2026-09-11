@@ -4,7 +4,7 @@
     <!-- Hand-rolled implicit styles/templates for the controls Aero2 renders as light system chrome
          regardless of the active palette (ScrollBar, Slider, ProgressBar, ComboBox + popup, ComboBoxItem,
          ContextMenu/MenuItem + submenu popups, CheckBox/RadioButton glyphs, Expander toggle). Merged from
-         App.xaml immediately after Theme.xaml and before TileTemplates.xaml — see
+         App.xaml immediately after Theme.xaml/Icons.xaml and before TileTemplates.xaml — see
          docs/superpowers/specs/2026-08-27-v1.7-trust-polish-design.md ("Dark control templates").
 
          Every palette reference below is DynamicResource against one of the eleven Theme.xaml brush keys
@@ -30,6 +30,19 @@
                 </ControlTemplate>
             </Setter.Value>
         </Setter>
+    </Style>
+
+    <!-- Renders one Icons.xaml geometry: <Path Style="{StaticResource IconGlyph}" Data="{StaticResource Icon.X}"/>.
+         Fill is DynamicResource TextPrimary (not the geometry itself) so every icon repaints with the active
+         theme like any other text-colored glyph; IsHitTestVisible=False keeps click/hover behavior on whatever
+         Button/control hosts the Path. -->
+    <Style x:Key="IconGlyph" TargetType="Path">
+        <Setter Property="Width" Value="16"/>
+        <Setter Property="Height" Value="16"/>
+        <Setter Property="Stretch" Value="Uniform"/>
+        <Setter Property="Fill" Value="{DynamicResource TextPrimary}"/>
+        <Setter Property="VerticalAlignment" Value="Center"/>
+        <Setter Property="IsHitTestVisible" Value="False"/>
     </Style>
 
     <!-- ============================== ScrollBar ============================== -->
@@ -624,9 +637,11 @@
     </Style>
 
     <!-- ============================== Expander ============================== -->
-    <!-- Header toggle draws its own arrow glyph (right when collapsed, rotated 90° down when expanded) rather
-         than relying on the system chevron chrome. ExpandDirection is fully handled so FansWindow's default
-         Down-direction Expander and any future Up/Left/Right usage keep working. -->
+    <!-- Header toggle draws Icon.ChevronRight (right when collapsed, rotated 90° to point down when expanded)
+         rather than relying on the system chevron chrome or a hand-drawn stroke path — reuses the same
+         geometry Icons.xaml/DESIGN.md §2 name as the future T4 section-header/T6 sources-expander chevron.
+         ExpandDirection is fully handled so FansWindow's default Down-direction Expander and any future
+         Up/Left/Right usage keep working. -->
 
     <ControlTemplate x:Key="StatsExpanderToggle" TargetType="ToggleButton">
         <Border Background="Transparent" Padding="{TemplateBinding Padding}">
@@ -635,10 +650,9 @@
                     <ColumnDefinition Width="Auto"/>
                     <ColumnDefinition Width="*"/>
                 </Grid.ColumnDefinitions>
-                <Path x:Name="Arrow" Grid.Column="0" Data="M0,0 L6,6 L0,12" Fill="Transparent" StrokeThickness="1.6"
-                      Stroke="{DynamicResource TextSecondary}" StrokeStartLineCap="Round" StrokeEndLineCap="Round"
-                      StrokeLineJoin="Round" Width="8" Height="12" Margin="2,0,8,0" VerticalAlignment="Center"
-                      RenderTransformOrigin="0.5,0.5"/>
+                <Path x:Name="Arrow" Grid.Column="0" Data="{StaticResource Icon.ChevronRight}"
+                      Fill="{DynamicResource TextSecondary}" Width="8" Height="12" Stretch="Uniform"
+                      Margin="2,0,8,0" VerticalAlignment="Center" RenderTransformOrigin="0.5,0.5"/>
                 <ContentPresenter Grid.Column="1" ContentSource="Content" VerticalAlignment="Center" RecognizesAccessKey="True"/>
             </Grid>
         </Border>
@@ -654,7 +668,7 @@
                 </Setter>
             </Trigger>
             <Trigger Property="IsMouseOver" Value="True">
-                <Setter TargetName="Arrow" Property="Stroke" Value="{DynamicResource AccentBrush}"/>
+                <Setter TargetName="Arrow" Property="Fill" Value="{DynamicResource AccentBrush}"/>
             </Trigger>
         </ControlTemplate.Triggers>
     </ControlTemplate>
@@ -704,14 +718,60 @@
 
     <!-- Shared flat button used by every window header and by TileTemplates.xaml (TileMenuButtonStyle BasedOn it).
          Lives here rather than App.xaml because a merged dictionary can resolve StaticResource only against
-         dictionaries merged before it. -->
+         dictionaries merged before it. ContentPresenter has no fixed content type, so a plain string (current
+         usages) or a StackPanel of an IconGlyph Path + TextBlock (a future T4 consumer) both render correctly.
+         BorderThickness stays reserved at 1 in every state (Transparent normally) so hover/pressed/focus never
+         shift layout by growing a border from 0. -->
+    <ControlTemplate x:Key="HeaderButtonTemplate" TargetType="Button">
+        <Border x:Name="Bd" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}"
+                BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="{StaticResource RadiusControl}"
+                SnapsToDevicePixels="True">
+            <ContentPresenter Margin="{TemplateBinding Padding}" RecognizesAccessKey="True"
+                              HorizontalAlignment="Center" VerticalAlignment="Center"/>
+        </Border>
+        <ControlTemplate.Triggers>
+            <!-- Hover: subtle surface/border change. -->
+            <Trigger Property="IsMouseOver" Value="True">
+                <Setter TargetName="Bd" Property="Background" Value="{DynamicResource ControlBg}"/>
+                <Setter TargetName="Bd" Property="BorderBrush" Value="{DynamicResource BorderDim}"/>
+            </Trigger>
+            <!-- Pressed: stronger local fill than hover, plus an accent-tinted border. -->
+            <Trigger Property="IsPressed" Value="True">
+                <Setter TargetName="Bd" Property="Background" Value="{DynamicResource GaugeTrack}"/>
+                <Setter TargetName="Bd" Property="BorderBrush" Value="{DynamicResource AccentBrush}"/>
+            </Trigger>
+            <!-- Focus: visible outline independent of hover (IsKeyboardFocused, not IsMouseOver) — the button's
+                 own FocusVisualStyle is nulled out below so this is the only focus indicator drawn. -->
+            <Trigger Property="IsKeyboardFocused" Value="True">
+                <Setter TargetName="Bd" Property="BorderBrush" Value="{DynamicResource AccentBrush}"/>
+            </Trigger>
+            <!-- Disabled: recognizable without hiding the label. -->
+            <Trigger Property="IsEnabled" Value="False">
+                <Setter Property="Opacity" Value="0.5"/>
+            </Trigger>
+        </ControlTemplate.Triggers>
+    </ControlTemplate>
+
     <Style TargetType="Button" x:Key="HeaderButton">
         <Setter Property="Padding" Value="10,4"/>
         <Setter Property="Margin" Value="8,0,0,0"/>
         <Setter Property="Background" Value="{DynamicResource TileBg}"/>
         <Setter Property="Foreground" Value="{DynamicResource TextPrimary}"/>
-        <Setter Property="BorderThickness" Value="0"/>
+        <Setter Property="BorderBrush" Value="Transparent"/>
+        <Setter Property="BorderThickness" Value="1"/>
+        <Setter Property="FontSize" Value="{StaticResource FontSizeBody}"/>
+        <Setter Property="MinHeight" Value="{StaticResource ControlMinHeightDense}"/>
         <Setter Property="Cursor" Value="Hand"/>
+        <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
+        <Setter Property="Template" Value="{StaticResource HeaderButtonTemplate}"/>
+    </Style>
+
+    <!-- Dialog OK / "Update now" primary action (T4/T7 consumers): same states as HeaderButton, just a taller
+         control and an always-visible accent border on the neutral TileBg background — never an accent-filled
+         background (see the header comment's "accent only ever drawn on a neutral surface" rule). -->
+    <Style TargetType="Button" x:Key="PrimaryButton" BasedOn="{StaticResource HeaderButton}">
+        <Setter Property="MinHeight" Value="{StaticResource ControlMinHeight}"/>
+        <Setter Property="BorderBrush" Value="{DynamicResource AccentBrush}"/>
     </Style>
 
 </ResourceDictionary>

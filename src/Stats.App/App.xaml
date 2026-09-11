@@ -9,10 +9,14 @@
                  resolve resources identically to production (see Views/AppStyles.xaml). -->
             <ResourceDictionary.MergedDictionaries>
                 <ResourceDictionary Source="pack://application:,,,/Stats.App;component/Views/Theme.xaml"/>
+                <!-- Icons.xaml: shared 16-unit icon geometries (not theme-tinted). Merged right after Theme.xaml
+                     and before Controls.xaml, which needs StaticResource access to Icon.ChevronRight for the
+                     Expander toggle. -->
+                <ResourceDictionary Source="pack://application:,,,/Stats.App;component/Views/Icons.xaml"/>
                 <!-- Controls.xaml owns the hand-rolled implicit styles/templates for ScrollBar, Slider,
                      ProgressBar, ComboBox/ComboBoxItem, ContextMenu/MenuItem, CheckBox/RadioButton, and
-                     Expander — merged after Theme.xaml (palette) and before TileTemplates.xaml (tile-specific
-                     content) per docs/superpowers/specs/2026-08-27-v1.7-trust-polish-design.md. -->
+                     Expander — merged after Theme.xaml/Icons.xaml (palette + icons) and before TileTemplates.xaml
+                     (tile-specific content) per docs/superpowers/specs/2026-08-27-v1.7-trust-polish-design.md. -->
                 <ResourceDictionary Source="pack://application:,,,/Stats.App;component/Views/Controls.xaml"/>
                 <ResourceDictionary Source="pack://application:,,,/Stats.App;component/Views/TileTemplates.xaml"/>
                 <!-- App-level text / TextBox / TabControl / ToolTip styles (formerly declared inline here). -->
