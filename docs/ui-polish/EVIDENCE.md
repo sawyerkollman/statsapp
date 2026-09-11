@@ -13,7 +13,7 @@ Placeholders are not passed checks. Status vocabulary per `AGENT_WORKFLOW.md` §
 - Windows version, .NET SDK, desktop availability: Windows 11 Pro Insider Preview 10.0.26220; .NET SDK 9.0.316 (targets net8.0-windows); interactive desktop session available; two monitors at 96 DPI (100 %): 3440×1440 primary, 2560×1440 secondary
 - Client: Claude Code (not Codex). The Codex role files in `.codex/` are not used.
 - Parent model/effort: Claude Fable 5.1 (this session); implementers Claude Sonnet, independent review Claude Opus — per the repo's `CLAUDE.md` workflow. Runtime-observed model metadata for subagents: unobservable from inside the session; requested models are recorded per task.
-- Overall status: **implemented (T0–T1)**, baseline captured — see task ledger
+- Overall status: **implemented (T0–T4)**, pending T5–T8 — see task ledger
 
 ## Routing ledger
 
@@ -21,6 +21,9 @@ Placeholders are not passed checks. Status vocabulary per `AGENT_WORKFLOW.md` §
 | --- | --- | --- | --- | --- | --- | --- |
 | T0 | parent | Claude Fable 5.1 | this session | — | 1 | done |
 | T1 | implementer | Claude Sonnet (Agent tool, model=sonnet) | unobservable | — | 1 | done |
+| T2 | implementer | Claude Sonnet | unobservable | — | 1 | done |
+| T3 | implementer | Claude Sonnet | unobservable | — | 1 | done |
+| T4 | implementer (isolated worktree) | Claude Sonnet | unobservable | — | 1 | done |
 
 Model self-reports are not runtime proof. The Codex Sol/Terra/Luna routing in `AGENT_WORKFLOW.md` is replaced for this run by the repo's Claude workflow (Sonnet implementers, Opus review, Fable controller); the technical invariants are unchanged.
 
@@ -30,9 +33,9 @@ Model self-reports are not runtime proof. The Codex Sol/Terra/Luna routing in `A
 | --- | --- | --- | --- | --- | --- | --- |
 | T0 | parent | `src/Stats.App/App.xaml`, new `Views/AppStyles.xaml`, `Views/DashboardWindow.xaml.cs`, `App.xaml.cs`, `docs/ui-polish/EVIDENCE.md` | — | done | parent | build/tests green |
 | T1 | Sonnet implementer | `tools/Stats.UiPreview/` (28 files), `tests/Stats.UiPreview.Tests/` (4 test classes, 92 tests), `Stats.sln`, `Stats.App.csproj` (InternalsVisibleTo), `.gitignore` | T0 | done | parent (inspected 12 baseline PNGs, fixed picker live-value refresh) | build/tests green; 55-capture batch ran with 0 binding/resource warnings |
-| T2 | | | | | | |
-| T3 | | | | | | |
-| T4 | | | | | | |
+| T2 | Sonnet implementer | `Theme.xaml`, `Controls.xaml`, `AppStyles.xaml`, `App.xaml`, new `Icons.xaml`, `ThemeManager.cs` (PaletteFor + 3 hex fixes), `PreviewApp.cs`, new `PaletteContrastTests.cs` | T1 | done `99effbc` | parent (diff + 16 captures incl. theme-cycle) | build/tests green, 172 contrast assertions |
+| T3 | Sonnet implementer | `TileTemplates.xaml`, `TileSizeToLengthConverter.cs`, `CoreMatrixView.xaml`, `ValueFormatter.cs` (FormatParts), `MetricTileViewModel.cs` (ValueText/UnitText), tests | T2 | done `0cf68de` | parent (8 captures; added footer ellipsis+tooltip fix) | 8 visible M tiles at V1 (unchanged) |
+| T4 | Sonnet implementer (worktree) | `DashboardWindow.xaml/.cs`, `DashboardViewModel.cs` (IsOverlayVisible, IsEmpty), one line in `App.xaml.cs`, tests | T2 | done `abf0469` (cherry-picked) | parent (8 captures regenerated on integrated tree) | build/tests green; Settings binding inventory in T4-REPORT |
 | T5 | | | | | | |
 | T6 | | | | | | |
 | T7 | | | | | | |
@@ -66,6 +69,9 @@ Model self-reports are not runtime proof. The Codex Sol/Terra/Luna routing in `A
 | T1 | `dotnet build --nologo` | 0 | 0 | ok | terminal |
 | T1 | `dotnet test --nologo` | 0 | 0 | 674 + 92 passed | terminal |
 | T1 | `dotnet run --project tools/Stats.UiPreview -- --batch tools/Stats.UiPreview/captures/baseline.json` | 0 | 0 | 55/55 captured | `artifacts/ui-polish/before/*.json` |
+| T2 `99effbc` | build / test | 0 | 0 | 674 + 172 passed; 16 captures, 0 warnings | `artifacts/ui-polish/after-t2/` |
+| T3 `0cf68de` | build / test | 0 | 0 | 684 + 172 passed; 8 captures, 0 warnings | `artifacts/ui-polish/after-t3/` |
+| T4 `abf0469` | build / test | 0 | 0 | 687 + 172 passed; 8 captures regenerated after integration, 0 warnings | `artifacts/ui-polish/after-t4/` |
 
 ## Visual evidence
 
@@ -92,8 +98,8 @@ Model self-reports are not runtime proof. The Codex Sol/Terra/Luna routing in `A
 | G0 Routing | pass (adapted) | Claude workflow per CLAUDE.md; Codex roles not applicable |
 | G1 Baseline | pass | commit `ad5ec1d`, clean tracked tree, build/tests green; 55 before-screenshots captured at `b8b9c44` |
 | G2 Preview isolation | pass | metadata scan + composition tests (92 green); sidecars list every simulated service |
-| G3 Build | pass at T1 | |
-| G4 Tests | pass at T1 | |
+| G3 Build | pass at T4 | |
+| G4 Tests | pass at T4 | |
 | G5 Visual | pending | |
 | G6 Interaction | pending | |
 | G7 Compatibility | pending | |
@@ -102,7 +108,7 @@ Model self-reports are not runtime proof. The Codex Sol/Terra/Luna routing in `A
 ## Final handoff
 
 - Concrete UI behavior changed: none yet (T0 is resource extraction + a settings seam; no visual change)
-- Design adjustments and reasons:
+- Design adjustments and reasons: T2 palette — dark CritBrush #E05A4F→#E66E64, Light AccentBrush #D97B1F→#B8650F, Light CritBrush #C94438→#B23A2F (contrast targets; dark surfaces unchanged). T3 — tile sizes exactly per DESIGN §2; footers ellipsize with tooltip. T4 — content left inset 20 (not 16) so tiles align with header text; flyout 480 capped to the scaled grid width.
 - Simulation-only evidence:
 - Real Windows/hardware checks performed:
 - Remaining blockers/checks and next commands:
