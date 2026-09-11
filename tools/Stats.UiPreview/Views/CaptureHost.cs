@@ -41,6 +41,16 @@ public static class CaptureHost
         var composition = PreviewComposition.Build(spec.Scenario, tempRoot, buildSubstates, spec.Settings);
 
         ThemeManager.Apply(spec.Theme, spec.Accent);
+        // Graph effects (T3 of docs/superpowers/plans/2026-09-11-graph-effects.md): hold GraphEffects off for the
+        // window's first bind/layout pass, below, so Sparkline/HistoryChart's last-value pulse — a real-time
+        // DoubleAnimation started the first time a control's Values binding changes from null to the fixture's
+        // initial history, if GraphStyle.Motion is already true at that moment — never starts. This harness has no
+        // way to fast-forward WPF's animation clock, so a capture taken shortly after would otherwise show a
+        // mid-flight pulse ring. GraphStyle.Apply(composition.Settings) below (after the first settle) then
+        // applies the fixture's real SmoothLines/GraphEffects before anything is captured; that second apply only
+        // fires GraphStyle.Changed (InvalidateVisual — no animation), since Values doesn't change again. Bars/
+        // gauges are unaffected either way — LevelBar/ArcGauge already skip easing on their own first assignment.
+        GraphStyle.Apply(new AppSettings { SmoothLines = composition.Settings.SmoothLines, GraphEffects = false });
         var window = BuildWindow(spec, composition);
         window.Title += " [preview]";
         window.Topmost = true;
@@ -55,6 +65,9 @@ public static class CaptureHost
         window.Show();
         DispatcherUtil.WaitForSettled(window, TimeSpan.FromSeconds(5));
         window.Activate();
+        DispatcherUtil.WaitFrames();
+
+        GraphStyle.Apply(composition.Settings); // now safe: the initial Values bind already happened at rest
         DispatcherUtil.WaitFrames();
 
         ApplyVisualSubstates(window, spec, composition);
@@ -116,6 +129,7 @@ public static class CaptureHost
     public static Window BuildWindowForInteractive(CaptureSpec spec, PreviewComposition c)
     {
         ThemeManager.Apply(spec.Theme, spec.Accent);
+        GraphStyle.Apply(c.Settings); // no capture timing constraint here — live pulses are fine interactively
         var window = BuildWindow(spec, c);
         if (spec.View is not ("threshold-dialog" or "input-dialog" or "overlay"))
         {

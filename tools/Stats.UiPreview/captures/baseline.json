@@ -58,5 +58,13 @@
   { "Scenario": "normal", "View": "overlay", "Substate": "opacity-min", "Theme": "Dark Amber", "Width": 400, "Height": 200, "Output": "artifacts/ui-polish/before/v12-overlay-opacity-min.png" },
   { "Scenario": "normal", "View": "overlay", "Substate": "opacity-max", "Theme": "Dark Amber", "Width": 400, "Height": 200, "Output": "artifacts/ui-polish/before/v12-overlay-opacity-max.png" },
   { "Scenario": "normal", "View": "overlay", "Substate": "long-value", "Theme": "Dark Amber", "Width": 400, "Height": 200, "Output": "artifacts/ui-polish/before/v12-overlay-long-value.png" },
-  { "Scenario": "normal", "View": "overlay", "Substate": "vertical", "Theme": "Dark Amber", "Width": 200, "Height": 400, "Output": "artifacts/ui-polish/before/v12-overlay-vertical.png" }
+  { "Scenario": "normal", "View": "overlay", "Substate": "vertical", "Theme": "Dark Amber", "Width": 200, "Height": 400, "Output": "artifacts/ui-polish/before/v12-overlay-vertical.png" },
+
+  { "Scenario": "normal", "View": "dashboard", "Substate": "graphs-plain", "Theme": "Dark Amber", "Width": 1180, "Height": 720, "Output": "artifacts/graph-effects/v13-dashboard-graphs-plain-dark-amber.png" },
+  { "Scenario": "normal", "View": "dashboard", "Substate": "graphs-plain", "Theme": "Light", "Width": 1180, "Height": 720, "Output": "artifacts/graph-effects/v13-dashboard-graphs-plain-light.png" },
+  { "Scenario": "normal", "View": "dashboard", "Substate": "graphs-effects", "Theme": "Dark Amber", "Width": 1180, "Height": 720, "Output": "artifacts/graph-effects/v13-dashboard-graphs-effects-dark-amber.png" },
+  { "Scenario": "normal", "View": "dashboard", "Substate": "graphs-effects", "Theme": "Light", "Width": 1180, "Height": 720, "Output": "artifacts/graph-effects/v13-dashboard-graphs-effects-light.png" },
+  { "Scenario": "normal", "View": "dashboard", "Substate": "graphs-warmup", "Theme": "Dark Amber", "Width": 1180, "Height": 720, "Output": "artifacts/graph-effects/v13-dashboard-graphs-warmup-dark-amber.png" },
+  { "Scenario": "normal", "View": "details", "Substate": "detail-plain", "Theme": "Dark Amber", "Width": 640, "Height": 420, "Output": "artifacts/graph-effects/v13-details-detail-plain-dark-amber.png" },
+  { "Scenario": "normal", "View": "details", "Substate": "detail-smooth", "Theme": "Dark Amber", "Width": 640, "Height": 420, "Output": "artifacts/graph-effects/v13-details-detail-smooth-dark-amber.png" }
 ]

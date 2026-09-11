@@ -87,7 +87,16 @@ public sealed class PreviewComposition
         }
 
         var store = new MetricStore(fixture.Definitions, capacity: 120);
-        foreach (var tick in fixture.Ticks) store.Apply(tick);
+        // "graphs-warmup" (T3 of docs/superpowers/plans/2026-09-11-graph-effects.md): apply only the most recent
+        // quarter of the fixture's ticks so the ring buffer sits at 25% of its 120-sample capacity — the fixed
+        // SampleAxis then right-anchors the line with visible empty space to its left, instead of the ~50%-full
+        // buffer every other scenario captures at (60 fixture ticks / 120 capacity). Must happen here, before the
+        // ViewModels below are built from `store`, not in ApplySubstate (which runs after they already exist).
+        const int WarmupTickCount = 30; // 25% of the 120-sample MetricStore capacity used throughout this harness
+        var ticksToApply = substates.Contains("graphs-warmup")
+            ? fixture.Ticks.Skip(Math.Max(0, fixture.Ticks.Count - WarmupTickCount)).ToList()
+            : fixture.Ticks;
+        foreach (var tick in ticksToApply) store.Apply(tick);
 
         var dashboard = new DashboardViewModel(store, settings, Save)
         {
@@ -191,6 +200,20 @@ public sealed class PreviewComposition
                 c.Dashboard.RebuildSections();
                 break;
             case "tile-menu": break; // visual-tree substate — applied in CaptureHost
+
+            // ---- graph effects (T3 of docs/superpowers/plans/2026-09-11-graph-effects.md) ----
+            // Settings-level, applied here (before the window/controls exist) so GraphStyle.Apply — called by
+            // CaptureHost right after Build() returns, still before window.Show() — has the right values in hand
+            // before any control's Loaded/OnRender runs. "graphs-effects" is mostly documentary: both settings
+            // already default to true (AppSettings.SmoothLines/GraphEffects), so this substate just makes the
+            // capture's intent explicit next to "graphs-plain".
+            case "graphs-plain": c.Settings.SmoothLines = false; c.Settings.GraphEffects = false; break;
+            case "graphs-effects": c.Settings.SmoothLines = true; c.Settings.GraphEffects = true; break;
+            case "graphs-warmup": break; // history already trimmed above, before the ViewModels were built
+
+            // ---- details (graph effects) ----
+            case "detail-plain": c.Settings.SmoothLines = false; c.Settings.GraphEffects = false; break;
+            case "detail-smooth": c.Settings.SmoothLines = true; c.Settings.GraphEffects = true; break;
 
             // ---- picker ----
             case "no-results":
