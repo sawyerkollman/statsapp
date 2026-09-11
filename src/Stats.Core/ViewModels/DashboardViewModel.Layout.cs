@@ -85,6 +85,10 @@ public sealed partial class DashboardViewModel
 
         (x, y) = ClampAndMaybeSnap(x, y);
 
+        // An explicit move supersedes the seed position — the tile must not be shifted again when the block's
+        // measured height arrives (see SetCoreMatrixSize).
+        _tilesSeededBelowUnmeasuredBlock.Remove(id);
+
         var pref = _settings.PrefFor(id);
         pref.X = x;
         pref.Y = y;

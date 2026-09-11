@@ -192,6 +192,15 @@ public sealed class PreviewComposition
                 break;
             case "tile-menu": break; // visual-tree substate — applied in CaptureHost
 
+            // ---- dashboard layout modes (docs/superpowers/specs/2026-09-11-dashboard-layout-modes-design.md) ----
+            // Setting LayoutMode (rather than poking AppSettings.DashboardLayoutMode directly) runs the VM's own
+            // OnLayoutModeChanged hook, which persists, calls RebuildSections(), and — since RebuildSections runs
+            // PlaceUnpositioned() whenever LayoutMode != Auto — seeds every still-null tile/core-matrix position
+            // deterministically. That is the easy, harness-friendly path the design calls out explicitly.
+            case "layout-free": c.Dashboard.LayoutMode = DashboardLayoutMode.Free; break;
+            case "layout-grid": c.Dashboard.LayoutMode = DashboardLayoutMode.Grid; break;
+            case "layout-free-placed": ApplyLayoutFreePlaced(c); break;
+
             // ---- picker ----
             case "no-results":
                 c.Dashboard.IsPickerOpen = true; c.Dashboard.FlyoutTabIndex = 0;
@@ -291,6 +300,26 @@ public sealed class PreviewComposition
             default:
                 throw new ArgumentException($"Unknown substate '{substate}'.", nameof(substate));
         }
+    }
+
+    /// <summary>Free layout, seeded, then a few tiles are explicitly moved — including one deliberately overlapping
+    /// pair (two tiles given the exact same X/Y) to show overlap is allowed in Free/Snap — and the core-matrix
+    /// block is dragged off its seeded (0,0) spot, all through the same <see cref="DashboardViewModel.SetTilePosition"/>/
+    /// <see cref="DashboardViewModel.SetCoreMatrixPosition"/> paths a real drag or nudge would use.</summary>
+    private static void ApplyLayoutFreePlaced(PreviewComposition c)
+    {
+        c.Dashboard.LayoutMode = DashboardLayoutMode.Free; // seeds every still-unplaced tile + the core-matrix block
+        var tiles = c.Dashboard.Tiles;
+        if (tiles.Count >= 2)
+        {
+            // Deliberately overlapping pair — same X/Y, proving Free/Snap allows overlap.
+            c.Dashboard.SetTilePosition(tiles[0].Definition.Id, 700, 420);
+            c.Dashboard.SetTilePosition(tiles[1].Definition.Id, 700, 420);
+        }
+        if (tiles.Count >= 3)
+            c.Dashboard.SetTilePosition(tiles[2].Definition.Id, 980, 60);
+        if (c.Dashboard.CoreMatrix is not null)
+            c.Dashboard.SetCoreMatrixPosition(760, 540); // moved off its seeded (0,0) spot
     }
 
     private static void ApplyFanManual(PreviewComposition c)

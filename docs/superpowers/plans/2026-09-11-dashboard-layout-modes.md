@@ -13,6 +13,6 @@ Spec: `docs/superpowers/specs/2026-09-11-dashboard-layout-modes-design.md`. Bran
       spec's acceptance list.
 - [x] **Task 3 — View** (`feat(app):`): converter delegates to `TileDimensions`; free canvas + drag +
       keyboard nudge + status lines + View menu items; Auto path byte-identical.
-- [ ] **Task 4 — Harness + docs** (`feat(tools):`/`docs:`): substates and manifest entries; captures in
+- [x] **Task 4 — Harness + docs** (`feat(tools):`/`docs:`): substates and manifest entries; captures in
       `artifacts/ui-polish/layout/`; README section.
 - [ ] **Task 5 — Review**: Opus whole-branch review + fix wave; PR to master with owner checklist.

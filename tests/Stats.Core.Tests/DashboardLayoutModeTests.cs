@@ -181,6 +181,20 @@ public class DashboardLayoutModeTests
         Assert.Equal(before + 1, saves());
     }
 
+    [Fact]
+    public void SetCoreMatrixSize_DoesNotShiftATileMovedExplicitlyAfterSeeding()
+    {
+        // Same seeded-under-an-unmeasured-block setup as above, but the user (or a harness substate) drags the
+        // tile before the block reports its size: the explicit position wins and must not be shifted afterwards.
+        var (vm, s, _, _) = Make(DashboardLayoutMode.Free, showCoreMatrix: true, "cpu.temp");
+        vm.SetTilePosition("cpu.temp", 700, 420);
+
+        vm.SetCoreMatrixSize(300, 200);
+
+        Assert.Equal(420, s.TilePrefs["cpu.temp"].Y);
+        Assert.Equal(420, vm.Tiles.Single(t => t.Definition.Id == "cpu.temp").Y);
+    }
+
     // ---- seed pack (PlaceUnpositioned) ----
 
     [Fact]
