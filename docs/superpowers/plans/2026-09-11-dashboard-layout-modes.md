@@ -4,7 +4,7 @@ Spec: `docs/superpowers/specs/2026-09-11-dashboard-layout-modes-design.md`. Bran
 `feature/dashboard-layout-modes` from master `75115aa`. Gates at every checkpoint: `dotnet build --nologo`
 (0 warnings) and `dotnet test --nologo` (green, 0 warnings). Commit prefixes per CLAUDE.md.
 
-- [ ] **Task 1 — Core model** (`feat(core):`): `DashboardLayoutMode` enum + `AppSettings.DashboardLayoutMode`,
+- [x] **Task 1 — Core model** (`feat(core):`): `DashboardLayoutMode` enum + `AppSettings.DashboardLayoutMode`,
       `TilePref.X/Y`, `AppSettings.CoreMatrixX/Y`, `SettingsService` sanitation, `TileDimensions`,
       `DashboardLayout` statics, `MetricTileViewModel.X/Y/Width/Height`. Tests: settings round-trip/sanitize,
       `TileDimensions`, `Snap`.

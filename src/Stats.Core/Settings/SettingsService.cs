@@ -57,6 +57,13 @@ public sealed class SettingsService
         settings.HistoryWindowMinutes = SnapHistoryMinutes(settings.HistoryWindowMinutes);
         settings.AlertHoldSeconds = Math.Clamp(settings.AlertHoldSeconds, 1, 120);
         settings.DashboardUiScale = Math.Clamp(settings.DashboardUiScale, 0.9, 1.3);
+        settings.CoreMatrixX = SanitizePosition(settings.CoreMatrixX);
+        settings.CoreMatrixY = SanitizePosition(settings.CoreMatrixY);
+        foreach (var pref in settings.TilePrefs.Values.Where(p => p is not null))
+        {
+            pref.X = SanitizePosition(pref.X);
+            pref.Y = SanitizePosition(pref.Y);
+        }
         // An explicit JSON null deserializes over the property initializer, so re-establish the empty collections.
         settings.ThresholdRules ??= new();
         settings.ThresholdOverrides ??= new();
@@ -119,4 +126,10 @@ public sealed class SettingsService
     /// <summary>Nearest allowed value (2/5/15/60); ties resolve upward.</summary>
     public static int SnapHistoryMinutes(int minutes) =>
         AllowedHistoryMinutes.OrderBy(a => Math.Abs(a - minutes)).ThenByDescending(a => a).First();
+
+    /// <summary>A NaN, negative, or absurdly large (&gt; 100 000) dashboard-canvas coordinate sanitizes to null
+    /// ("not yet placed" — the seed pack re-places it) rather than being clamped into range, since a corrupt
+    /// stored value carries no useful position information to preserve.</summary>
+    private static double? SanitizePosition(double? v) =>
+        v is double d && !double.IsNaN(d) && d >= 0 && d <= 100_000 ? d : null;
 }
