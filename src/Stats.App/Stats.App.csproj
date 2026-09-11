@@ -46,4 +46,12 @@
     <Resource Include="Assets\app.ico" />
   </ItemGroup>
 
+  <!-- tools/Stats.UiPreview (T1 preview harness) and its test project reach internal x:Name fields (PickerFlyout,
+       WarnBox, etc.) and internal helpers (DarkTitleBar) on the real production views/windows so the preview can
+       drive real WPF surfaces without duplicating them. Never referenced by production code. -->
+  <ItemGroup>
+    <InternalsVisibleTo Include="Stats.UiPreview" />
+    <InternalsVisibleTo Include="Stats.UiPreview.Tests" />
+  </ItemGroup>
+
 </Project>

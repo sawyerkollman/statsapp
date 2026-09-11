@@ -41,7 +41,9 @@ public static class ThemeManager
         (brushKey.EndsWith("Brush", StringComparison.Ordinal) ? brushKey[..^"Brush".Length] : brushKey) + "Color";
 
     private const string DarkWarn = "#FFE6A23C";
-    private const string DarkCrit = "#FFE05A4F";
+    // ui-polish T2 contrast fix: was #FFE05A4F (~4.18:1 on TileBg #252528, WCAG AA fail for small text) —
+    // lightened to ~4.94:1 on TileBg (and higher still on the darker WindowBg) while staying a clearly "red" crit hue.
+    private const string DarkCrit = "#FFE66E64";
 
     private static readonly IReadOnlyDictionary<string, IReadOnlyDictionary<string, string>> Palettes =
         new Dictionary<string, IReadOnlyDictionary<string, string>>
@@ -59,9 +61,14 @@ public static class ThemeManager
                 ["BorderDim"] = "#FFD0D0D6",
                 ["TextPrimary"] = "#FF1E1E22",
                 ["TextSecondary"] = "#FF6A6A72",
-                ["AccentBrush"] = "#FFD97B1F",
+                // ui-polish T2 contrast fix: was #FFD97B1F (~2.60:1 on ControlBg #EBEBEF, WCAG focus/boundary
+                // fail — 3:1 target) — darkened to ~3.60:1 on ControlBg (higher still on the lighter
+                // WindowBg/FlyoutBg/TileBg) while staying the same amber/orange hue family.
+                ["AccentBrush"] = "#FFB8650F",
                 ["WarnBrush"] = "#FF8C5A0C", // darkened from #C4841D (~3.1:1 on #F2F2F4, WCAG AA fail) to ~5.2:1
-                ["CritBrush"] = "#FFC94438", // ~4.6:1 on #F2F2F4 already — no change needed
+                // ui-polish T2 contrast fix: was #FFC94438 (~4.30:1 on WindowBg #F2F2F4, WCAG AA fail for
+                // small text) — darkened to ~5.31:1 on WindowBg while staying a clearly "red" crit hue.
+                ["CritBrush"] = "#FFB23A2F",
                 ["GaugeTrack"] = "#FFD8D8DE",
             },
         };
@@ -112,6 +119,16 @@ public static class ThemeManager
             resources[key] = brush;
         }
         Changed?.Invoke();
+    }
+
+    /// <summary>Test-only accessor exposing a preset's resolved hex palette (the same table <see cref="Apply"/>
+    /// reads from) for contrast verification — see tests/Stats.UiPreview.Tests/PaletteContrastTests.cs. Not
+    /// used by any production code path (production always goes through <see cref="Apply"/>). Falls back to
+    /// <see cref="ThemePresets.Default"/> for an unknown name, matching Apply's own fallback.</summary>
+    public static IReadOnlyDictionary<string, string> PaletteFor(string presetName)
+    {
+        var preset = ThemePresets.SanitizePresetName(presetName);
+        return Palettes.TryGetValue(preset, out var palette) ? palette : Palettes[ThemePresets.Default];
     }
 
     /// <summary>Current resolved colour of a palette brush (e.g. "CritBrush") — for code that derives a tint from

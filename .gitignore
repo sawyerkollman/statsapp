@@ -5,3 +5,4 @@ obj/
 dist/
 installer/publish/
 installer/vendor/
+artifacts/

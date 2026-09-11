@@ -5,11 +5,11 @@
         ResizeMode="NoResize" ShowInTaskbar="False"
         Background="{DynamicResource FlyoutBg}">
     <StackPanel Margin="16">
-        <TextBlock x:Name="PromptText" Foreground="{DynamicResource TextSecondary}" FontSize="12" Margin="0,0,0,6"/>
-        <TextBox x:Name="Input" FontSize="13"/>
+        <TextBlock x:Name="PromptText" Foreground="{DynamicResource TextSecondary}" FontSize="{StaticResource FontSizeLabel}" Margin="0,0,0,6"/>
+        <TextBox x:Name="Input"/>
         <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,12,0,0">
-            <Button Content="Cancel" IsCancel="True" Style="{StaticResource HeaderButton}" MinWidth="70"/>
-            <Button Content="OK" IsDefault="True" Click="Ok_Click" Style="{StaticResource HeaderButton}" MinWidth="70"/>
+            <Button Content="Cancel" IsCancel="True" Style="{StaticResource HeaderButton}" MinWidth="72"/>
+            <Button Content="OK" IsDefault="True" Click="Ok_Click" Style="{StaticResource PrimaryButton}" MinWidth="72" Margin="8,0,0,0"/>
         </StackPanel>
     </StackPanel>
 </Window>

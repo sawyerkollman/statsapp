@@ -34,6 +34,11 @@ public sealed partial class MetricTileViewModel : ObservableObject
     [ObservableProperty] private string _displayName;
     [ObservableProperty] private string _unit;
     [ObservableProperty] private string _currentText = "—";
+    /// <summary>Value/unit split of <see cref="CurrentText"/> (v1.8 UI-polish §4) — the tile templates bind these
+    /// two instead of splitting <see cref="CurrentText"/> on a space, so the unit's smaller/secondary styling
+    /// can never drift from what the formatter actually produced.</summary>
+    [ObservableProperty] private string _valueText = "—";
+    [ObservableProperty] private string _unitText = "";
     [ObservableProperty] private string _minMaxText = "";
     [ObservableProperty] private string _limitText = "";
     [ObservableProperty] private string _maxText = "";
@@ -73,6 +78,7 @@ public sealed partial class MetricTileViewModel : ObservableObject
 
         var current = _history.Current;
         CurrentText = ValueFormatter.Format(Definition, current);
+        (ValueText, UnitText) = ValueFormatter.FormatParts(Definition, current);
         Severity = thresholds is not null ? thresholds.Evaluate(Definition, current) : ThresholdEvaluator.Evaluate(Definition, current, _settings);
         Fraction01 = current is float c && Max is float m && m > 0 ? Math.Clamp(c / m, 0f, 1f) : 0f;
         MaxText = Max is float mx ? ValueFormatter.Format(Definition, mx) : "";
