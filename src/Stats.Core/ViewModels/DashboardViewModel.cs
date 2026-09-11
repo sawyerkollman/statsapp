@@ -41,6 +41,9 @@ public sealed partial class DashboardViewModel : ObservableObject
             item.PropertyChanged += OnPickerItemChanged;
             PickerItems.Add(item);
         }
+        // Bypass the LayoutMode property setter (its OnLayoutModeChanged hook persists + rebuilds + saves) —
+        // RebuildSections runs unconditionally right below, and nothing has changed yet to persist.
+        _layoutMode = settings.DashboardLayoutMode;
         RebuildSections();
     }
 
@@ -93,6 +96,10 @@ public sealed partial class DashboardViewModel : ObservableObject
     /// <summary>Dashboard-wide UI scale — set by the composition root (initial value, and again on every
     /// <see cref="SettingsChange.UiScale"/>) and bound by <c>DashboardWindow</c>'s content-root LayoutTransform.</summary>
     [ObservableProperty] private double _uiScale = 1.0;
+
+    /// <summary>Auto (grouped WrapPanel, default) vs Free/Grid (one whole-dashboard canvas) — see
+    /// DashboardViewModel.Layout.cs's <c>OnLayoutModeChanged</c> for the persist/rebuild side effects.</summary>
+    [ObservableProperty] private DashboardLayoutMode _layoutMode;
 
     /// <summary>Dismissible "Gaming? Add FPS…" banner: shown while at least one Game-group metric was discovered,
     /// none of them is currently on the dashboard or overlay, and the user hasn't dismissed it before. Recomputed
@@ -379,6 +386,7 @@ public sealed partial class DashboardViewModel : ObservableObject
         if (string.IsNullOrEmpty(text)) _groupStatus.Remove(group); else _groupStatus[group] = text;
         var section = Sections.FirstOrDefault(s => s.Group == group);
         if (section is not null) section.StatusText = text ?? "";
+        RebuildStatusLines();
     }
 
     public void RebuildSections()
@@ -417,6 +425,17 @@ public sealed partial class DashboardViewModel : ObservableObject
         }
         RaiseFpsHintChanged();
         OnPropertyChanged(nameof(IsEmpty));
+        RebuildStatusLines();
+
+        // Free/Snap dashboard layout (dashboard layout modes) — see DashboardViewModel.Layout.cs. Auto never reads
+        // positions, so it neither seeds nor recomputes an extent nobody uses.
+        if (CoreMatrix is not null)
+        {
+            CoreMatrixX = _settings.CoreMatrixX ?? 0;
+            CoreMatrixY = _settings.CoreMatrixY ?? 0;
+        }
+        if (LayoutMode != DashboardLayoutMode.Auto) PlaceUnpositioned();
+        RecomputeCanvasExtent();
     }
 
     private void OnSectionExpandedChanged(string name, bool expanded)

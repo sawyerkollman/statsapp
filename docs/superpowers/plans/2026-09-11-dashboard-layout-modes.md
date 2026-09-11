@@ -8,7 +8,7 @@ Spec: `docs/superpowers/specs/2026-09-11-dashboard-layout-modes-design.md`. Bran
       `TilePref.X/Y`, `AppSettings.CoreMatrixX/Y`, `SettingsService` sanitation, `TileDimensions`,
       `DashboardLayout` statics, `MetricTileViewModel.X/Y/Width/Height`. Tests: settings round-trip/sanitize,
       `TileDimensions`, `Snap`.
-- [ ] **Task 2 — Dashboard view model** (`feat(core):`): `LayoutMode` + commands, `SetTilePosition`,
+- [x] **Task 2 — Dashboard view model** (`feat(core):`): `LayoutMode` + commands, `SetTilePosition`,
       `SetCoreMatrixPosition/Size`, seed pack, `ResetPositions`, canvas extent, `StatusLines`. Tests per the
       spec's acceptance list.
 - [ ] **Task 3 — View** (`feat(app):`): converter delegates to `TileDimensions`; free canvas + drag +
