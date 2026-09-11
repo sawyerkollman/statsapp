@@ -11,7 +11,7 @@ Spec: `docs/superpowers/specs/2026-09-11-dashboard-layout-modes-design.md`. Bran
 - [x] **Task 2 — Dashboard view model** (`feat(core):`): `LayoutMode` + commands, `SetTilePosition`,
       `SetCoreMatrixPosition/Size`, seed pack, `ResetPositions`, canvas extent, `StatusLines`. Tests per the
       spec's acceptance list.
-- [ ] **Task 3 — View** (`feat(app):`): converter delegates to `TileDimensions`; free canvas + drag +
+- [x] **Task 3 — View** (`feat(app):`): converter delegates to `TileDimensions`; free canvas + drag +
       keyboard nudge + status lines + View menu items; Auto path byte-identical.
 - [ ] **Task 4 — Harness + docs** (`feat(tools):`/`docs:`): substates and manifest entries; captures in
       `artifacts/ui-polish/layout/`; README section.

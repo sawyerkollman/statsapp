@@ -19,6 +19,14 @@ public sealed partial class DashboardViewModel
     private double _coreMatrixWidth;
     private double _coreMatrixHeight;
 
+    /// <summary>Ids of tiles the seed pack (<see cref="PlaceUnpositioned"/>) most recently placed while the
+    /// core-matrix block was being freshly seeded in that same call but its height was still unmeasured (0) — the
+    /// pack then started them at y = <see cref="DashboardLayout.Gap"/> instead of the block's real height + Gap.
+    /// <see cref="SetCoreMatrixSize"/> shifts exactly these tiles down by the now-known height once the view
+    /// reports it, then clears the list, so a later drag or another <see cref="PlaceUnpositioned"/> run is never
+    /// affected. Empty whenever the seed pack didn't just place a fresh, unmeasured block.</summary>
+    private readonly List<string> _tilesSeededBelowUnmeasuredBlock = new();
+
     public bool IsAutoLayout => LayoutMode == DashboardLayoutMode.Auto;
     public bool IsGridLayout => LayoutMode == DashboardLayoutMode.Grid;
 
@@ -104,11 +112,33 @@ public sealed partial class DashboardViewModel
 
     /// <summary>Records the core-matrix block's measured pixel size, reported by the view once it has laid the
     /// block out, so the seed pack and the canvas extent can account for it. Never persisted — position is the only
-    /// thing saved for the block; size is re-measured every launch.</summary>
+    /// thing saved for the block; size is re-measured every launch.
+    ///
+    /// Also fixes up the one case the seed pack couldn't get right the first time: if <see cref="PlaceUnpositioned"/>
+    /// ran before the view had ever reported a size, it placed tiles starting at y = <see cref="DashboardLayout.Gap"/>
+    /// (treating the still-unmeasured block as 0 tall) rather than under the block's real height. Once a non-zero
+    /// height arrives, those specific tiles (tracked in <see cref="_tilesSeededBelowUnmeasuredBlock"/>) are shifted
+    /// down by it — a plain vertical translation, since every one of their y-values already has that same Gap-only
+    /// offset baked in — persisted once, and the tracking list is cleared so this only ever happens once per seed.</summary>
     public void SetCoreMatrixSize(double width, double height)
     {
         _coreMatrixWidth = width;
         _coreMatrixHeight = height;
+
+        if (height > 0 && _tilesSeededBelowUnmeasuredBlock.Count > 0)
+        {
+            foreach (var id in _tilesSeededBelowUnmeasuredBlock)
+            {
+                var pref = _settings.PrefFor(id);
+                if (pref.Y is not double y) continue;
+                pref.Y = y + height;
+                var tile = Tiles.FirstOrDefault(t => t.Definition.Id == id);
+                if (tile is not null) tile.Y = pref.Y.Value;
+            }
+            _tilesSeededBelowUnmeasuredBlock.Clear();
+            _saveSettings();
+        }
+
         RecomputeCanvasExtent();
     }
 
@@ -165,6 +195,9 @@ public sealed partial class DashboardViewModel
     {
         bool placedAny = false;
         double startY = 0;
+        // True only when the block is being freshly seeded in THIS call and the view hasn't reported a size yet —
+        // see SetCoreMatrixSize for why that combination needs a later fix-up.
+        bool blockFreshlySeededUnmeasured = false;
 
         if (CoreMatrix is not null && (_settings.CoreMatrixX is null || _settings.CoreMatrixY is null))
         {
@@ -174,7 +207,9 @@ public sealed partial class DashboardViewModel
             CoreMatrixY = 0;
             startY = _coreMatrixHeight + DashboardLayout.Gap;
             placedAny = true;
+            blockFreshlySeededUnmeasured = _coreMatrixHeight == 0;
         }
+        if (blockFreshlySeededUnmeasured) _tilesSeededBelowUnmeasuredBlock.Clear();
 
         double x = 0, y = startY, rowHeight = 0;
         foreach (var tile in Tiles)
@@ -194,6 +229,7 @@ public sealed partial class DashboardViewModel
             pref.Y = py;
             tile.X = px;
             tile.Y = py;
+            if (blockFreshlySeededUnmeasured) _tilesSeededBelowUnmeasuredBlock.Add(tile.Definition.Id);
 
             rowHeight = Math.Max(rowHeight, tile.Height);
             x += tile.Width + DashboardLayout.Gap;

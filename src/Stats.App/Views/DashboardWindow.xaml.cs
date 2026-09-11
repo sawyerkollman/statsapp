@@ -6,6 +6,7 @@ using System.Windows.Controls.Primitives;
 using System.Windows.Data;
 using System.Windows.Documents;
 using System.Windows.Input;
+using System.Windows.Media;
 using System.Windows.Threading;
 using Stats.App.Controls;
 using Stats.App.Helpers;
@@ -22,6 +23,18 @@ public partial class DashboardWindow : Window
     /// <summary>The single live drag-reorder insertion-line adorner (v1.8 §7a) — always removed before a new one
     /// is added, and on DragLeave/Drop/drag end, so it can never leak or duplicate across tiles.</summary>
     private InsertionAdorner? _insertionAdorner;
+
+    // ---- Free/Snap canvas drag state (dashboard layout modes) — one "in-flight drag" slot each for a tile
+    // container and the core-matrix block container; never more than one drag is in flight at a time (mouse
+    // capture guarantees this), so a single set of fields per kind is enough.
+    private FrameworkElement? _freeDragContainer;
+    private Point _freeDragMouseStart;
+    private Point _freeDragOrigin;
+    private bool _freeDragExceededThreshold;
+    private FrameworkElement? _coreDragContainer;
+    private Point _coreDragMouseStart;
+    private Point _coreDragOrigin;
+    private bool _coreDragExceededThreshold;
 
     /// <summary>Whichever header button (Metrics or Settings) most recently opened the flyout — Escape returns
     /// keyboard focus here (DESIGN.md §5); falls back to the Metrics button if the flyout was opened some other
@@ -166,6 +179,163 @@ public partial class DashboardWindow : Window
         if (_insertionAdorner is null) return;
         AdornerLayer.GetAdornerLayer(_insertionAdorner.AdornedElement)?.Remove(_insertionAdorner);
         _insertionAdorner = null;
+    }
+
+    // ---- Free/Snap canvas: drag + keyboard nudge (dashboard layout modes) ----
+    //
+    // Unlike Auto's DragDrop.DoDragDrop reorder above, a Free/Snap container is moved by writing Canvas.Left/Top
+    // directly on PreviewMouseMove (SetCurrentValue, which updates the rendered position without breaking the
+    // ItemContainerStyle's Canvas.Left/Top -> X/Y binding — the binding re-applies its own value the next time the
+    // VM raises PropertyChanged, e.g. once SetTilePosition's clamp/snap lands), then committing once to the VM on
+    // mouse-up (or on an unexpected LostMouseCapture, e.g. Esc — CommitFreeDrag/CommitCoreDrag are shared by both).
+    // A move that never exceeds the system drag threshold is treated as a click: nothing is written back, so the
+    // container simply re-shows its bound (unchanged) position.
+
+    private void FreeTile_PreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
+    {
+        if (sender is not FrameworkElement container) return;
+        if (FindAncestorButtonOrSelf(e.OriginalSource as DependencyObject) is not null) return; // never drag from "…" or another button
+        if (e.ClickCount == 2)
+        {
+            if (container.DataContext is MetricTileViewModel t) Vm?.OpenTileDetail(t.Definition.Id);
+            return;
+        }
+        if (container.DataContext is not MetricTileViewModel) return;
+        _freeDragContainer = container;
+        _freeDragMouseStart = e.GetPosition(this);
+        _freeDragOrigin = new Point(Canvas.GetLeft(container), Canvas.GetTop(container));
+        _freeDragExceededThreshold = false;
+        container.CaptureMouse();
+    }
+
+    private void FreeTile_PreviewMouseMove(object sender, MouseEventArgs e)
+    {
+        if (_freeDragContainer is null || !ReferenceEquals(sender, _freeDragContainer) || e.LeftButton != MouseButtonState.Pressed) return;
+        var delta = e.GetPosition(this) - _freeDragMouseStart;
+        if (!_freeDragExceededThreshold)
+        {
+            if (Math.Abs(delta.X) < SystemParameters.MinimumHorizontalDragDistance &&
+                Math.Abs(delta.Y) < SystemParameters.MinimumVerticalDragDistance) return;
+            _freeDragExceededThreshold = true;
+        }
+        _freeDragContainer.SetCurrentValue(Canvas.LeftProperty, _freeDragOrigin.X + delta.X);
+        _freeDragContainer.SetCurrentValue(Canvas.TopProperty, _freeDragOrigin.Y + delta.Y);
+    }
+
+    private void FreeTile_PreviewMouseLeftButtonUp(object sender, MouseButtonEventArgs e) => CommitFreeDrag();
+    private void FreeTile_LostMouseCapture(object sender, MouseEventArgs e) => CommitFreeDrag();
+
+    private void CommitFreeDrag()
+    {
+        if (_freeDragContainer is null) return;
+        var container = _freeDragContainer;
+        _freeDragContainer = null;
+        container.ReleaseMouseCapture();
+        if (!_freeDragExceededThreshold) return; // a click, not a drag — position unchanged
+        if (container.DataContext is MetricTileViewModel tile)
+            Vm?.SetTilePosition(tile.Definition.Id, Canvas.GetLeft(container), Canvas.GetTop(container));
+        ReassertCanvasBindings(container);
+    }
+
+    /// <summary>After a drag commits, re-pull Canvas.Left/Top from the VM. SetTilePosition/SetCoreMatrixPosition
+    /// may clamp/snap the drop point back to the value the VM already held (e.g. a short drag in Snap mode that
+    /// rounds to the same cell), in which case no PropertyChanged fires and the SetCurrentValue drag position
+    /// would otherwise stay on screen.</summary>
+    private static void ReassertCanvasBindings(FrameworkElement container)
+    {
+        BindingOperations.GetBindingExpression(container, Canvas.LeftProperty)?.UpdateTarget();
+        BindingOperations.GetBindingExpression(container, Canvas.TopProperty)?.UpdateTarget();
+    }
+
+    /// <summary>Arrow-key nudge, added alongside (not instead of) <see cref="Tile_PreviewKeyDown"/>'s reused
+    /// Shift+F10/Apps context-menu handling — both are wired as separate EventSetters on the same PreviewKeyDown
+    /// event in the Free canvas's ItemContainerStyle.</summary>
+    private void FreeTile_PreviewKeyDown(object sender, KeyEventArgs e)
+    {
+        if (Vm is not DashboardViewModel vm) return;
+        if ((sender as FrameworkElement)?.DataContext is not MetricTileViewModel tile) return;
+        if (!TryGetArrowDelta(e.Key, out var dx, out var dy)) return;
+        double step = DashboardLayout.GridSize * (Keyboard.Modifiers.HasFlag(ModifierKeys.Shift) ? 4 : 1);
+        vm.SetTilePosition(tile.Definition.Id, tile.X + dx * step, tile.Y + dy * step);
+        e.Handled = true;
+    }
+
+    private void CoreMatrixBlock_PreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
+    {
+        if (sender is not FrameworkElement container) return;
+        _coreDragContainer = container;
+        _coreDragMouseStart = e.GetPosition(this);
+        _coreDragOrigin = new Point(Canvas.GetLeft(container), Canvas.GetTop(container));
+        _coreDragExceededThreshold = false;
+        container.CaptureMouse();
+    }
+
+    private void CoreMatrixBlock_PreviewMouseMove(object sender, MouseEventArgs e)
+    {
+        if (_coreDragContainer is null || !ReferenceEquals(sender, _coreDragContainer) || e.LeftButton != MouseButtonState.Pressed) return;
+        var delta = e.GetPosition(this) - _coreDragMouseStart;
+        if (!_coreDragExceededThreshold)
+        {
+            if (Math.Abs(delta.X) < SystemParameters.MinimumHorizontalDragDistance &&
+                Math.Abs(delta.Y) < SystemParameters.MinimumVerticalDragDistance) return;
+            _coreDragExceededThreshold = true;
+        }
+        _coreDragContainer.SetCurrentValue(Canvas.LeftProperty, _coreDragOrigin.X + delta.X);
+        _coreDragContainer.SetCurrentValue(Canvas.TopProperty, _coreDragOrigin.Y + delta.Y);
+    }
+
+    private void CoreMatrixBlock_PreviewMouseLeftButtonUp(object sender, MouseButtonEventArgs e) => CommitCoreDrag();
+    private void CoreMatrixBlock_LostMouseCapture(object sender, MouseEventArgs e) => CommitCoreDrag();
+
+    private void CommitCoreDrag()
+    {
+        if (_coreDragContainer is null) return;
+        var container = _coreDragContainer;
+        _coreDragContainer = null;
+        container.ReleaseMouseCapture();
+        if (!_coreDragExceededThreshold) return;
+        Vm?.SetCoreMatrixPosition(Canvas.GetLeft(container), Canvas.GetTop(container));
+        ReassertCanvasBindings(container);
+    }
+
+    private void CoreMatrixBlock_PreviewKeyDown(object sender, KeyEventArgs e)
+    {
+        if (Vm is not DashboardViewModel vm) return;
+        if (!TryGetArrowDelta(e.Key, out var dx, out var dy)) return;
+        double step = DashboardLayout.GridSize * (Keyboard.Modifiers.HasFlag(ModifierKeys.Shift) ? 4 : 1);
+        vm.SetCoreMatrixPosition(vm.CoreMatrixX + dx * step, vm.CoreMatrixY + dy * step);
+        e.Handled = true;
+    }
+
+    /// <summary>Reports the block's measured pixel size once it has been laid out, so the seed pack and the canvas
+    /// extent (<see cref="DashboardViewModel"/>) can account for it — see <see cref="DashboardViewModel.SetCoreMatrixSize"/>.</summary>
+    private void CoreMatrixBlock_SizeChanged(object sender, SizeChangedEventArgs e) =>
+        Vm?.SetCoreMatrixSize(e.NewSize.Width, e.NewSize.Height);
+
+    private static bool TryGetArrowDelta(Key key, out double dx, out double dy)
+    {
+        dx = dy = 0;
+        switch (key)
+        {
+            case Key.Left: dx = -1; return true;
+            case Key.Right: dx = 1; return true;
+            case Key.Up: dy = -1; return true;
+            case Key.Down: dy = 1; return true;
+            default: return false;
+        }
+    }
+
+    /// <summary>Walks up from <paramref name="source"/> looking for a Button — used to keep a click on the tile's
+    /// hover "…" menu button (or any other interactive child a future template might add) from also starting a
+    /// Free/Snap drag.</summary>
+    private static Button? FindAncestorButtonOrSelf(DependencyObject? source)
+    {
+        while (source is not null)
+        {
+            if (source is Button b) return b;
+            source = VisualTreeHelper.GetParent(source);
+        }
+        return null;
     }
 
     // ---- tile context menu ----
@@ -328,18 +498,38 @@ public partial class DashboardWindow : Window
 
     /// <summary>Same code-behind-built-menu pattern as <see cref="OpenTileMenu"/> — a ContextMenu placed under
     /// the button rather than bound Command items, so it works regardless of ContextMenu's DataContext
-    /// inheritance quirks.</summary>
+    /// inheritance quirks. Also hosts the dashboard layout modes (Auto/Free/Snap) picker and "Reset tile
+    /// positions…" (design's "View (DashboardWindow)" section).</summary>
     private void ViewButton_Click(object sender, RoutedEventArgs e)
     {
         if (Vm is not DashboardViewModel vm || sender is not FrameworkElement target) return;
         var menu = new ContextMenu { PlacementTarget = target, Placement = PlacementMode.Bottom };
-        var expand = new MenuItem { Header = "Expand all" };
+
+        var expand = new MenuItem { Header = "Expand all", IsEnabled = vm.IsAutoLayout };
         expand.Click += (_, _) => vm.ExpandAllCommand.Execute(null);
-        var collapse = new MenuItem { Header = "Collapse all" };
+        var collapse = new MenuItem { Header = "Collapse all", IsEnabled = vm.IsAutoLayout };
         collapse.Click += (_, _) => vm.CollapseAllCommand.Execute(null);
         menu.Items.Add(expand);
         menu.Items.Add(collapse);
+
+        menu.Items.Add(new Separator());
+        menu.Items.Add(LayoutModeItem("Auto arrange", DashboardLayoutMode.Auto, vm));
+        menu.Items.Add(LayoutModeItem("Free", DashboardLayoutMode.Free, vm));
+        menu.Items.Add(LayoutModeItem("Snap to grid", DashboardLayoutMode.Grid, vm));
+
+        var reset = new MenuItem { Header = "Reset tile positions…", IsEnabled = !vm.IsAutoLayout };
+        reset.Click += (_, _) => vm.ResetPositionsCommand.Execute(null);
+        menu.Items.Add(new Separator());
+        menu.Items.Add(reset);
+
         menu.IsOpen = true;
+    }
+
+    private static MenuItem LayoutModeItem(string header, DashboardLayoutMode mode, DashboardViewModel vm)
+    {
+        var item = new MenuItem { Header = header, IsCheckable = true, IsChecked = vm.LayoutMode == mode };
+        item.Click += (_, _) => vm.SetLayoutModeCommand.Execute(mode);
+        return item;
     }
 
     // ---- flyout close / Escape / focus ----

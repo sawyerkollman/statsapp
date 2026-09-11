@@ -90,5 +90,6 @@
     <conv:InverseBoolConverter x:Key="InverseBool"/>
     <conv:OverlayOrientationConverter x:Key="OverlayOrientation"/>
     <conv:InverseBoolToVisibilityConverter x:Key="InverseBoolToVis"/>
+    <conv:AllTrueToVisibilityConverter x:Key="AllTrueToVis"/>
 
 </ResourceDictionary>

@@ -146,15 +146,39 @@ public class DashboardLayoutModeTests
     }
 
     [Fact]
-    public void SetCoreMatrixSize_UpdatesExtent_ButNeverSaves()
+    public void SetCoreMatrixSize_UpdatesExtent_AndNeverSavesTheSizeItself()
     {
-        var (vm, _, _, saves) = Make(DashboardLayoutMode.Free, showCoreMatrix: true, "cpu.temp");
+        // No tiles selected here (unlike most of this group) specifically so construction's seed pack places
+        // nothing below the block and therefore has nothing pending for SetCoreMatrixSize to shift — isolating the
+        // plain extent/no-save contract from the below-the-block shift covered by
+        // SetCoreMatrixSize_ShiftsTilesSeededBelowAnUnmeasuredBlock.
+        var (vm, _, _, saves) = Make(DashboardLayoutMode.Free, showCoreMatrix: true);
         int before = saves();
         vm.SetCoreMatrixSize(300, 200);
-        Assert.Equal(before, saves()); // size is never persisted
-        // Block now occupies (0,0)-(300,200) (seeded at 0,0 by RebuildSections); extent must grow to cover it.
+        Assert.Equal(before, saves()); // size is never persisted, and nothing was pending a shift
         Assert.True(vm.CanvasWidth >= 300 + DashboardLayout.Gap);
         Assert.True(vm.CanvasHeight >= 200 + DashboardLayout.Gap);
+    }
+
+    [Fact]
+    public void SetCoreMatrixSize_ShiftsTilesSeededBelowAnUnmeasuredBlock()
+    {
+        // Construction seeds cpu.temp at (0, Gap) because the block is freshly seeded but still unmeasured (0x0) —
+        // see SeedPack_CoreMatrixBlock_PlacedAtOrigin_TilesPackBelowIt. Once the view reports the block's real
+        // size, that one tile must move down to sit below it instead of under it, and only once.
+        var (vm, s, _, saves) = Make(DashboardLayoutMode.Free, showCoreMatrix: true, "cpu.temp");
+        Assert.Equal(DashboardLayout.Gap, s.TilePrefs["cpu.temp"].Y); // sanity: the "unmeasured" seed position
+        int before = saves();
+
+        vm.SetCoreMatrixSize(300, 200);
+
+        Assert.Equal(DashboardLayout.Gap + 200, s.TilePrefs["cpu.temp"].Y);
+        Assert.Equal(DashboardLayout.Gap + 200, vm.Tiles.Single(t => t.Definition.Id == "cpu.temp").Y);
+        Assert.Equal(before + 1, saves()); // shifted and persisted exactly once
+
+        vm.SetCoreMatrixSize(300, 250); // a later re-measurement must not shift it again
+        Assert.Equal(DashboardLayout.Gap + 200, s.TilePrefs["cpu.temp"].Y);
+        Assert.Equal(before + 1, saves());
     }
 
     // ---- seed pack (PlaceUnpositioned) ----
