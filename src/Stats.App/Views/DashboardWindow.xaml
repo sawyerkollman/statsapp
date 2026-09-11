@@ -445,8 +445,7 @@
                                                 <Slider Minimum="0.9" Maximum="1.3" TickFrequency="0.1" IsSnapToTickEnabled="True" Value="{Binding DashboardUiScale, Delay=250}"/>
                                             </DockPanel>
 
-                                            <TextBlock Text="Dashboard" Style="{StaticResource SettingsHeader}"/>
-                                            <CheckBox Content="Show CPU core matrix" IsChecked="{Binding ShowCoreMatrix}"/>
+                                            <CheckBox Margin="0,6,0,0" Content="Show CPU core matrix" IsChecked="{Binding ShowCoreMatrix}"/>
 
                                         </StackPanel>
                                     </ScrollViewer>
