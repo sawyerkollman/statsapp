@@ -13,7 +13,7 @@ Placeholders are not passed checks. Status vocabulary per `AGENT_WORKFLOW.md` §
 - Windows version, .NET SDK, desktop availability: Windows 11 Pro Insider Preview 10.0.26220; .NET SDK 9.0.316 (targets net8.0-windows); interactive desktop session available; two monitors at 96 DPI (100 %): 3440×1440 primary, 2560×1440 secondary
 - Client: Claude Code (not Codex). The Codex role files in `.codex/` are not used.
 - Parent model/effort: Claude Fable 5.1 (this session); implementers Claude Sonnet, independent review Claude Opus — per the repo's `CLAUDE.md` workflow. Runtime-observed model metadata for subagents: unobservable from inside the session; requested models are recorded per task.
-- Overall status: **implemented (T0–T4)**, pending T5–T8 — see task ledger
+- Overall status: **implemented (T0–T7)**, T8 review in progress — see task ledger
 
 ## Routing ledger
 
@@ -24,6 +24,11 @@ Placeholders are not passed checks. Status vocabulary per `AGENT_WORKFLOW.md` §
 | T2 | implementer | Claude Sonnet | unobservable | — | 1 | done |
 | T3 | implementer | Claude Sonnet | unobservable | — | 1 | done |
 | T4 | implementer (isolated worktree) | Claude Sonnet | unobservable | — | 1 | done |
+| T5 | implementer | Claude Sonnet | unobservable | — | 1 | done |
+| T6 | implementer (isolated worktree) | Claude Sonnet | unobservable | — | 1 | done |
+| T7 | implementer | Claude Sonnet | unobservable | — | 1 | done |
+| T8 | reviewer + validator | Claude Opus | unobservable | — | 1 | in progress |
+| README | docs | Claude Sonnet | unobservable | — | 1 | in progress |
 
 Model self-reports are not runtime proof. The Codex Sol/Terra/Luna routing in `AGENT_WORKFLOW.md` is replaced for this run by the repo's Claude workflow (Sonnet implementers, Opus review, Fable controller); the technical invariants are unchanged.
 
@@ -36,10 +41,10 @@ Model self-reports are not runtime proof. The Codex Sol/Terra/Luna routing in `A
 | T2 | Sonnet implementer | `Theme.xaml`, `Controls.xaml`, `AppStyles.xaml`, `App.xaml`, new `Icons.xaml`, `ThemeManager.cs` (PaletteFor + 3 hex fixes), `PreviewApp.cs`, new `PaletteContrastTests.cs` | T1 | done `99effbc` | parent (diff + 16 captures incl. theme-cycle) | build/tests green, 172 contrast assertions |
 | T3 | Sonnet implementer | `TileTemplates.xaml`, `TileSizeToLengthConverter.cs`, `CoreMatrixView.xaml`, `ValueFormatter.cs` (FormatParts), `MetricTileViewModel.cs` (ValueText/UnitText), tests | T2 | done `0cf68de` | parent (8 captures; added footer ellipsis+tooltip fix) | 8 visible M tiles at V1 (unchanged) |
 | T4 | Sonnet implementer (worktree) | `DashboardWindow.xaml/.cs`, `DashboardViewModel.cs` (IsOverlayVisible, IsEmpty), one line in `App.xaml.cs`, tests | T2 | done `abf0469` (cherry-picked) | parent (8 captures regenerated on integrated tree) | build/tests green; Settings binding inventory in T4-REPORT |
-| T5 | | | | | | |
-| T6 | | | | | | |
-| T7 | | | | | | |
-| T8 | | | | | | |
+| T5 | Sonnet implementer | `DashboardWindow.xaml` (Settings TabItem only), harness `category-*` substate | T4 | done `52445e3` + `247d4e1` (parent merged a duplicated heading) | parent (14 captures) | 26/26 bindings verbatim (T5-REPORT parity table) |
+| T6 | Sonnet implementer (worktree) | `FansWindow.xaml/.cs` | T2 | done `62d2054` (cherry-picked) | parent (13 captures) | commands.log shows no template-triggered fan writes; fan tests unchanged |
+| T7 | Sonnet implementer | `PeaksWindow.xaml`, `MetricDetailWindow.xaml`, `OverlayWindow.xaml`, `InputDialog.xaml`, `ThresholdDialog.xaml` | T3, T5, T6 | done `d57fe67` | parent (18 captures) | chart bindings byte-identical |
+| T8 | Opus reviewer/validator | read-only; `docs/ui-polish/T8-REVIEW.md`, after gallery under `artifacts/ui-polish/after/` | T7 | in progress | | |
 
 ### T0 notes
 
@@ -72,6 +77,8 @@ Model self-reports are not runtime proof. The Codex Sol/Terra/Luna routing in `A
 | T2 `99effbc` | build / test | 0 | 0 | 674 + 172 passed; 16 captures, 0 warnings | `artifacts/ui-polish/after-t2/` |
 | T3 `0cf68de` | build / test | 0 | 0 | 684 + 172 passed; 8 captures, 0 warnings | `artifacts/ui-polish/after-t3/` |
 | T4 `abf0469` | build / test | 0 | 0 | 687 + 172 passed; 8 captures regenerated after integration, 0 warnings | `artifacts/ui-polish/after-t4/` |
+| T5 `52445e3` | build / test | 0 | 0 | 687 + 172 passed; 14 captures, 0 warnings | `artifacts/ui-polish/after-t5/` |
+| T6+T7 `d57fe67` | build / test | 0 | 0 | 687 + 172 passed; 13 + 18 captures, 0 warnings | `artifacts/ui-polish/after-t6/`, `after-t7/` |
 
 ## Visual evidence
 
@@ -98,8 +105,8 @@ Model self-reports are not runtime proof. The Codex Sol/Terra/Luna routing in `A
 | G0 Routing | pass (adapted) | Claude workflow per CLAUDE.md; Codex roles not applicable |
 | G1 Baseline | pass | commit `ad5ec1d`, clean tracked tree, build/tests green; 55 before-screenshots captured at `b8b9c44` |
 | G2 Preview isolation | pass | metadata scan + composition tests (92 green); sidecars list every simulated service |
-| G3 Build | pass at T4 | |
-| G4 Tests | pass at T4 | |
+| G3 Build | pass at T7 | |
+| G4 Tests | pass at T7 | |
 | G5 Visual | pending | |
 | G6 Interaction | pending | |
 | G7 Compatibility | pending | |
