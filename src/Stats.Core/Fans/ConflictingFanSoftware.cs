@@ -13,6 +13,10 @@ public static class ConflictingFanSoftware
         ("precisionx", "EVGA Precision", false), ("corsairlink", "Corsair Link", false),
     };
 
+    /// <summary>Tools that only ever drive GPU fans: running them is harmless while their fan setting is Auto, so the
+    /// warning is worded as advice rather than "close it".</summary>
+    public static bool IsGpuOnly(string friendly) => friendly is "MSI Afterburner" or "EVGA Precision";
+
     public static IReadOnlyList<string> Match(IEnumerable<string> processNames)
     {
         var result = new List<string>();

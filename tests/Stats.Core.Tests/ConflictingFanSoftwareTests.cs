@@ -14,5 +14,7 @@ public class ConflictingFanSoftwareTests
         Assert.Empty(ConflictingFanSoftware.Match(new[] { "chrome", "Stats.App", "gccx" }));
         Assert.Equal(new[] { "Gigabyte Control Center" }, ConflictingFanSoftware.Match(new[] { "GCC.exe" }));
         Assert.Equal(new[] { "ASUS Armoury Crate" }, ConflictingFanSoftware.Match(new[] { "ArmouryCrate.Service" }));
+        Assert.True(ConflictingFanSoftware.IsGpuOnly("MSI Afterburner"));
+        Assert.False(ConflictingFanSoftware.IsGpuOnly("MSI Center"));
     }
 }

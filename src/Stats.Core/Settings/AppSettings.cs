@@ -104,6 +104,11 @@ public sealed class AppSettings
     /// restarts. Recovery/conflict banners are unrelated and always show in full.</summary>
     public bool FanSafetyBannerCollapsed { get; set; }
 
+    // ---- v1.9.2 fan conflict dismissals ----
+    /// <summary>Friendly names (see <see cref="Fans.ConflictingFanSoftware"/>) of detected fan tools the user chose not
+    /// to be warned about again — e.g. MSI Afterburner left on its Auto fan setting. Persisted; "Don't warn again" adds to it.</summary>
+    public List<string> IgnoredFanConflicts { get; set; } = new();
+
     /// <summary>Get-or-create the TilePref for a metric id.</summary>
     public TilePref PrefFor(string metricId)
     {

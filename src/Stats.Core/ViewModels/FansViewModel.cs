@@ -254,6 +254,19 @@ public sealed partial class FansViewModel : ObservableObject
     [ObservableProperty] private string _conflictText = "";
     public bool HasConflict => ConflictText.Length > 0;
     partial void OnConflictTextChanged(string value) => OnPropertyChanged(nameof(HasConflict));
+    private List<string> _conflictsFound = new();
+
+    /// <summary>"Don't warn again" on the conflict banner: remembers the tools currently detected so the banner stays
+    /// down for them (persisted); a different tool appearing later still warns.</summary>
+    [RelayCommand]
+    private void IgnoreConflict()
+    {
+        foreach (var name in _conflictsFound)
+            if (!_settings.IgnoredFanConflicts.Contains(name)) _settings.IgnoredFanConflicts.Add(name);
+        _conflictsFound.Clear();
+        ConflictText = "";
+        _saveSettings();
+    }
 
     /// <summary>The always-on "writes to your hardware" warning collapses to one line via Got it; unrelated to
     /// the recovery/conflict banners above, which are unchanged.</summary>
@@ -445,8 +458,12 @@ public sealed partial class FansViewModel : ObservableObject
         if (now - _lastConflictCheck >= ConflictCheckEvery)
         {
             _lastConflictCheck = now;
-            var found = ConflictingFanSoftware.Match(_processNames());
-            ConflictText = found.Count == 0 ? "" : $"Detected: {string.Join(", ", found)} — two controllers fighting the same fan is unsafe. Close them before enabling fan control.";
+            _conflictsFound = ConflictingFanSoftware.Match(_processNames()).Where(f => !_settings.IgnoredFanConflicts.Contains(f)).ToList();
+            var names = string.Join(", ", _conflictsFound);
+            ConflictText = _conflictsFound.Count == 0 ? ""
+                : _conflictsFound.All(ConflictingFanSoftware.IsGpuOnly)
+                    ? $"Detected: {names} — it only controls GPU fans. If its fan setting is Auto there is no conflict; otherwise keep GPU fans on Auto here or close it."
+                    : $"Detected: {names} — two controllers fighting the same fan is unsafe. Close them before enabling fan control.";
         }
         foreach (var v in _controller.Views())
             if (_byId.TryGetValue(v.Id, out var ch)) ch.Apply(v);

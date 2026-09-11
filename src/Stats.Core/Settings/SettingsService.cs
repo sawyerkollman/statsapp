@@ -62,6 +62,7 @@ public sealed class SettingsService
         settings.ThresholdOverrides ??= new();
         settings.FanChannels ??= new();
         settings.FanProfiles ??= new();
+        settings.IgnoredFanConflicts ??= new();
         ThresholdDefaults.EnsureDefaults(settings.ThresholdRules, settings.ThresholdOverrides);
         settings.OverlayHotkey ??= "";
         settings.ThemePreset = ThemePresets.SanitizePresetName(settings.ThemePreset);

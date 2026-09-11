@@ -156,7 +156,9 @@
                         Visibility="{Binding HasConflict, Converter={StaticResource BoolToVis}}">
                     <DockPanel>
                         <Path DockPanel.Dock="Left" Style="{StaticResource IconGlyph}" Data="{StaticResource Icon.Warn}" Fill="White" Margin="0,0,10,0"/>
-                        <TextBlock Text="{Binding ConflictText}" Foreground="White" TextWrapping="Wrap" FontSize="{StaticResource FontSizeBody}"/>
+                        <Button DockPanel.Dock="Right" Content="Don't warn again" Command="{Binding IgnoreConflictCommand}" Style="{StaticResource HeaderButton}"
+                                FontSize="{StaticResource FontSizeDense}" Margin="10,0,0,0" VerticalAlignment="Center" ToolTip="Stop warning about the tools listed here; a different tool will still warn"/>
+                        <TextBlock Text="{Binding ConflictText}" Foreground="White" TextWrapping="Wrap" FontSize="{StaticResource FontSizeBody}" VerticalAlignment="Center"/>
                     </DockPanel>
                 </Border>
                 <Border Background="{DynamicResource ControlBg}" CornerRadius="{StaticResource RadiusPanel}" Padding="12,8" Margin="0,0,0,10"
