@@ -6,12 +6,12 @@
         Background="{DynamicResource WindowBg}">
     <DockPanel Margin="12">
         <DockPanel DockPanel.Dock="Top" Margin="0,0,0,10">
-            <TextBlock Text="{Binding Title}" FontSize="18" FontWeight="Bold" Foreground="{DynamicResource TextPrimary}"/>
-            <TextBlock Text="{Binding CurrentText}" FontSize="18" FontWeight="Bold" Margin="10,0,0,0"
+            <TextBlock Text="{Binding Title}" FontSize="{StaticResource FontSizeTitle}" FontWeight="SemiBold" Foreground="{DynamicResource TextPrimary}"/>
+            <TextBlock Text="{Binding CurrentText}" FontSize="{StaticResource FontSizeValue}" FontWeight="SemiBold" Margin="10,0,0,0"
                        Foreground="{Binding Severity, Converter={StaticResource SeverityToBrush}}"/>
         </DockPanel>
         <DockPanel DockPanel.Dock="Top" Margin="0,0,0,10">
-            <TextBlock Foreground="{DynamicResource TextSecondary}" FontSize="12">
+            <TextBlock Foreground="{DynamicResource TextSecondary}" FontSize="{StaticResource FontSizeLabel}" Typography.NumeralAlignment="Tabular">
                 <Run Text="min "/><Run Text="{Binding MinText, Mode=OneWay}"/>
                 <Run Text="   avg "/><Run Text="{Binding AvgText, Mode=OneWay}"/>
                 <Run Text="   max "/><Run Text="{Binding MaxText, Mode=OneWay}"/>

@@ -21,7 +21,7 @@
                             <TextBlock Text="{Binding DisplayName}" FontSize="10"
                                        Foreground="{StaticResource OverlayTextSecondary}"
                                        TextTrimming="CharacterEllipsis" MaxWidth="140"/>
-                            <TextBlock Text="{Binding CurrentText}" FontSize="16" FontWeight="SemiBold"
+                            <TextBlock Text="{Binding CurrentText}" FontSize="16" FontWeight="SemiBold" Typography.NumeralAlignment="Tabular"
                                        Foreground="{Binding Severity, Converter={StaticResource SeverityToBrush}, ConverterParameter=Overlay}"/>
                         </StackPanel>
                     </DataTemplate>
