@@ -131,6 +131,22 @@ begin
     InstallPawnIo;
 end;
 
+// Runs after the Ready page and BEFORE Setup's in-use-files check. A running Stats hides to the tray
+// instead of closing (DashboardWindow cancels Close), so Restart Manager's CloseApplications request
+// never ends the process and every upgrade stopped at "Setup was unable to automatically close all
+// applications". Kill it here like the uninstaller does; the fans-armed marker restores device control
+// on the next launch if fan control was active (see FanController.RecoverFromUncleanShutdown).
+function PrepareToInstall(var NeedsRestart: Boolean): String;
+var
+  ResultCode: Integer;
+begin
+  Result := '';
+  if Exec(ExpandConstant('{sys}	askkill.exe'), '/F /T /IM {#AppExe}', '', SW_HIDE, ewWaitUntilTerminated, ResultCode) then
+    Log(Format('PrepareToInstall: taskkill {#AppExe} exit code %d (128 = not running)', [ResultCode]))
+  else
+    Log('PrepareToInstall: taskkill could not be started: ' + SysErrorMessage(ResultCode));
+end;
+
 procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
 var
   SettingsDir: String;
