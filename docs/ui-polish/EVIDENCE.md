@@ -13,7 +13,7 @@ Placeholders are not passed checks. Status vocabulary per `AGENT_WORKFLOW.md` §
 - Windows version, .NET SDK, desktop availability: Windows 11 Pro Insider Preview 10.0.26220; .NET SDK 9.0.316 (targets net8.0-windows); interactive desktop session available; two monitors at 96 DPI (100 %): 3440×1440 primary, 2560×1440 secondary
 - Client: Claude Code (not Codex). The Codex role files in `.codex/` are not used.
 - Parent model/effort: Claude Fable 5.1 (this session); implementers Claude Sonnet, independent review Claude Opus — per the repo's `CLAUDE.md` workflow. Runtime-observed model metadata for subagents: unobservable from inside the session; requested models are recorded per task.
-- Overall status: **implemented (T0–T7)**, T8 review in progress — see task ledger
+- Overall status: **implemented and verified** (build/tests), **visually accepted for the static capture matrix** (parent and Opus reviewer inspected real WPF PNGs); interaction (G6), 150 % DPI, real hardware, tray/hotkey remain **pending Windows validation** by the owner — see gates
 
 ## Routing ledger
 
@@ -27,8 +27,9 @@ Placeholders are not passed checks. Status vocabulary per `AGENT_WORKFLOW.md` §
 | T5 | implementer | Claude Sonnet | unobservable | — | 1 | done |
 | T6 | implementer (isolated worktree) | Claude Sonnet | unobservable | — | 1 | done |
 | T7 | implementer | Claude Sonnet | unobservable | — | 1 | done |
-| T8 | reviewer + validator | Claude Opus | unobservable | — | 1 | in progress |
-| README | docs | Claude Sonnet | unobservable | — | 1 | in progress |
+| T8 review | reviewer + validator | Claude Opus | unobservable | — | 1 | done |
+| T8 fix wave | implementer | Claude Sonnet | unobservable | — | 1 | done |
+| README | docs | Claude Sonnet | unobservable | — | 1 | done `457a28a` |
 
 Model self-reports are not runtime proof. The Codex Sol/Terra/Luna routing in `AGENT_WORKFLOW.md` is replaced for this run by the repo's Claude workflow (Sonnet implementers, Opus review, Fable controller); the technical invariants are unchanged.
 
@@ -44,7 +45,7 @@ Model self-reports are not runtime proof. The Codex Sol/Terra/Luna routing in `A
 | T5 | Sonnet implementer | `DashboardWindow.xaml` (Settings TabItem only), harness `category-*` substate | T4 | done `52445e3` + `247d4e1` (parent merged a duplicated heading) | parent (14 captures) | 26/26 bindings verbatim (T5-REPORT parity table) |
 | T6 | Sonnet implementer (worktree) | `FansWindow.xaml/.cs` | T2 | done `62d2054` (cherry-picked) | parent (13 captures) | commands.log shows no template-triggered fan writes; fan tests unchanged |
 | T7 | Sonnet implementer | `PeaksWindow.xaml`, `MetricDetailWindow.xaml`, `OverlayWindow.xaml`, `InputDialog.xaml`, `ThresholdDialog.xaml` | T3, T5, T6 | done `d57fe67` | parent (18 captures) | chart bindings byte-identical |
-| T8 | Opus reviewer/validator | read-only; `docs/ui-polish/T8-REVIEW.md`, after gallery under `artifacts/ui-polish/after/` | T7 | in progress | | |
+| T8 | Opus reviewer/validator + Sonnet fix wave | `docs/ui-polish/T8-REVIEW.md` (findings + fix log), after gallery `artifacts/ui-polish/after/` (61 captures), fixes in `CoreMatrixView.xaml`, `PeaksWindow.xaml`, `FansWindow.xaml`, `Controls.xaml`, `DashboardWindow.xaml`, `Icons.xaml`, `captures/baseline.json` | T7 | done (fix commit after `457a28a`) | Opus: 2 blockers, 6 should-fix, 15 nits; both blockers and 3 should-fix + 4 nits fixed; parent re-verified captures | build/tests green |
 
 ### T0 notes
 
@@ -107,16 +108,18 @@ Model self-reports are not runtime proof. The Codex Sol/Terra/Luna routing in `A
 | G2 Preview isolation | pass | metadata scan + composition tests (92 green); sidecars list every simulated service |
 | G3 Build | pass at T7 | |
 | G4 Tests | pass at T7 | |
-| G5 Visual | pending | |
-| G6 Interaction | pending | |
-| G7 Compatibility | pending | |
-| G8 Independent review | pending | |
+| G5 Visual | pass (static matrix) | Full after gallery (61 PNG, all sidecar Warnings empty) inspected by the Opus reviewer; the two rendering regressions it found (core-matrix clipping, Peaks column misalignment) and the Fans 560×360 empty viewport are fixed and re-captured in `artifacts/ui-polish/after-t8/`. V4 (150 % DPI) not runnable here. |
+| G6 Interaction | blocked (owner) | Harness captures are static; keyboard Escape/focus return, hover/pressed states, tile menu via Shift+F10, category tab navigation, fan segmented control, TSV copy, chart crosshair are on the owner checklist. Logic was reviewed by inspection (T8-REVIEW §1). |
+| G7 Compatibility | pass by inspection | `AppSettings`/`SettingsService`/`MetricGroup` untouched, no new persisted field, TileSize/TileKind/ids/order semantics unchanged, Settings binding multiset identical to master, live theme cycle verified in captures. Live round-trip with a real pre-change settings.json is on the owner checklist. |
+| G8 Independent review | pass | Opus whole-branch review (`T8-REVIEW.md`): all blockers closed; remaining should-fix items are documented decisions (see below) or owner checks; nits N3–N15 left as-is (cosmetic/optional). |
 
 ## Final handoff
 
 - Concrete UI behavior changed: none yet (T0 is resource extraction + a settings seam; no visual change)
 - Design adjustments and reasons: T2 palette — dark CritBrush #E05A4F→#E66E64, Light AccentBrush #D97B1F→#B8650F, Light CritBrush #C94438→#B23A2F (contrast targets; dark surfaces unchanged). T3 — tile sizes exactly per DESIGN §2; footers ellipsize with tooltip. T4 — content left inset 20 (not 16) so tiles align with header text; flyout 480 capped to the scaled grid width.
+- Tile density (DESIGN §8): V1 normal 8 → 7 fully visible medium tiles at 1180×720 (−12.5 %, within threshold). V2 dense 3 → 1 medium (−67 %) / 8 → 4 any size: explained — the dense fixture stacks a 16-core matrix (cells 60×54 → 60×64 so the 11-unit text meets the accessibility floor) above M tiles that are 20 % taller by the DESIGN §2 target and L tiles 20 % taller, plus the 24-unit section gap; it is the synthetic worst case, not a typical dashboard. Accepted by the parent as a deliberate readability-over-density tradeoff; no scale-down applied.
+- Screen capture method note: late in the session `--method screen` began producing blank frames (session/compositor state); the fix-wave captures use `--method rtb` (content-only RenderTargetBitmap), which is valid for layout checks but excludes the title bar and popups.
 - Simulation-only evidence:
-- Real Windows/hardware checks performed:
-- Remaining blockers/checks and next commands:
-- Parent acceptance decision:
+- Real Windows/hardware checks performed: none (CLAUDE.md rules 7–8: app needs elevation/ETW not available from this shell)
+- Remaining blockers/checks and next commands: owner checklist in the PR (from T8-REVIEW §5): 150 % DPI capture, keyboard paths, hover states, Overlay-on indicator with the real overlay, tray/hotkey/click-through/move, real fan writes/Identify/failsafe/pump floor, TSV clipboard, chart crosshair, settings round-trip, ToolTip chrome, PresentMon.
+- Parent acceptance decision: accepted for PR to master as `implemented + verified + visually accepted (static)`; not a release.
