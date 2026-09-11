@@ -312,9 +312,10 @@ public sealed class PreviewComposition
         var tiles = c.Dashboard.Tiles;
         if (tiles.Count >= 2)
         {
-            // Deliberately overlapping pair — same X/Y, proving Free/Snap allows overlap.
-            c.Dashboard.SetTilePosition(tiles[0].Definition.Id, 700, 420);
-            c.Dashboard.SetTilePosition(tiles[1].Definition.Id, 700, 420);
+            // Deliberately overlapping pair — offset by less than a tile so both stay visible, in the empty
+            // top-middle area the moved core-matrix block leaves behind; proves Free/Snap allows overlap.
+            c.Dashboard.SetTilePosition(tiles[0].Definition.Id, 600, 40);
+            c.Dashboard.SetTilePosition(tiles[1].Definition.Id, 680, 110);
         }
         if (tiles.Count >= 3)
             c.Dashboard.SetTilePosition(tiles[2].Definition.Id, 980, 60);

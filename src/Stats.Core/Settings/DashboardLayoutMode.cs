@@ -28,11 +28,19 @@ public enum DashboardLayoutMode
 /// identically either way.</summary>
 public sealed class DashboardLayoutModeConverter : JsonConverter<DashboardLayoutMode>
 {
-    public override DashboardLayoutMode Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options) =>
-        reader.TokenType == JsonTokenType.String
-        && Enum.TryParse<DashboardLayoutMode>(reader.GetString(), ignoreCase: true, out var mode)
-            ? mode
-            : DashboardLayoutMode.Auto;
+    public override DashboardLayoutMode Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+    {
+        // A hand-edited "DashboardLayoutMode": {} or [] leaves the reader positioned on the container's start
+        // token; every other bad value (a string that doesn't parse, a number, null, bool) already leaves the
+        // reader positioned on the scalar it read. Consuming to the matching end token here keeps the whole-object
+        // JsonSerializer.Deserialize<AppSettings> call from throwing "read too much or not enough" afterwards.
+        if (reader.TokenType is JsonTokenType.StartObject or JsonTokenType.StartArray) reader.Skip();
+
+        return reader.TokenType == JsonTokenType.String
+            && Enum.TryParse<DashboardLayoutMode>(reader.GetString(), ignoreCase: true, out var mode)
+                ? mode
+                : DashboardLayoutMode.Auto;
+    }
 
     public override void Write(Utf8JsonWriter writer, DashboardLayoutMode value, JsonSerializerOptions options) =>
         writer.WriteStringValue(value.ToString());

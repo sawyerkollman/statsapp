@@ -302,7 +302,17 @@ public sealed partial class DashboardViewModel : ObservableObject
     }
 
     public void SetTileKind(string id, TileKind kind) { _settings.PrefFor(id).Kind = kind; AfterPrefChange(); }
-    public void SetTileSize(string id, TileSize size) { _settings.PrefFor(id).Size = size; AfterPrefChange(); }
+
+    /// <summary>S9: a tile grown S→L in Free/Snap can push past the canvas's current extent — RebuildSections
+    /// (via <see cref="AfterPrefChange"/>) already recomputes it every time, but do so explicitly too so the
+    /// contract holds even if that call site ever stops recomputing unconditionally on every rebuild.</summary>
+    public void SetTileSize(string id, TileSize size)
+    {
+        _settings.PrefFor(id).Size = size;
+        AfterPrefChange();
+        RecomputeCanvasExtent();
+    }
+
     public void SetTileMax(string id, float? max) { _settings.PrefFor(id).Max = max is > 0 ? max : null; AfterPrefChange(); }
 
     public void RenameTile(string id, string? name)
@@ -434,7 +444,14 @@ public sealed partial class DashboardViewModel : ObservableObject
             CoreMatrixX = _settings.CoreMatrixX ?? 0;
             CoreMatrixY = _settings.CoreMatrixY ?? 0;
         }
-        if (LayoutMode != DashboardLayoutMode.Auto) PlaceUnpositioned();
+        if (LayoutMode != DashboardLayoutMode.Auto)
+        {
+            PlaceUnpositioned();
+        }
+        else
+        {
+            _seedPackSavedLastRebuild = false; // Auto never runs the seed pack, so nothing saved on its behalf
+        }
         RecomputeCanvasExtent();
     }
 

@@ -155,8 +155,8 @@ hash after downloading an update (older releases without a published hash retain
   - **Auto arrange** (default) — today's collapsible groups, tiles flowing in a WrapPanel per
     group, same-group drag to reorder.
   - **Free** — the dashboard becomes one scrollable canvas (group headers disappear); drag any
-    tile, or the core matrix block, anywhere. With a tile focused, arrow keys nudge it by one step
-    (**Shift**+arrow moves 4 steps at once).
+    tile, or the core matrix block, anywhere. With a tile or the core matrix block focused, arrow
+    keys nudge it by one step (**Shift**+arrow moves 4 steps at once).
   - **Snap to grid** — the same free canvas, but a dropped or nudged position rounds to the
     nearest 16-pixel grid line; tiles are allowed to overlap.
 
@@ -165,7 +165,8 @@ hash after downloading an update (older releases without a published hash retain
   core matrix block — in `settings.json`, so a Free or Snap layout you build is exactly where you
   left it the next time Stats starts. Switching back to Auto never discards your Free/Snap
   positions, and switching away from Auto never discards your group order — each mode remembers
-  its own arrangement independently.
+  its own arrangement independently. Positions are kept per tile even for tiles removed from the
+  dashboard — re-adding one returns it to the same spot rather than re-seeding it.
 - **▤ Peaks** — separate window: now / min / avg / max for your dashboard metrics (or all), with the
   time the session min/max occurred shown as subtext/tooltip; numeric columns are aligned; **Copy**
   copies the table as TSV; Reset session. At the window's minimum width the table scrolls

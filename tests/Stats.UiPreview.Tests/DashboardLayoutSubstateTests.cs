@@ -74,6 +74,17 @@ public class DashboardLayoutSubstateTests : IDisposable
             Assert.Equal(0d, tile.X % DashboardLayout.GridSize);
             Assert.Equal(0d, tile.Y % DashboardLayout.GridSize);
         }
+
+        // S8: the substate only asserted the VM's pre-SizeChanged state, which the app never actually renders —
+        // the core-matrix block always reports its measured size once laid out (DashboardWindow.xaml.cs's
+        // CoreMatrixBlock_SizeChanged -> SetCoreMatrixSize), and in Grid layout that shift must re-snap (B1b).
+        // Simulate the view reporting the block's real size and re-assert every position is still on-grid.
+        c.Dashboard.SetCoreMatrixSize(300, 188);
+        foreach (var tile in c.Dashboard.Tiles)
+        {
+            Assert.Equal(0d, tile.X % DashboardLayout.GridSize);
+            Assert.Equal(0d, tile.Y % DashboardLayout.GridSize);
+        }
     }
 
     [Fact]
@@ -84,11 +95,12 @@ public class DashboardLayoutSubstateTests : IDisposable
         Assert.Equal(DashboardLayoutMode.Free, c.Dashboard.LayoutMode);
         Assert.True(c.Dashboard.Tiles.Count >= 3);
 
-        // The first two tiles are placed at the exact same position — overlap is allowed in Free/Snap.
+        // The first two tiles' bounding boxes intersect (offset by less than a tile) — overlap is allowed in
+        // Free/Snap, and the offset keeps both visible in the capture.
         var first = c.Dashboard.Tiles[0];
         var second = c.Dashboard.Tiles[1];
-        Assert.Equal(first.X, second.X);
-        Assert.Equal(first.Y, second.Y);
+        Assert.True(second.X < first.X + first.Width && first.X < second.X + second.Width);
+        Assert.True(second.Y < first.Y + first.Height && first.Y < second.Y + second.Height);
 
         // Every tile still has a position (seeded or explicit) — nothing was left unplaced.
         foreach (var tile in c.Dashboard.Tiles)

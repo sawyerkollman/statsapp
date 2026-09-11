@@ -50,3 +50,51 @@ public class DashboardLayoutTests
         Assert.Equal(12, DashboardLayout.Gap);
     }
 }
+
+public class DashboardLayoutModeConverterTests
+{
+    private static DashboardLayoutMode ReadJson(string json)
+    {
+        var reader = new System.Text.Json.Utf8JsonReader(System.Text.Encoding.UTF8.GetBytes(json));
+        reader.Read();
+        return new DashboardLayoutModeConverter().Read(ref reader, typeof(DashboardLayoutMode), new System.Text.Json.JsonSerializerOptions());
+    }
+
+    [Theory]
+    [InlineData("\"Free\"", DashboardLayoutMode.Free)]
+    [InlineData("\"grid\"", DashboardLayoutMode.Grid)] // case-insensitive
+    [InlineData("\"Auto\"", DashboardLayoutMode.Auto)]
+    [InlineData("\"NotARealMode\"", DashboardLayoutMode.Auto)] // unrecognized string
+    [InlineData("null", DashboardLayoutMode.Auto)]
+    [InlineData("42", DashboardLayoutMode.Auto)]
+    [InlineData("true", DashboardLayoutMode.Auto)]
+    public void Read_ScalarTokens_ParseOrFallBackToAuto(string json, DashboardLayoutMode expected)
+    {
+        Assert.Equal(expected, ReadJson(json));
+    }
+
+    // S10: a hand-edited "DashboardLayoutMode": {} or [] used to leave the reader positioned on the container's
+    // start token instead of consuming to its matching end token, so the whole-object JsonSerializer.Deserialize
+    // call downstream throws "read too much or not enough" — defeating the point of this lenient converter. These
+    // two must return Auto *and* fully consume the container, which the round-trip test below verifies.
+    [Theory]
+    [InlineData("{}")]
+    [InlineData("[]")]
+    [InlineData("{\"nested\":{\"a\":1}}")]
+    [InlineData("[1,2,3]")]
+    public void Read_ContainerTokens_ReturnsAuto_AndDoesNotCorruptTheParse(string json)
+    {
+        Assert.Equal(DashboardLayoutMode.Auto, ReadJson(json));
+    }
+
+    [Fact]
+    public void Read_ObjectToken_InAWholeSettingsDocument_DoesNotThrow()
+    {
+        // Reproduces the failure mode directly: a hand-edited settings.json with an object where the mode string
+        // should be. Deserializing the whole AppSettings object must not throw.
+        var json = "{\"DashboardLayoutMode\":{},\"PollIntervalSeconds\":1}";
+        var settings = System.Text.Json.JsonSerializer.Deserialize<AppSettings>(json);
+        Assert.NotNull(settings);
+        Assert.Equal(DashboardLayoutMode.Auto, settings!.DashboardLayoutMode);
+    }
+}

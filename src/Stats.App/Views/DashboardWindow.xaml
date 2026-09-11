@@ -268,11 +268,13 @@
                         </ItemsControl.ItemTemplate>
                     </ItemsControl>
 
-                    <Grid Width="{Binding CanvasWidth}" Height="{Binding CanvasHeight}">
+                    <Grid Width="{Binding CanvasWidth}" Height="{Binding CanvasHeight}"
+                          HorizontalAlignment="Left" VerticalAlignment="Top">
                         <!-- Core-matrix block layer: a single-item Canvas so Canvas.Left/Top (bound to the window's
-                             own DataContext.CoreMatrixX/Y, not an item's) can position it — sits under the tiles
-                             layer, matching the Auto template's core-matrix-above-tiles visual order isn't required
-                             here since positions are independent and overlap is allowed by design. -->
+                             own DataContext.CoreMatrixX/Y, not an item's) can position it. It is the bottom layer —
+                             below the tiles layer, unlike Auto's template where the block sits above the tiles — a
+                             deliberate trade-off: a tile dragged over the block permanently blocks grabbing the
+                             block in that overlapped region (see docs/layout-modes/REVIEW.md N1). -->
                         <Canvas Visibility="{Binding CoreMatrix, Converter={StaticResource NullToVis}}">
                             <Canvas.Resources>
                                 <DataTemplate DataType="{x:Type vm:CoreMatrixViewModel}">
@@ -297,7 +299,7 @@
                              ItemContainerStyle verbatim — see DashboardWindow.xaml.cs. Drag uses new FreeTile_* handlers
                              (direct Canvas.Left/Top manipulation) instead of Auto's DragDrop.DoDragDrop reorder path;
                              a second PreviewKeyDown EventSetter adds arrow-key nudge alongside the reused menu-key one. -->
-                        <ItemsControl x:Name="FreeCanvas" ItemsSource="{Binding Tiles}" ItemTemplateSelector="{StaticResource TileSelector}">
+                        <ItemsControl ItemsSource="{Binding Tiles}" ItemTemplateSelector="{StaticResource TileSelector}">
                             <ItemsControl.ItemsPanel>
                                 <ItemsPanelTemplate>
                                     <Canvas/>

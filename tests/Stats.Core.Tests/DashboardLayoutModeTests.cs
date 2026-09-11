@@ -63,9 +63,25 @@ public class DashboardLayoutModeTests
         Assert.Equal(DashboardLayoutMode.Free, vm.LayoutMode);
         Assert.Equal(DashboardLayoutMode.Free, s.DashboardLayoutMode);
         Assert.True(vm.Sections.Count > 0); // RebuildSections ran again (cheap smoke check it didn't throw/empty)
-        // Two saves: OnLayoutModeChanged's own (persists the mode) plus the seed pack's (persists cpu.temp's
-        // freshly-seeded position, now that RebuildSections runs in non-Auto layout for the first time).
-        Assert.Equal(2, saves());
+        // S11: one save — the rebuild's own seed pack save (it persists cpu.temp's freshly-seeded position, now
+        // that RebuildSections runs in non-Auto layout for the first time) already covers persisting the mode
+        // change too, so OnLayoutModeChanged's own save is skipped rather than redundantly saving a second time.
+        Assert.Equal(1, saves());
+    }
+
+    [Fact]
+    public void SetLayoutModeCommand_StillSavesOnce_WhenTheSeedPackHasNothingToPlace()
+    {
+        // Every tile (and the block) is already positioned by the time this mode switch happens, so the seed
+        // pack's own save (S11's usual path) never fires — the mode change must still end up persisted via the
+        // unconditional fallback save in OnLayoutModeChanged, not silently dropped.
+        var (vm, s, _, saves) = Make(DashboardLayoutMode.Free, showCoreMatrix: false, "cpu.temp");
+        int before = saves(); // construction already seeded+saved cpu.temp once
+
+        vm.SetLayoutModeCommand.Execute(DashboardLayoutMode.Grid);
+
+        Assert.Equal(DashboardLayoutMode.Grid, s.DashboardLayoutMode);
+        Assert.Equal(before + 1, saves()); // fallback save — nothing was seeded, but the mode itself still persisted
     }
 
     [Fact]
@@ -161,24 +177,47 @@ public class DashboardLayoutModeTests
     }
 
     [Fact]
-    public void SetCoreMatrixSize_ShiftsTilesSeededBelowAnUnmeasuredBlock()
+    public void SetCoreMatrixSize_ReappliesTheShift_OnEveryCall_UntilTheFinalMeasurementWins()
     {
         // Construction seeds cpu.temp at (0, Gap) because the block is freshly seeded but still unmeasured (0x0) —
-        // see SeedPack_CoreMatrixBlock_PlacedAtOrigin_TilesPackBelowIt. Once the view reports the block's real
-        // size, that one tile must move down to sit below it instead of under it, and only once.
+        // see SeedPack_CoreMatrixBlock_PlacedAtOrigin_TilesPackBelowIt. WPF fires SizeChanged more than once while
+        // the block settles into its final layout — the first firing can carry a partial/intermediate height (B1) —
+        // so a *later, larger* measurement must re-apply baseY + newHeight, not leave the tile at the first
+        // shift's value. See SetCoreMatrixSize_DoesNotShiftATileMovedExplicitlyAfterSeeding for the converse case
+        // (an explicit move supersedes the seed and is never reshifted).
         var (vm, s, _, saves) = Make(DashboardLayoutMode.Free, showCoreMatrix: true, "cpu.temp");
         Assert.Equal(DashboardLayout.Gap, s.TilePrefs["cpu.temp"].Y); // sanity: the "unmeasured" seed position
         int before = saves();
 
-        vm.SetCoreMatrixSize(300, 200);
+        vm.SetCoreMatrixSize(300, 61); // an intermediate/partial measurement, e.g. WPF's first SizeChanged firing
+
+        Assert.Equal(DashboardLayout.Gap + 61, s.TilePrefs["cpu.temp"].Y);
+        Assert.Equal(before + 1, saves());
+
+        vm.SetCoreMatrixSize(300, 200); // the later, real measurement re-applies against the same baseY, not 61
 
         Assert.Equal(DashboardLayout.Gap + 200, s.TilePrefs["cpu.temp"].Y);
         Assert.Equal(DashboardLayout.Gap + 200, vm.Tiles.Single(t => t.Definition.Id == "cpu.temp").Y);
-        Assert.Equal(before + 1, saves()); // shifted and persisted exactly once
+        Assert.Equal(before + 2, saves()); // each shift that actually moved something is persisted
 
-        vm.SetCoreMatrixSize(300, 250); // a later re-measurement must not shift it again
-        Assert.Equal(DashboardLayout.Gap + 200, s.TilePrefs["cpu.temp"].Y);
-        Assert.Equal(before + 1, saves());
+        vm.SetCoreMatrixSize(300, 200); // re-reporting the same height moves nothing — no extra save
+        Assert.Equal(before + 2, saves());
+    }
+
+    [Fact]
+    public void SetCoreMatrixSize_GridMode_ReSnapsTheShiftedPosition()
+    {
+        // B1b: the shift used to add a raw measured height without re-snapping, so in Grid layout every tile
+        // seeded below an unmeasured block ended up off-grid once the real height arrived. The shifted Y must go
+        // back through the same snap the seed pack and every drag use.
+        var (vm, s, _, _) = Make(DashboardLayoutMode.Grid, showCoreMatrix: true, "cpu.temp");
+        Assert.Equal(0, s.TilePrefs["cpu.temp"].Y % DashboardLayout.GridSize); // sanity: seeded on-grid
+
+        vm.SetCoreMatrixSize(300, 61); // a height that would land off-grid if added raw (Gap=12 + 61 = 73)
+
+        var y = s.TilePrefs["cpu.temp"].Y!.Value;
+        Assert.Equal(0, y % DashboardLayout.GridSize);
+        Assert.Equal(y, vm.Tiles.Single(t => t.Definition.Id == "cpu.temp").Y);
     }
 
     [Fact]
@@ -278,6 +317,23 @@ public class DashboardLayoutModeTests
     }
 
     [Fact]
+    public void SeedPack_NewlyAddedTile_SeedsBelowExistingPlacedTiles_NotOnTopOfThem()
+    {
+        // S3: enabling a second metric after the first is already placed must not seed it at the same (0, startY)
+        // spot the first tile occupies — that reads as "nothing happened" since the new tile is invisible under
+        // the old one. It must land below the bottom edge of everything already placed.
+        var (vm, s, _, _) = Make(DashboardLayoutMode.Free, showCoreMatrix: false, "cpu.temp");
+        var firstBottom = s.TilePrefs["cpu.temp"].Y!.Value + vm.Tiles.Single().Height;
+
+        s.DashboardMetrics.Add("gpu.clock"); // simulates the picker enabling a new metric
+        vm.RebuildSections();
+
+        var gpuTile = vm.Tiles.Single(t => t.Definition.Id == "gpu.clock");
+        Assert.True(s.TilePrefs["gpu.clock"].Y >= firstBottom);
+        Assert.True(gpuTile.Y >= firstBottom);
+    }
+
+    [Fact]
     public void SeedPack_GridMode_SnapsSeededPositions()
     {
         // Tile widths (224) aren't multiples of GridSize's neighbour math in every case, but each individual
@@ -319,6 +375,22 @@ public class DashboardLayoutModeTests
         Assert.Equal(0, s.CoreMatrixY);
         Assert.Equal(0, s.TilePrefs["cpu.temp"].X);
         Assert.NotEqual(500, s.TilePrefs["cpu.temp"].X);
+    }
+
+    [Fact]
+    public void ResetPositionsCommand_WithZeroTilesAndNoCoreMatrix_StillPersists()
+    {
+        // S2: with nothing selected and no core matrix, PlaceUnpositioned places nothing and therefore never
+        // saves on its own — ResetPositions must still persist unconditionally, or the reset is silently lost on
+        // the next launch.
+        var (vm, _, _, saves) = Make(DashboardLayoutMode.Free, showCoreMatrix: false);
+        int before = saves();
+
+        vm.ResetPositionsCommand.Execute(null);
+
+        Assert.True(saves() > before);
+        Assert.Equal(0, vm.CanvasWidth);
+        Assert.Equal(0, vm.CanvasHeight);
     }
 
     // ---- canvas extent ----
@@ -366,5 +438,78 @@ public class DashboardLayoutModeTests
         vm.SetGroupStatus(MetricGroup.Cpu, "still here");
         vm.RebuildSections();
         Assert.Equal(new[] { "still here" }, vm.StatusLines);
+    }
+
+    [Fact]
+    public void StatusLines_UnchangedGroupStatus_DoesNotChurnTheCollection()
+    {
+        // S1: SetGroupStatus fires on every poll tick (App.xaml.cs's coalesced refresh), and used to
+        // unconditionally Clear()+refill StatusLines even when the text for that group hadn't changed — a
+        // Reset + N Adds per tick that tears down and rebuilds the bound ItemsControl's containers for nothing.
+        var (vm, _, _, _) = Make(DashboardLayoutMode.Free, showCoreMatrix: false, "cpu.temp");
+        vm.SetGroupStatus(MetricGroup.Cpu, "same text");
+        var before = vm.StatusLines;
+        int resets = 0;
+        System.Collections.Specialized.NotifyCollectionChangedEventHandler handler = (_, e) =>
+        {
+            if (e.Action == System.Collections.Specialized.NotifyCollectionChangedAction.Reset) resets++;
+        };
+        before.CollectionChanged += handler;
+
+        vm.SetGroupStatus(MetricGroup.Cpu, "same text"); // identical text on the next poll tick
+
+        before.CollectionChanged -= handler;
+        Assert.Equal(0, resets);
+        Assert.Same(before, vm.StatusLines); // same ObservableCollection instance, never replaced
+    }
+
+    // ---- S9: missing negative cases ----
+
+    [Fact]
+    public void ModeRoundTrip_FreeToAutoToFree_DoesNotReSeedOrReSave()
+    {
+        // Per spec acceptance: switching Free -> Auto -> Free must not re-run the seed pack (every tile already
+        // has a position from the first Free entry) or save again — RebuildSections' seed pack is correctly a
+        // no-op here only because PlaceUnpositioned no-ops when everything is already placed; this asserts that
+        // holds across a full mode round-trip, not just a same-mode re-run.
+        var (vm, s, _, saves) = Make(DashboardLayoutMode.Free, showCoreMatrix: true, "cpu.temp", "gpu.clock");
+        var cpuX = s.TilePrefs["cpu.temp"].X;
+        var cpuY = s.TilePrefs["cpu.temp"].Y;
+        var gpuX = s.TilePrefs["gpu.clock"].X;
+        var gpuY = s.TilePrefs["gpu.clock"].Y;
+        var coreX = s.CoreMatrixX;
+        var coreY = s.CoreMatrixY;
+        int before = saves();
+
+        vm.SetLayoutModeCommand.Execute(DashboardLayoutMode.Auto);
+        vm.SetLayoutModeCommand.Execute(DashboardLayoutMode.Free);
+
+        Assert.Equal(cpuX, s.TilePrefs["cpu.temp"].X);
+        Assert.Equal(cpuY, s.TilePrefs["cpu.temp"].Y);
+        Assert.Equal(gpuX, s.TilePrefs["gpu.clock"].X);
+        Assert.Equal(gpuY, s.TilePrefs["gpu.clock"].Y);
+        Assert.Equal(coreX, s.CoreMatrixX);
+        Assert.Equal(coreY, s.CoreMatrixY);
+        // Two saves: Auto's own fallback save (nothing to seed, seed pack no-ops) and Free's own fallback save
+        // (everything already placed, seed pack no-ops again) — never a re-seed's save.
+        Assert.Equal(before + 2, saves());
+    }
+
+    [Fact]
+    public void TileSizeChange_InFreeMode_UpdatesCanvasExtent()
+    {
+        // S9: a tile grown S -> L at the canvas edge must not be clipped until the next unrelated rebuild —
+        // RecomputeCanvasExtent must actually run off a tile size change, not just off position writes.
+        var (vm, s, _, _) = Make(DashboardLayoutMode.Free, showCoreMatrix: false, "cpu.temp");
+        var tile = vm.Tiles.Single();
+        vm.SetTilePosition("cpu.temp", 0, 0);
+        var extentBefore = vm.CanvasWidth;
+
+        vm.SetTileSizeEditCommand.Execute(new TileSizeEdit("cpu.temp", TileSize.L));
+
+        var grown = vm.Tiles.Single(t => t.Definition.Id == "cpu.temp");
+        Assert.True(grown.Width > tile.Width); // sanity: L is actually wider than M
+        Assert.True(vm.CanvasWidth >= grown.X + grown.Width + DashboardLayout.Gap);
+        Assert.True(vm.CanvasWidth > extentBefore);
     }
 }

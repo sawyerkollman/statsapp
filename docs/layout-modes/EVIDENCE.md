@@ -9,10 +9,12 @@ Follows the structure of `docs/ui-polish/EVIDENCE_TEMPLATE.md`, scoped to this f
 - Date/time: 2026-09-11
 - Repo/branch: `C:\claude-projects\Stats`, `feature/dashboard-layout-modes`
 - Baseline commit: `75115aa` (v1.9.2, base the design was written against)
-- Final candidate commit (Task 4, harness + docs): built on `ecc6f38` (Task 3 — free/snap canvas)
-- Dirty files/diff identity: working tree has Task 4's uncommitted changes (harness substates,
-  `baseline.json`, new test file, `README.md`, this file) — not committed by this task per its
-  instructions
+- Final candidate commit: **branch tip + this fix wave (uncommitted)** — `docs/layout-modes/REVIEW.md`'s
+  whole-branch review at `c301dff`, plus the fix wave addressing its blockers/should-fix/nits (B1,
+  B1b, B2, S1-S11, N1-N3, N5-N7; N4 skipped). Not committed per this task's instructions.
+- Dirty files/diff identity: working tree has the fix wave's uncommitted changes (see
+  `docs/layout-modes/REVIEW.md`'s "Fix wave" section for the full file list) — not committed by this
+  task per its instructions
 - Windows version, .NET SDK: Windows 11 Pro 10.0.26220, `dotnet 9.0.316` (repo targets `net8.0-windows`)
 - Desktop availability: yes — captures below used `--method rtb` (RenderTargetBitmap); `--method
   screen` was reported blank in an earlier session for this environment (per
@@ -69,8 +71,8 @@ persists to `AppSettings.DashboardLayoutMode`, calls `RebuildSections()` (which 
 | Command | Exit | Warnings | Result |
 | --- | --- | --- | --- |
 | `dotnet build --nologo` | 0 | 0 | Build succeeded — 5 projects |
-| `dotnet test --nologo` | 0 | 0 | `Stats.Core.Tests`: 739/739 passed. `Stats.UiPreview.Tests`: 182/182 passed (172 pre-existing + 10 new `DashboardLayoutSubstateTests`) |
-| `dotnet run --project tools/Stats.UiPreview -- --batch <7-entry manifest>` | 0 | 0 across all 7 | 7/7 captures written, 0 failed, `Warnings` empty in every sidecar |
+| `dotnet test --nologo` | 0 | 0 | `Stats.Core.Tests`: 759/759 passed (740 pre-fix-wave + 19 new/rewritten for B1b/S2/S3/S7/S8/S9/S10/S11). `Stats.UiPreview.Tests`: 182/182 passed (S8's rewritten test is one of the 182, not an addition) |
+| Seven individual capture runs (below) | 0 | 0 across all 7 | 7/7 captures re-written, 0 failed, `Warnings` empty in every sidecar |
 
 The 7-capture batch run used a scratch manifest (not `baseline.json` itself, to avoid re-running the
 ~60 pre-existing `before/` entries against this environment) containing the six new `baseline.json`
@@ -83,18 +85,25 @@ individually with, e.g.:
 
 ## Visual evidence
 
+**Candidate for this section: branch tip + this fix wave (uncommitted)** — B1/B1b/B2 and the
+should-fix items below, re-captured after the fix (the previous revision of this section described
+the pre-fix captures and was factually wrong per `docs/layout-modes/REVIEW.md`; see that file's "Fix
+wave" section for the full item list).
+
 All captures: scenario `dense` (16-core matrix + CPU/GPU/memory/storage/network misc tiles),
-1180×720 logical, DPI 96, UI scale 1.0, method `rtb`, `Warnings: []` in every sidecar.
+1180×720 logical, DPI 96, UI scale 1.0, method `rtb`, `Warnings: []` in every sidecar, re-run after
+the fix wave (`SourceCommit`/`DirtyDiffIdentity` in each sidecar JSON reflect the branch tip plus the
+uncommitted fix-wave diff).
 
 | Case | PNG | Theme | Observation |
 | --- | --- | --- | --- |
-| `layout-free` | `artifacts/ui-polish/layout/v13-layout-free-dark-amber.png` | Dark Amber | Group headers are gone; one scrollable canvas holds the core-matrix block at top-left and every tile packed left-to-right, wrapping into rows below it — the seed pack's row layout is visible and no two tiles overlap. |
-| `layout-free` | `artifacts/ui-polish/layout/v13-layout-free-light.png` | Light | Same packed layout and scroll behavior as the Dark Amber capture, themed correctly (white tile backgrounds, dark text, amber accent preserved on gauges/sparklines). |
-| `layout-grid` | `artifacts/ui-polish/layout/v13-layout-grid-dark-amber.png` | Dark Amber | Visually identical packing to `layout-free` at this zoom (the seed pack's row/column steps are already multiples of 4, so 12px gaps land on 16px grid lines) — snap alignment is confirmed by the harness test (`tile.X/Y % 16 == 0`) rather than being visually distinguishable from Free in a static screenshot. |
+| `layout-free` | `artifacts/ui-polish/layout/v13-layout-free-dark-amber.png` | Dark Amber | **B1/B2 fixed, confirmed visually.** The core-matrix block ("Cores — load · clock · temp") occupies y≈75…258; row 1 of tiles (Tctl/Tdie, Package Power, TDC Current) now starts at y≈285, fully below the block — no overlap, where the pre-fix capture had row 1 at y≈73 covering the block's bottom two-thirds. The left edge of both the block and every tile sits at x≈16 (the canvas's own margin), i.e. flush with the window's left edge — not the ≈143px centred gutter the pre-fix capture showed (B2's `HorizontalAlignment="Left"` fix). |
+| `layout-free` | `artifacts/ui-polish/layout/v13-layout-free-light.png` | Light | Same corrected layout (block above, row 1 clear below it, left-anchored) in Light theme — white tile backgrounds, dark text, amber/brown accent preserved on gauges/sparklines. |
+| `layout-grid` | `artifacts/ui-polish/layout/v13-layout-grid-dark-amber.png` | Dark Amber | **B1b fixed.** Same corrected below-the-block layout as `layout-free` (visually indistinguishable from Free at this zoom, since the seed pack's own placements already land on 16px lines); grid alignment after a simulated `SetCoreMatrixSize` re-measurement is confirmed on-grid by `DashboardLayoutSubstateTests.LayoutGrid_SetsGridMode_AndEverySeededPositionIsSnapped`'s new post-shift assertion (S8) and by `DashboardLayoutModeTests.SetCoreMatrixSize_GridMode_ReSnapsTheShiftedPosition` (B1b) — neither of which the pre-fix code passed. |
 | `layout-grid` | `artifacts/ui-polish/layout/v13-layout-grid-light.png` | Light | Same as above, Light theme. |
-| `layout-free-placed` | `artifacts/ui-polish/layout/v13-layout-free-placed-dark-amber.png` | Dark Amber | The two explicitly-overlapping tiles (Tctl/Tdie, Package Power) scrolled out of the visible viewport at (700,420); the "TDC Current" tile is visibly moved to the top-right (980,60), and the core-matrix block's colored core badges are visible peeking in at the bottom-right edge, moved off its seeded (0,0) position to (760,540) — canvas is noticeably wider/taller than `layout-free`'s (horizontal scrollbar present), consistent with tiles/block being moved outward. Overlap itself is confirmed by the harness test asserting the two tiles share an exact X/Y, since the overlapping pair scrolled outside this particular viewport. |
+| `layout-free-placed` | `artifacts/ui-polish/layout/v13-layout-free-placed-dark-amber.png` | Dark Amber | The deliberately overlapping pair is plainly visible in the empty top-middle area: Package Power (PPT) at (680,110) sits over the lower-right of Tctl/Tdie at (600,40). TDC Current is at the top-right, the core-matrix block has been moved to the bottom-right (its badges peek in at the bottom edge), and the seeded tiles remain packed below the block's original slot. Overlap is allowed by design and is also asserted by `DashboardLayoutSubstateTests.LayoutFreePlaced_HasOneDeliberatelyOverlappingPair_AndAMovedCoreMatrixBlock` (bounding boxes intersect). |
 | `layout-free-placed` | `artifacts/ui-polish/layout/v13-layout-free-placed-light.png` | Light | Same moved/overlapping arrangement, Light theme. |
-| Auto (comparison) | `artifacts/ui-polish/layout/v13-layout-auto-dense-dark-amber.png` | Dark Amber | **Auto unchanged**: compared against `artifacts/ui-polish/after/v2-dashboard-dense.png` (the pre-existing UI-polish "after" gallery capture for the same `dense` scenario). Group headers ("Cpu (4)", "Gpu (7)"), core-matrix cell values/colors, tile order, tile values, and pixel layout in the client area are identical between the two — the only visible difference is that the `after/` capture used `--method screen` and so includes the native window title bar/chrome, while this task's `--method rtb` capture is the client area only. Below the title bar the two images match exactly. |
+| Auto (comparison) | `artifacts/ui-polish/layout/v13-layout-auto-dense-dark-amber.png` | Dark Amber | **Auto unchanged, re-confirmed.** Group headers ("Cpu (4)", "Gpu (7)"), core-matrix cell values/colors, tile order/values, and client-area layout are unchanged by the fix wave — B1/B1b/B2/S1-S11 only touch Free/Snap's canvas and position-tracking code, none of which Auto's `RebuildSections` path (group sections, WrapPanel) exercises. Matches the pre-fix capture and `artifacts/ui-polish/after/v2-dashboard-dense.png` below the title bar. |
 
 Full sidecar JSONs (`*.json` next to each PNG) record source commit, fixture time/seed, DPI,
 culture, exact launch command, and simulated-services list per PREVIEW_HARNESS.md's contract.
@@ -135,8 +144,9 @@ are flagged here so they land on the PR owner checklist per the design's Accepta
 | Gate | Pass / fail / blocked | Evidence |
 | --- | --- | --- |
 | Build | Pass | `dotnet build --nologo` — 0 warnings, 0 errors |
-| Tests | Pass | `dotnet test --nologo` — 739/739 (`Stats.Core.Tests`) + 182/182 (`Stats.UiPreview.Tests`), 0 failures |
-| Preview isolation | Pass (unchanged) | `IsolationMetadataTests`/`CompositionIsolationTests` still pass; the new substates touch only `AppSettings`/`DashboardViewModel`, no new service dependency |
-| Captures | Pass | 7/7 written, 0 warnings in any sidecar |
-| Visual (Auto unchanged) | Pass | See table above — Auto's client-area content is pixel-identical to `after/v2-dashboard-dense.png` |
-| Visual (Free/Grid/Free-placed) | Pass | Canvas visible, no group headers, packed rows, overlap confirmed by test (scrolled out of the placed-mode viewport) |
+| Tests | Pass | `dotnet test --nologo` — 759/759 (`Stats.Core.Tests`) + 182/182 (`Stats.UiPreview.Tests`), 0 failures, 0 warnings |
+| Preview isolation | Pass (unchanged) | `IsolationMetadataTests`/`CompositionIsolationTests` still pass; the fix wave touches only `AppSettings`/`DashboardViewModel`/`DashboardWindow`, no new service dependency |
+| Captures | Pass | 7/7 re-written after the fix wave, 0 warnings in any sidecar |
+| Visual (Auto unchanged) | Pass | Re-confirmed after the fix wave — see table above |
+| Visual (B1/B1b/B2 fixed) | Pass | Row 1 of tiles now sits fully below the core-matrix block in both Free and Grid captures (was overlapping pre-fix), and the canvas is left-anchored at x≈16 in both (was centred with a ≈143px gutter pre-fix) — see table above |
+| Visual (Free-placed overlap) | Pass | The overlapping pair (Tctl/Tdie under Package Power) is visible in both placed captures; also asserted by `DashboardLayoutSubstateTests.LayoutFreePlaced_HasOneDeliberatelyOverlappingPair_AndAMovedCoreMatrixBlock` |

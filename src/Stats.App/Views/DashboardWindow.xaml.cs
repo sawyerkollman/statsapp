@@ -194,13 +194,14 @@ public partial class DashboardWindow : Window
     private void FreeTile_PreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
     {
         if (sender is not FrameworkElement container) return;
-        if (FindAncestorButtonOrSelf(e.OriginalSource as DependencyObject) is not null) return; // never drag from "…" or another button
+        if (FindAncestorButtonOrSelf(e.OriginalSource as DependencyObject, container) is not null) return; // never drag from "…" or another button
         if (e.ClickCount == 2)
         {
             if (container.DataContext is MetricTileViewModel t) Vm?.OpenTileDetail(t.Definition.Id);
             return;
         }
         if (container.DataContext is not MetricTileViewModel) return;
+        container.Focus(); // makes arrow-key nudge reachable right after this drag/click, not just via Tab-cycling
         _freeDragContainer = container;
         _freeDragMouseStart = e.GetPosition(this);
         _freeDragOrigin = new Point(Canvas.GetLeft(container), Canvas.GetTop(container));
@@ -233,18 +234,23 @@ public partial class DashboardWindow : Window
         container.ReleaseMouseCapture();
         if (!_freeDragExceededThreshold) return; // a click, not a drag — position unchanged
         if (container.DataContext is MetricTileViewModel tile)
+        {
             Vm?.SetTilePosition(tile.Definition.Id, Canvas.GetLeft(container), Canvas.GetTop(container));
-        ReassertCanvasBindings(container);
+            PushFinalPosition(container, tile.X, tile.Y);
+        }
     }
 
-    /// <summary>After a drag commits, re-pull Canvas.Left/Top from the VM. SetTilePosition/SetCoreMatrixPosition
-    /// may clamp/snap the drop point back to the value the VM already held (e.g. a short drag in Snap mode that
-    /// rounds to the same cell), in which case no PropertyChanged fires and the SetCurrentValue drag position
-    /// would otherwise stay on screen.</summary>
-    private static void ReassertCanvasBindings(FrameworkElement container)
+    /// <summary>After a drag commits, deterministically re-paint Canvas.Left/Top with the VM's final (possibly
+    /// clamped/snapped) value. <c>Canvas.Left</c>/<c>Top</c> come from a Style setter binding, not a local one — a
+    /// <c>BindingOperations.GetBindingExpression(...).UpdateTarget()</c> call against a style-sourced expression is
+    /// not a guaranteed retrieval, and when it returns null a Snap-mode drop that snaps back to the value the VM
+    /// already held (no PropertyChanged) leaves the raw drag position painted on screen. Pushing the VM's value
+    /// straight back with SetCurrentValue is deterministic either way, and doesn't fight the Style setter binding
+    /// the way a local value assignment would.</summary>
+    private static void PushFinalPosition(FrameworkElement container, double x, double y)
     {
-        BindingOperations.GetBindingExpression(container, Canvas.LeftProperty)?.UpdateTarget();
-        BindingOperations.GetBindingExpression(container, Canvas.TopProperty)?.UpdateTarget();
+        container.SetCurrentValue(Canvas.LeftProperty, x);
+        container.SetCurrentValue(Canvas.TopProperty, y);
     }
 
     /// <summary>Arrow-key nudge, added alongside (not instead of) <see cref="Tile_PreviewKeyDown"/>'s reused
@@ -263,6 +269,9 @@ public partial class DashboardWindow : Window
     private void CoreMatrixBlock_PreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
     {
         if (sender is not FrameworkElement container) return;
+        if (FindAncestorButtonOrSelf(e.OriginalSource as DependencyObject, container) is not null) return; // mirrors FreeTile_*: never drag from a button
+        if (e.ClickCount == 2) return; // mirrors FreeTile_*'s double-click branch; the block has no double-click action, so just don't start a drag
+        container.Focus(); // makes arrow-key nudge reachable right after this drag/click, not just via Tab-cycling
         _coreDragContainer = container;
         _coreDragMouseStart = e.GetPosition(this);
         _coreDragOrigin = new Point(Canvas.GetLeft(container), Canvas.GetTop(container));
@@ -294,8 +303,11 @@ public partial class DashboardWindow : Window
         _coreDragContainer = null;
         container.ReleaseMouseCapture();
         if (!_coreDragExceededThreshold) return;
-        Vm?.SetCoreMatrixPosition(Canvas.GetLeft(container), Canvas.GetTop(container));
-        ReassertCanvasBindings(container);
+        if (Vm is DashboardViewModel vm)
+        {
+            vm.SetCoreMatrixPosition(Canvas.GetLeft(container), Canvas.GetTop(container));
+            PushFinalPosition(container, vm.CoreMatrixX, vm.CoreMatrixY);
+        }
     }
 
     private void CoreMatrixBlock_PreviewKeyDown(object sender, KeyEventArgs e)
@@ -325,14 +337,17 @@ public partial class DashboardWindow : Window
         }
     }
 
-    /// <summary>Walks up from <paramref name="source"/> looking for a Button — used to keep a click on the tile's
-    /// hover "…" menu button (or any other interactive child a future template might add) from also starting a
-    /// Free/Snap drag.</summary>
-    private static Button? FindAncestorButtonOrSelf(DependencyObject? source)
+    /// <summary>Walks up from <paramref name="source"/>, no further than <paramref name="boundary"/> (inclusive),
+    /// looking for a Button — used to keep a click on the tile's hover "…" menu button (or any other interactive
+    /// child a future template might add) from also starting a Free/Snap drag. Bounding the walk at the drag
+    /// container (rather than walking all the way up into the window chrome) means an ancestor Button outside the
+    /// container — e.g. the window's own header buttons — can never suppress dragging.</summary>
+    private static Button? FindAncestorButtonOrSelf(DependencyObject? source, DependencyObject boundary)
     {
         while (source is not null)
         {
             if (source is Button b) return b;
+            if (ReferenceEquals(source, boundary)) break;
             source = VisualTreeHelper.GetParent(source);
         }
         return null;
