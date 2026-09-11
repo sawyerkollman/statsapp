@@ -202,6 +202,30 @@ public class FansViewModelTests
     }
 
     [Fact]
+    public void Conflicts_GpuOnlyToolIsAdvisory_AndIgnoreIsPersisted()
+    {
+        int saves = 0; var now = new DateTime(2026, 9, 11, 12, 0, 0, DateTimeKind.Utc);
+        var (vm, _, _, s) = Make(() => new[] { "MSIAfterburner" }, () => now, saveSettings: () => saves++);
+        vm.Refresh();
+        Assert.True(vm.HasConflict);
+        Assert.Contains("only controls GPU fans", vm.ConflictText);
+        Assert.DoesNotContain("Close them", vm.ConflictText);
+
+        vm.IgnoreConflictCommand.Execute(null);
+        Assert.False(vm.HasConflict);
+        Assert.Equal(new[] { "MSI Afterburner" }, s.IgnoredFanConflicts);
+        Assert.Equal(1, saves);
+
+        // Stays ignored on the next scan; a different tool still warns with the strong wording.
+        now = now.AddSeconds(6); vm.Refresh();
+        Assert.False(vm.HasConflict);
+        var (vm2, _, _, _) = Make(() => new[] { "MSIAfterburner", "FanControl" }, () => now, seed: x => x.IgnoredFanConflicts.Add("MSI Afterburner"));
+        vm2.Refresh();
+        Assert.StartsWith("Detected: Fan Control —", vm2.ConflictText);
+        Assert.Contains("Close them", vm2.ConflictText);
+    }
+
+    [Fact]
     public void Profiles_SaveLoadDelete_CreateDefaults()
     {
         int saves = 0;

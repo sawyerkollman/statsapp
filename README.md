@@ -52,7 +52,10 @@ Uninstall from Settings → Apps; PawnIO is left installed because other tools m
 - **Competing fan software warning** — the *Fans* window flags other tools that write to the same
   fans (MSI Center, Fan Control, Argus Monitor, MSI Afterburner, Corsair iCUE, NZXT CAM, ASUS Armoury
   Crate, SpeedFan, Gigabyte Control Center, EVGA Precision, Corsair Link) so you can close them first.
-  This is a warning, not a block — some of those tools sit idle unless you open their UI.
+  This is a warning, not a block — some of those tools sit idle unless you open their UI. GPU-only tools
+  (MSI Afterburner, EVGA Precision) get advisory wording — they cannot fight motherboard fans, and on
+  their Auto setting there is no conflict at all. **Don't warn again** silences the banner for the tools
+  currently listed (persisted); a different tool showing up later still warns.
 - **Crash recovery** — if Stats didn't shut down cleanly last time while a fan was under software
   control, every fan is returned to Auto on the next launch and the *Fans* window shows a dismissible
   notice explaining why (and says so if a fan could *not* be handed back — usually other fan software
