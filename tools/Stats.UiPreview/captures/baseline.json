@@ -11,7 +11,7 @@
 
   { "Scenario": "normal", "View": "dashboard", "Substate": "theme-cycle", "Theme": "Dark Amber", "Width": 1180, "Height": 720, "Output": "artifacts/ui-polish/before/v6-theme-cycle.png" },
   { "Scenario": "normal", "View": "dashboard", "Substate": "tile-menu", "Theme": "Dark Amber", "Width": 1180, "Height": 720, "Output": "artifacts/ui-polish/before/v6-tile-context-menu.png" },
-  { "Scenario": "normal", "View": "settings", "Substate": "theme-dropdown", "Theme": "Dark Amber", "Width": 1180, "Height": 900, "Output": "artifacts/ui-polish/before/v6-theme-dropdown.png" },
+  { "Scenario": "normal", "View": "settings", "Substate": "theme-dropdown+category-appearance", "Theme": "Dark Amber", "Width": 1180, "Height": 900, "Output": "artifacts/ui-polish/before/v6-theme-dropdown.png" },
 
   { "Scenario": "gallery", "View": "dashboard", "Theme": "Dark Amber", "Width": 1180, "Height": 1000, "Output": "artifacts/ui-polish/before/v7-tile-gallery-dark-amber.png" },
   { "Scenario": "gallery", "View": "dashboard", "Theme": "Light", "Width": 1180, "Height": 1000, "Output": "artifacts/ui-polish/before/v7-tile-gallery-light.png" },
@@ -49,9 +49,9 @@
   { "Scenario": "normal", "View": "threshold-dialog", "Substate": "lower-is-worse", "Theme": "Dark Amber", "Width": 380, "Height": 260, "Output": "artifacts/ui-polish/before/v11-threshold-dialog-lower-is-worse.png" },
   { "Scenario": "normal", "View": "threshold-dialog", "Substate": "valid", "Theme": "Light", "Width": 380, "Height": 260, "Output": "artifacts/ui-polish/before/v11-threshold-dialog-valid-light.png" },
   { "Scenario": "normal", "View": "input-dialog", "Theme": "Dark Amber", "Width": 380, "Height": 160, "Output": "artifacts/ui-polish/before/v11-input-dialog.png" },
-  { "Scenario": "normal", "View": "settings", "Substate": "invalid-threshold", "Theme": "Dark Amber", "Width": 1180, "Height": 900, "Output": "artifacts/ui-polish/before/v11-settings-invalid-threshold.png" },
-  { "Scenario": "normal", "View": "settings", "Substate": "invalid-hotkey", "Theme": "Dark Amber", "Width": 1180, "Height": 900, "Output": "artifacts/ui-polish/before/v11-settings-invalid-hotkey.png" },
-  { "Scenario": "normal", "View": "settings", "Substate": "invalid-limit", "Theme": "Dark Amber", "Width": 1180, "Height": 900, "Output": "artifacts/ui-polish/before/v11-settings-invalid-limit.png" },
+  { "Scenario": "normal", "View": "settings", "Substate": "invalid-threshold+category-monitoring", "Theme": "Dark Amber", "Width": 1180, "Height": 900, "Output": "artifacts/ui-polish/before/v11-settings-invalid-threshold.png" },
+  { "Scenario": "normal", "View": "settings", "Substate": "invalid-hotkey+category-overlay", "Theme": "Dark Amber", "Width": 1180, "Height": 900, "Output": "artifacts/ui-polish/before/v11-settings-invalid-hotkey.png" },
+  { "Scenario": "normal", "View": "settings", "Substate": "invalid-limit+category-monitoring", "Theme": "Dark Amber", "Width": 1180, "Height": 900, "Output": "artifacts/ui-polish/before/v11-settings-invalid-limit.png" },
 
   { "Scenario": "normal", "View": "overlay", "Substate": "move-mode", "Theme": "Dark Amber", "Width": 400, "Height": 200, "Output": "artifacts/ui-polish/before/v12-overlay-move-mode.png" },
   { "Scenario": "normal", "View": "overlay", "Substate": "light-parent", "Theme": "Light", "Width": 400, "Height": 200, "Output": "artifacts/ui-polish/before/v12-overlay-light-parent.png" },

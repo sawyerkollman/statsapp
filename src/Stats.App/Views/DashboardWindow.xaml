@@ -16,9 +16,13 @@
             <Setter Property="BorderBrush" Value="Transparent"/>
             <Setter Property="ToolTip" Value="Overlay off — click to show"/>
             <Style.Triggers>
+                <!-- Tag="AccentHover" opts into Controls.xaml's HeaderButtonTemplate accent-reassert MultiTrigger,
+                     so hovering the button while the overlay is on doesn't lose the accent border to the
+                     template's generic BorderDim hover. -->
                 <DataTrigger Binding="{Binding IsOverlayVisible}" Value="True">
                     <Setter Property="BorderBrush" Value="{DynamicResource AccentBrush}"/>
                     <Setter Property="ToolTip" Value="Overlay on — click to hide"/>
+                    <Setter Property="Tag" Value="AccentHover"/>
                 </DataTrigger>
             </Style.Triggers>
         </Style>
@@ -257,7 +261,8 @@
                                 <Grid DockPanel.Dock="Top" Margin="0,0,0,8">
                                     <TextBox x:Name="PickerFilterBox" FontSize="{StaticResource FontSizeLabel}" Padding="26,3,26,3"
                                              Text="{Binding PickerFilter, UpdateSourceTrigger=PropertyChanged}"
-                                             ToolTip="Filter by sensor, friendly name, or hardware"/>
+                                             ToolTip="Filter by sensor, friendly name, or hardware"
+                                             AutomationProperties.Name="Search sensors"/>
                                     <Path Data="{StaticResource Icon.Search}" Width="14" Height="14" Stretch="Uniform"
                                           Fill="{DynamicResource TextSecondary}" HorizontalAlignment="Left" Margin="8,0,0,0" IsHitTestVisible="False"/>
                                     <!-- Visible placeholder (DESIGN.md §5 "add a visible search label/placeholder"),

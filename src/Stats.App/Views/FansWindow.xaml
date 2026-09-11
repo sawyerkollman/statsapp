@@ -9,8 +9,8 @@
              keep per-channel exclusivity and arrow-key navigation; only the visuals change. Checked = ControlBg fill +
              AccentBrush 1-unit border + TextPrimary; unchecked = transparent + TextSecondary; keyboard focus uses the
              shared StatsFocusVisual (unlike HeaderButton, which draws its own focus border, this control keeps the
-             system focus-visual adorner); disabled (bound to FanChannelViewModel.ControlEnabled) = Opacity 0.5 via the
-             standard IsEnabled trigger. -->
+             system focus-visual adorner). Mode stays selectable even with the channel's master switch off — only the
+             hardware write is gated, not the desired-state selector (matches the Manual slider and curve editor). -->
         <Style x:Key="SegmentedRadioButton" TargetType="RadioButton">
             <Setter Property="Foreground" Value="{DynamicResource TextSecondary}"/>
             <Setter Property="FontSize" Value="{StaticResource FontSizeDense}"/>
@@ -87,168 +87,173 @@
             </StackPanel>
         </DockPanel>
 
-        <!-- ================= Profile row: selector, active-profile text, Modified badge, Reload/Save as, profile menu. ================= -->
-        <WrapPanel DockPanel.Dock="Top" Margin="0,0,0,10">
-            <TextBlock Text="Profile" Style="{StaticResource SettingsLabel}" Margin="0,0,8,4"/>
-            <ComboBox ItemsSource="{Binding ProfileNames}" SelectedItem="{Binding SelectedProfileName}" MinWidth="150" Margin="0,0,10,4" VerticalAlignment="Center"/>
-            <TextBlock Text="{Binding ActiveProfileName}" Foreground="{DynamicResource TextPrimary}" VerticalAlignment="Center" Margin="0,0,10,4"/>
-            <TextBlock Text="Modified" FontSize="{StaticResource FontSizeDense}" Foreground="{DynamicResource TextSecondary}" VerticalAlignment="Center" Margin="0,0,10,4"
-                       Visibility="{Binding IsModified, Converter={StaticResource BoolToVis}}"/>
-            <Button Content="Reload" Command="{Binding ReloadCommand}" Style="{StaticResource HeaderButton}" Margin="0,0,6,4"
-                    Visibility="{Binding IsModified, Converter={StaticResource BoolToVis}}"/>
-            <Button Content="Save as…" Click="SaveAs_Click" Style="{StaticResource HeaderButton}" Margin="0,0,6,4"/>
-            <Button x:Name="ProfileMenuButton" Click="ProfileMenu_Click" Style="{StaticResource HeaderButton}" Margin="0,0,0,4"
-                    AutomationProperties.Name="Profile options" ToolTip="Profile options">
-                <Path Style="{StaticResource IconGlyph}" Data="{StaticResource Icon.More}"/>
-            </Button>
-        </WrapPanel>
-
-        <!-- Fixed, always-dark tinted backgrounds in every preset (including Light) — semantic warning/error
-             colour, not palette-derived — so text stays hardcoded White. Matches DashboardWindow's degraded-mode
-             banner. Copy simplified but keeps: this affects hardware, and Auto/off/exit restores device control. -->
-        <Border DockPanel.Dock="Top" Background="#4A3A1E" CornerRadius="{StaticResource RadiusPanel}" Padding="12,8" Margin="0,0,0,10">
-            <DockPanel>
-                <Button DockPanel.Dock="Right" Content="Got it" Command="{Binding DismissSafetyBannerCommand}" Style="{StaticResource HeaderButton}"
-                        Visibility="{Binding SafetyBannerCollapsed, Converter={StaticResource InverseBoolToVis}}"/>
-                <Path DockPanel.Dock="Left" Style="{StaticResource IconGlyph}" Data="{StaticResource Icon.Warn}" Fill="White" VerticalAlignment="Top" Margin="0,2,10,0"/>
-                <TextBlock Foreground="White" TextWrapping="Wrap" FontSize="{StaticResource FontSizeBody}"
-                           Visibility="{Binding SafetyBannerCollapsed, Converter={StaticResource InverseBoolToVis}}"
-                           Text="Fan control writes to your hardware — close other fan software first (two controllers fighting one fan is unsafe). Auto, turning this off, or exiting Stats returns fans to device control."/>
-                <TextBlock Foreground="White" FontSize="{StaticResource FontSizeBody}"
-                           Visibility="{Binding SafetyBannerCollapsed, Converter={StaticResource BoolToVis}}"
-                           Text="Fan control writes to your hardware — speeds return to device control on Auto, off, or exit."/>
-            </DockPanel>
-        </Border>
-
-        <!-- ================= Game mode (its own section). ================= -->
-        <StackPanel DockPanel.Dock="Top" Margin="0,0,0,10">
-            <TextBlock Text="Game mode" Style="{StaticResource SettingsHeader}" Margin="0,0,0,6"/>
-            <CheckBox IsChecked="{Binding GameModeEnabled}">
-                <TextBlock Text="Switch profiles automatically when a game is in the foreground" TextWrapping="Wrap"/>
-            </CheckBox>
-            <TextBlock Text="Keeps the FPS tracer running while this is on." FontSize="{StaticResource FontSizeDense}"
-                       Foreground="{DynamicResource TextSecondary}" Margin="22,2,0,6"/>
-            <!-- WrapPanel, not a DockPanel row: at MinWidth 560 the last element would otherwise be squeezed away. -->
-            <WrapPanel>
-                <TextBlock Text="Gaming:" Foreground="{DynamicResource TextSecondary}" VerticalAlignment="Center" Margin="0,0,6,4"/>
-                <ComboBox ItemsSource="{Binding ProfileNames}" SelectedItem="{Binding GamingProfile}" MinWidth="120" Margin="0,0,12,4"/>
-                <TextBlock Text="Desktop:" Foreground="{DynamicResource TextSecondary}" VerticalAlignment="Center" Margin="0,0,6,4"/>
-                <ComboBox ItemsSource="{Binding ProfileNames}" SelectedItem="{Binding DesktopProfile}" MinWidth="120" Margin="0,0,12,4"/>
-                <TextBlock Text="{Binding GameModeStatus}" Foreground="{DynamicResource TextSecondary}" FontSize="{StaticResource FontSizeDense}"
-                           VerticalAlignment="Center" Margin="0,0,0,4"/>
-            </WrapPanel>
-        </StackPanel>
-
-        <Border DockPanel.Dock="Top" Background="#4A1E1E" CornerRadius="{StaticResource RadiusPanel}" Padding="12,8" Margin="0,0,0,10"
-                Visibility="{Binding HasRecoveryNotice, Converter={StaticResource BoolToVis}}">
-            <DockPanel>
-                <Button DockPanel.Dock="Right" Content="Dismiss" Command="{Binding DismissRecoveryNoticeCommand}" Style="{StaticResource HeaderButton}"/>
-                <Path DockPanel.Dock="Left" Style="{StaticResource IconGlyph}" Data="{StaticResource Icon.Warn}" Fill="White" Margin="0,0,10,0"/>
-                <TextBlock Text="{Binding RecoveryNotice}" Foreground="White" TextWrapping="Wrap" FontSize="{StaticResource FontSizeBody}"/>
-            </DockPanel>
-        </Border>
-        <Border DockPanel.Dock="Top" Background="#5A1E1E" CornerRadius="{StaticResource RadiusPanel}" Padding="12,8" Margin="0,0,0,10"
-                Visibility="{Binding HasConflict, Converter={StaticResource BoolToVis}}">
-            <DockPanel>
-                <Path DockPanel.Dock="Left" Style="{StaticResource IconGlyph}" Data="{StaticResource Icon.Warn}" Fill="White" Margin="0,0,10,0"/>
-                <TextBlock Text="{Binding ConflictText}" Foreground="White" TextWrapping="Wrap" FontSize="{StaticResource FontSizeBody}"/>
-            </DockPanel>
-        </Border>
-        <Border DockPanel.Dock="Top" Background="{DynamicResource ControlBg}" CornerRadius="{StaticResource RadiusPanel}" Padding="12,8" Margin="0,0,0,10"
-                Visibility="{Binding HasChannels, Converter={StaticResource InverseBoolToVis}}">
-            <DockPanel>
-                <Path DockPanel.Dock="Left" Style="{StaticResource IconGlyph}" Data="{StaticResource Icon.Info}" Margin="0,0,10,0"/>
-                <TextBlock Text="{Binding UnavailableText}" Foreground="{DynamicResource TextPrimary}" FontSize="{StaticResource FontSizeBody}"
-                           TextWrapping="Wrap" VerticalAlignment="Center"/>
-            </DockPanel>
-        </Border>
-
-        <!-- ================= Fan cards. ================= -->
+        <!-- ================= Everything below the header row scrolls together, so the fan cards stay reachable
+             at the documented 560×360 minimum instead of being squeezed out by the fixed chrome above. ================= -->
         <ScrollViewer VerticalScrollBarVisibility="Auto">
-            <ItemsControl ItemsSource="{Binding Devices}">
-                <ItemsControl.ItemTemplate>
-                    <DataTemplate>
-                        <StackPanel Margin="0,0,0,14">
-                            <TextBlock Text="{Binding Device}" FontSize="{StaticResource FontSizeSection}" FontWeight="SemiBold"
-                                       Foreground="{DynamicResource TextSecondary}" Margin="0,0,0,4"/>
-                            <ItemsControl ItemsSource="{Binding Channels}">
-                                <ItemsControl.ItemTemplate>
-                                    <DataTemplate>
-                                        <Border Background="{DynamicResource TileBg}" CornerRadius="{StaticResource RadiusPanel}" Padding="12" Margin="0,3">
-                                            <StackPanel>
-                                                <!-- WrapPanel, not a Grid: a Grid's Auto column always measures its content at full
-                                                     (unconstrained) width, so the segmented+Identify group would never actually
-                                                     shrink to wrap — it would just squeeze/clip the name box instead. A WrapPanel
-                                                     is measured against the real available width, so the right-side group genuinely
-                                                     drops to its own row once the card is narrow. Name/RPM/duty get fixed widths so
-                                                     every card's columns still line up. -->
-                                                <WrapPanel>
-                                                    <TextBox Text="{Binding Name, UpdateSourceTrigger=LostFocus}" Style="{StaticResource FanNameTextBox}"
-                                                             Width="150" FontSize="{StaticResource FontSizeBody}" FontWeight="SemiBold" VerticalAlignment="Center"
-                                                             Margin="0,0,8,4" ToolTip="Click to rename"/>
-                                                    <TextBlock Text="{Binding RpmText}" Typography.NumeralAlignment="Tabular" Width="64"
-                                                               Foreground="{DynamicResource TextPrimary}" FontSize="{StaticResource FontSizeBody}"
-                                                               TextAlignment="Right" VerticalAlignment="Center" Margin="0,0,0,4"/>
-                                                    <TextBlock Text="{Binding PercentText}" Typography.NumeralAlignment="Tabular" Width="44"
-                                                               Foreground="{DynamicResource TextSecondary}" FontSize="{StaticResource FontSizeBody}"
-                                                               TextAlignment="Right" VerticalAlignment="Center" Margin="6,0,0,4"/>
-                                                    <!-- Segmented Auto/Manual/Curve + Identify: one StackPanel (not individually
-                                                         wrap-able children) so the pair moves to the next row together. -->
-                                                    <StackPanel Orientation="Horizontal" Margin="16,0,0,4">
-                                                        <!-- GroupName per channel: without it every RadioButton in the window shares one group. -->
-                                                        <StackPanel Orientation="Horizontal" Margin="0,0,10,0" IsEnabled="{Binding ControlEnabled}">
-                                                            <RadioButton Content="Auto" GroupName="{Binding Id}" Style="{StaticResource SegmentedRadioButton}"
-                                                                         IsChecked="{Binding Mode, Converter={StaticResource Equals}, ConverterParameter=Auto}"/>
-                                                            <RadioButton Content="Manual" GroupName="{Binding Id}" Style="{StaticResource SegmentedRadioButton}"
-                                                                         IsChecked="{Binding Mode, Converter={StaticResource Equals}, ConverterParameter=Manual}"/>
-                                                            <RadioButton Content="Curve" GroupName="{Binding Id}" Style="{StaticResource SegmentedRadioButton}" Margin="0"
-                                                                         IsChecked="{Binding Mode, Converter={StaticResource Equals}, ConverterParameter=Curve}"/>
-                                                        </StackPanel>
-                                                        <Button Command="{Binding IdentifyCommand}" Style="{StaticResource HeaderButton}"
-                                                                ToolTip="Pulse this fan to max for 2 seconds">
-                                                            <StackPanel Orientation="Horizontal">
-                                                                <Path Style="{StaticResource IconGlyph}" Data="{StaticResource Icon.Identify}" Width="14" Height="14"/>
-                                                                <TextBlock Text="Identify" FontSize="{StaticResource FontSizeBody}" Foreground="{DynamicResource TextPrimary}" Margin="6,0,0,0"/>
+            <StackPanel>
+
+                <!-- ================= Profile row: selector, active-profile text, Modified badge, Reload/Save as, profile menu. ================= -->
+                <WrapPanel Margin="0,0,0,10">
+                    <TextBlock Text="Profile" Style="{StaticResource SettingsLabel}" Margin="0,0,8,4"/>
+                    <ComboBox ItemsSource="{Binding ProfileNames}" SelectedItem="{Binding SelectedProfileName}" MinWidth="150" Margin="0,0,10,4" VerticalAlignment="Center"/>
+                    <TextBlock Text="{Binding ActiveProfileName}" Foreground="{DynamicResource TextPrimary}" VerticalAlignment="Center" Margin="0,0,10,4"/>
+                    <TextBlock Text="Modified" FontSize="{StaticResource FontSizeDense}" Foreground="{DynamicResource TextSecondary}" VerticalAlignment="Center" Margin="0,0,10,4"
+                               Visibility="{Binding IsModified, Converter={StaticResource BoolToVis}}"/>
+                    <Button Content="Reload" Command="{Binding ReloadCommand}" Style="{StaticResource HeaderButton}" Margin="0,0,6,4"
+                            Visibility="{Binding IsModified, Converter={StaticResource BoolToVis}}"/>
+                    <Button Content="Save as…" Click="SaveAs_Click" Style="{StaticResource HeaderButton}" Margin="0,0,6,4"/>
+                    <Button x:Name="ProfileMenuButton" Click="ProfileMenu_Click" Style="{StaticResource HeaderButton}" Margin="0,0,0,4"
+                            AutomationProperties.Name="Profile options" ToolTip="Profile options">
+                        <Path Style="{StaticResource IconGlyph}" Data="{StaticResource Icon.More}"/>
+                    </Button>
+                </WrapPanel>
+
+                <!-- Fixed, always-dark tinted backgrounds in every preset (including Light) — semantic warning/error
+                     colour, not palette-derived — so text stays hardcoded White. Matches DashboardWindow's degraded-mode
+                     banner. Copy simplified but keeps: this affects hardware, and Auto/off/exit restores device control. -->
+                <Border Background="#4A3A1E" CornerRadius="{StaticResource RadiusPanel}" Padding="12,8" Margin="0,0,0,10">
+                    <DockPanel>
+                        <Button DockPanel.Dock="Right" Content="Got it" Command="{Binding DismissSafetyBannerCommand}" Style="{StaticResource HeaderButton}"
+                                Visibility="{Binding SafetyBannerCollapsed, Converter={StaticResource InverseBoolToVis}}"/>
+                        <Path DockPanel.Dock="Left" Style="{StaticResource IconGlyph}" Data="{StaticResource Icon.Warn}" Fill="White" VerticalAlignment="Top" Margin="0,2,10,0"/>
+                        <TextBlock Foreground="White" TextWrapping="Wrap" FontSize="{StaticResource FontSizeBody}"
+                                   Visibility="{Binding SafetyBannerCollapsed, Converter={StaticResource InverseBoolToVis}}"
+                                   Text="Fan control writes to your hardware — close other fan software first (two controllers fighting one fan is unsafe). Auto, turning this off, or exiting Stats returns fans to device control."/>
+                        <TextBlock Foreground="White" FontSize="{StaticResource FontSizeBody}"
+                                   Visibility="{Binding SafetyBannerCollapsed, Converter={StaticResource BoolToVis}}"
+                                   Text="Fan control writes to your hardware — speeds return to device control on Auto, off, or exit."/>
+                    </DockPanel>
+                </Border>
+
+                <!-- ================= Game mode (its own section). ================= -->
+                <StackPanel Margin="0,0,0,10">
+                    <TextBlock Text="Game mode" Style="{StaticResource SettingsHeader}" Margin="0,0,0,6"/>
+                    <CheckBox IsChecked="{Binding GameModeEnabled}">
+                        <TextBlock Text="Switch profiles automatically when a game is in the foreground" TextWrapping="Wrap"/>
+                    </CheckBox>
+                    <TextBlock Text="Keeps the FPS tracer running while this is on." FontSize="{StaticResource FontSizeDense}"
+                               Foreground="{DynamicResource TextSecondary}" Margin="22,2,0,6"/>
+                    <!-- WrapPanel, not a DockPanel row: at MinWidth 560 the last element would otherwise be squeezed away. -->
+                    <WrapPanel>
+                        <TextBlock Text="Gaming:" Foreground="{DynamicResource TextSecondary}" VerticalAlignment="Center" Margin="0,0,6,4"/>
+                        <ComboBox ItemsSource="{Binding ProfileNames}" SelectedItem="{Binding GamingProfile}" MinWidth="120" Margin="0,0,12,4"/>
+                        <TextBlock Text="Desktop:" Foreground="{DynamicResource TextSecondary}" VerticalAlignment="Center" Margin="0,0,6,4"/>
+                        <ComboBox ItemsSource="{Binding ProfileNames}" SelectedItem="{Binding DesktopProfile}" MinWidth="120" Margin="0,0,12,4"/>
+                        <TextBlock Text="{Binding GameModeStatus}" Foreground="{DynamicResource TextSecondary}" FontSize="{StaticResource FontSizeDense}"
+                                   VerticalAlignment="Center" Margin="0,0,0,4"/>
+                    </WrapPanel>
+                </StackPanel>
+
+                <Border Background="#4A1E1E" CornerRadius="{StaticResource RadiusPanel}" Padding="12,8" Margin="0,0,0,10"
+                        Visibility="{Binding HasRecoveryNotice, Converter={StaticResource BoolToVis}}">
+                    <DockPanel>
+                        <Button DockPanel.Dock="Right" Content="Dismiss" Command="{Binding DismissRecoveryNoticeCommand}" Style="{StaticResource HeaderButton}"/>
+                        <Path DockPanel.Dock="Left" Style="{StaticResource IconGlyph}" Data="{StaticResource Icon.Warn}" Fill="White" Margin="0,0,10,0"/>
+                        <TextBlock Text="{Binding RecoveryNotice}" Foreground="White" TextWrapping="Wrap" FontSize="{StaticResource FontSizeBody}"/>
+                    </DockPanel>
+                </Border>
+                <Border Background="#5A1E1E" CornerRadius="{StaticResource RadiusPanel}" Padding="12,8" Margin="0,0,0,10"
+                        Visibility="{Binding HasConflict, Converter={StaticResource BoolToVis}}">
+                    <DockPanel>
+                        <Path DockPanel.Dock="Left" Style="{StaticResource IconGlyph}" Data="{StaticResource Icon.Warn}" Fill="White" Margin="0,0,10,0"/>
+                        <TextBlock Text="{Binding ConflictText}" Foreground="White" TextWrapping="Wrap" FontSize="{StaticResource FontSizeBody}"/>
+                    </DockPanel>
+                </Border>
+                <Border Background="{DynamicResource ControlBg}" CornerRadius="{StaticResource RadiusPanel}" Padding="12,8" Margin="0,0,0,10"
+                        Visibility="{Binding HasChannels, Converter={StaticResource InverseBoolToVis}}">
+                    <DockPanel>
+                        <Path DockPanel.Dock="Left" Style="{StaticResource IconGlyph}" Data="{StaticResource Icon.Info}" Margin="0,0,10,0"/>
+                        <TextBlock Text="{Binding UnavailableText}" Foreground="{DynamicResource TextPrimary}" FontSize="{StaticResource FontSizeBody}"
+                                   TextWrapping="Wrap" VerticalAlignment="Center"/>
+                    </DockPanel>
+                </Border>
+
+                <!-- ================= Fan cards. ================= -->
+                <ItemsControl ItemsSource="{Binding Devices}">
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate>
+                            <StackPanel Margin="0,0,0,14">
+                                <TextBlock Text="{Binding Device}" FontSize="{StaticResource FontSizeSection}" FontWeight="SemiBold"
+                                           Foreground="{DynamicResource TextSecondary}" Margin="0,0,0,4"/>
+                                <ItemsControl ItemsSource="{Binding Channels}">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate>
+                                            <Border Background="{DynamicResource TileBg}" CornerRadius="{StaticResource RadiusPanel}" Padding="12" Margin="0,3">
+                                                <StackPanel>
+                                                    <!-- WrapPanel, not a Grid: a Grid's Auto column always measures its content at full
+                                                         (unconstrained) width, so the segmented+Identify group would never actually
+                                                         shrink to wrap — it would just squeeze/clip the name box instead. A WrapPanel
+                                                         is measured against the real available width, so the right-side group genuinely
+                                                         drops to its own row once the card is narrow. Name/RPM/duty get fixed widths so
+                                                         every card's columns still line up. -->
+                                                    <WrapPanel>
+                                                        <TextBox Text="{Binding Name, UpdateSourceTrigger=LostFocus}" Style="{StaticResource FanNameTextBox}"
+                                                                 Width="150" FontSize="{StaticResource FontSizeBody}" FontWeight="SemiBold" VerticalAlignment="Center"
+                                                                 Margin="0,0,8,4" ToolTip="Click to rename"/>
+                                                        <TextBlock Text="{Binding RpmText}" Typography.NumeralAlignment="Tabular" Width="64"
+                                                                   Foreground="{DynamicResource TextPrimary}" FontSize="{StaticResource FontSizeBody}"
+                                                                   TextAlignment="Right" VerticalAlignment="Center" Margin="0,0,0,4"/>
+                                                        <TextBlock Text="{Binding PercentText}" Typography.NumeralAlignment="Tabular" Width="44"
+                                                                   Foreground="{DynamicResource TextSecondary}" FontSize="{StaticResource FontSizeBody}"
+                                                                   TextAlignment="Right" VerticalAlignment="Center" Margin="6,0,0,4"/>
+                                                        <!-- Segmented Auto/Manual/Curve + Identify: one StackPanel (not individually
+                                                             wrap-able children) so the pair moves to the next row together. -->
+                                                        <StackPanel Orientation="Horizontal" Margin="16,0,0,4">
+                                                            <!-- GroupName per channel: without it every RadioButton in the window shares one group. -->
+                                                            <StackPanel Orientation="Horizontal" Margin="0,0,10,0">
+                                                                <RadioButton Content="Auto" GroupName="{Binding Id}" Style="{StaticResource SegmentedRadioButton}"
+                                                                             IsChecked="{Binding Mode, Converter={StaticResource Equals}, ConverterParameter=Auto}"/>
+                                                                <RadioButton Content="Manual" GroupName="{Binding Id}" Style="{StaticResource SegmentedRadioButton}"
+                                                                             IsChecked="{Binding Mode, Converter={StaticResource Equals}, ConverterParameter=Manual}"/>
+                                                                <RadioButton Content="Curve" GroupName="{Binding Id}" Style="{StaticResource SegmentedRadioButton}" Margin="0"
+                                                                             IsChecked="{Binding Mode, Converter={StaticResource Equals}, ConverterParameter=Curve}"/>
                                                             </StackPanel>
-                                                        </Button>
-                                                    </StackPanel>
-                                                </WrapPanel>
-                                                <TextBlock Text="{Binding StatusText}" Foreground="{DynamicResource TextSecondary}" FontSize="{StaticResource FontSizeDense}" Margin="0,4,0,0"/>
-                                                <DockPanel Margin="0,6,0,0" Visibility="{Binding IsManual, Converter={StaticResource BoolToVis}}">
-                                                    <TextBlock DockPanel.Dock="Right" Text="{Binding TargetText, StringFormat='&#8594; {0}'}" Margin="8,0"
-                                                               Foreground="{DynamicResource TextSecondary}" VerticalAlignment="Center"/>
-                                                    <TextBlock DockPanel.Dock="Right" Text="{Binding ManualPercent, StringFormat={}{0:F0} %}" Width="48" TextAlignment="Right"
-                                                               Foreground="{DynamicResource TextPrimary}" VerticalAlignment="Center"/>
-                                                    <Slider Minimum="{Binding MinPercent}" Maximum="{Binding MaxPercent}" Value="{Binding ManualPercent, Delay=250}"
-                                                            TickFrequency="5" IsSnapToTickEnabled="True" VerticalAlignment="Center"/>
-                                                </DockPanel>
-                                                <StackPanel Margin="0,6,0,0" Visibility="{Binding IsCurve, Converter={StaticResource BoolToVis}}">
-                                                    <DockPanel Margin="0,0,0,6">
-                                                        <Button DockPanel.Dock="Right" Content="Reset curve" Command="{Binding ResetCurveCommand}" Style="{StaticResource HeaderButton}"/>
-                                                        <TextBlock DockPanel.Dock="Right" Text="{Binding TargetText, StringFormat='target {0}'}" Foreground="{DynamicResource TextSecondary}" Margin="12,0" VerticalAlignment="Center"/>
-                                                        <TextBlock DockPanel.Dock="Right" Text="{Binding SourceTempText}" Foreground="{DynamicResource TextPrimary}" VerticalAlignment="Center"/>
-                                                        <Expander Header="{Binding SourceSummary}" Foreground="{DynamicResource TextPrimary}" MinWidth="220" HorizontalAlignment="Left">
-                                                            <ItemsControl ItemsSource="{Binding SourceSelections}" Margin="8,4">
-                                                                <ItemsControl.ItemTemplate><DataTemplate>
-                                                                    <CheckBox Content="{Binding Label}" IsChecked="{Binding IsSelected}" Margin="0,1"/>
-                                                                </DataTemplate></ItemsControl.ItemTemplate>
-                                                            </ItemsControl>
-                                                        </Expander>
+                                                            <Button Command="{Binding IdentifyCommand}" Style="{StaticResource HeaderButton}"
+                                                                    ToolTip="Pulse this fan to max for 2 seconds">
+                                                                <StackPanel Orientation="Horizontal">
+                                                                    <Path Style="{StaticResource IconGlyph}" Data="{StaticResource Icon.Identify}" Width="14" Height="14"/>
+                                                                    <TextBlock Text="Identify" FontSize="{StaticResource FontSizeBody}" Foreground="{DynamicResource TextPrimary}" Margin="6,0,0,0"/>
+                                                                </StackPanel>
+                                                            </Button>
+                                                        </StackPanel>
+                                                    </WrapPanel>
+                                                    <TextBlock Text="{Binding StatusText}" Foreground="{DynamicResource TextSecondary}" FontSize="{StaticResource FontSizeDense}" Margin="0,4,0,0"/>
+                                                    <DockPanel Margin="0,6,0,0" Visibility="{Binding IsManual, Converter={StaticResource BoolToVis}}">
+                                                        <TextBlock DockPanel.Dock="Right" Text="{Binding TargetText, StringFormat='&#8594; {0}'}" Margin="8,0"
+                                                                   Foreground="{DynamicResource TextSecondary}" VerticalAlignment="Center"/>
+                                                        <TextBlock DockPanel.Dock="Right" Text="{Binding ManualPercent, StringFormat={}{0:F0} %}" Width="48" TextAlignment="Right"
+                                                                   Foreground="{DynamicResource TextPrimary}" VerticalAlignment="Center"/>
+                                                        <Slider Minimum="{Binding MinPercent}" Maximum="{Binding MaxPercent}" Value="{Binding ManualPercent, Delay=250}"
+                                                                TickFrequency="5" IsSnapToTickEnabled="True" VerticalAlignment="Center"/>
                                                     </DockPanel>
-                                                    <ctl:FanCurveEditor Points="{Binding Points}" MinPercent="{Binding MinPercent}" MaxPercent="{Binding MaxPercent}"
-                                                                        LiveTemp="{Binding LiveTemp}" LiveTarget="{Binding LiveTarget}" Height="150"
-                                                                        LineBrush="{DynamicResource AccentBrush}" PointBrush="{DynamicResource TextPrimary}"
-                                                                        AxisBrush="{DynamicResource BorderDim}" TextBrush="{DynamicResource TextSecondary}"/>
+                                                    <StackPanel Margin="0,6,0,0" Visibility="{Binding IsCurve, Converter={StaticResource BoolToVis}}">
+                                                        <DockPanel Margin="0,0,0,6">
+                                                            <Button DockPanel.Dock="Right" Content="Reset curve" Command="{Binding ResetCurveCommand}" Style="{StaticResource HeaderButton}"/>
+                                                            <TextBlock DockPanel.Dock="Right" Text="{Binding TargetText, StringFormat='target {0}'}" Foreground="{DynamicResource TextSecondary}" Margin="12,0" VerticalAlignment="Center"/>
+                                                            <TextBlock DockPanel.Dock="Right" Text="{Binding SourceTempText}" Foreground="{DynamicResource TextPrimary}" VerticalAlignment="Center"/>
+                                                            <Expander Header="{Binding SourceSummary}" Foreground="{DynamicResource TextPrimary}" MinWidth="220" HorizontalAlignment="Left">
+                                                                <ItemsControl ItemsSource="{Binding SourceSelections}" Margin="8,4">
+                                                                    <ItemsControl.ItemTemplate><DataTemplate>
+                                                                        <CheckBox Content="{Binding Label}" IsChecked="{Binding IsSelected}" Margin="0,1"/>
+                                                                    </DataTemplate></ItemsControl.ItemTemplate>
+                                                                </ItemsControl>
+                                                            </Expander>
+                                                        </DockPanel>
+                                                        <ctl:FanCurveEditor Points="{Binding Points}" MinPercent="{Binding MinPercent}" MaxPercent="{Binding MaxPercent}"
+                                                                            LiveTemp="{Binding LiveTemp}" LiveTarget="{Binding LiveTarget}" Height="150"
+                                                                            LineBrush="{DynamicResource AccentBrush}" PointBrush="{DynamicResource TextPrimary}"
+                                                                            AxisBrush="{DynamicResource BorderDim}" TextBrush="{DynamicResource TextSecondary}"/>
+                                                    </StackPanel>
                                                 </StackPanel>
-                                            </StackPanel>
-                                        </Border>
-                                    </DataTemplate>
-                                </ItemsControl.ItemTemplate>
-                            </ItemsControl>
-                        </StackPanel>
-                    </DataTemplate>
-                </ItemsControl.ItemTemplate>
-            </ItemsControl>
+                                            </Border>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                            </StackPanel>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+            </StackPanel>
         </ScrollViewer>
     </DockPanel>
 </Window>

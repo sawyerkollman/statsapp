@@ -34,8 +34,8 @@ sit in a right-docked `WrapPanel` that drops to a second row before it would cli
 a quiet "Modified" text badge (`FontSizeDense`, visible when `IsModified`), `Reload` (same visibility),
 `Save as…`, and one `Icon.More` `HeaderButton` ("Profile options") that opens a code-behind `ContextMenu`
 with `Delete "<name>"` (bound to `DeleteProfileCommand`, parameter snapshotted from `SelectedProfileName`
-at open time — the source-generated command already refuses a null parameter, so the item disables itself
-when nothing is selected, matching the pre-T6 button's implicit behavior) and `Create default profiles`.
+at open time — the command has no `CanExecute`, so the item stays enabled with nothing selected; clicking
+it is a no-op in that case, matching the pre-T6 button's implicit behavior) and `Create default profiles`.
 
 **Game mode** — its own `SettingsHeader`-styled section: "Game mode" heading, the enable `CheckBox` with
 a short label, a `FontSizeDense` secondary line about the FPS tracer, then a wrapping row of Gaming/

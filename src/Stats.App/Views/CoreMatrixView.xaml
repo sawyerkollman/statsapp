@@ -13,7 +13,7 @@
                 </ItemsControl.ItemsPanel>
                 <ItemsControl.ItemTemplate>
                     <DataTemplate>
-                        <Border Width="60" Height="54" Margin="2" CornerRadius="3"
+                        <Border Width="60" Height="64" Margin="2" CornerRadius="3"
                                 Background="{Binding Load01, Converter={StaticResource HeatToBrush}}">
                             <StackPanel VerticalAlignment="Center">
                                 <TextBlock Text="{Binding Index, StringFormat='{}#{0}'}" FontSize="{StaticResource FontSizeDense}"

@@ -740,6 +740,16 @@
                 <Setter TargetName="Bd" Property="Background" Value="{DynamicResource GaugeTrack}"/>
                 <Setter TargetName="Bd" Property="BorderBrush" Value="{DynamicResource AccentBrush}"/>
             </Trigger>
+            <!-- Consumers that must keep an accent border even on hover (PrimaryButton always; OverlayHeaderButton
+                 only while the overlay is on) set Tag="AccentHover" to opt back into the accent colour instead of
+                 the generic BorderDim hover above. -->
+            <MultiTrigger>
+                <MultiTrigger.Conditions>
+                    <Condition Property="IsMouseOver" Value="True"/>
+                    <Condition Property="Tag" Value="AccentHover"/>
+                </MultiTrigger.Conditions>
+                <Setter TargetName="Bd" Property="BorderBrush" Value="{DynamicResource AccentBrush}"/>
+            </MultiTrigger>
             <!-- Focus: visible outline independent of hover (IsKeyboardFocused, not IsMouseOver) — the button's
                  own FocusVisualStyle is nulled out below so this is the only focus indicator drawn. -->
             <Trigger Property="IsKeyboardFocused" Value="True">
@@ -772,6 +782,10 @@
     <Style TargetType="Button" x:Key="PrimaryButton" BasedOn="{StaticResource HeaderButton}">
         <Setter Property="MinHeight" Value="{StaticResource ControlMinHeight}"/>
         <Setter Property="BorderBrush" Value="{DynamicResource AccentBrush}"/>
+        <!-- HeaderButtonTemplate's own hover trigger overwrites Bd.BorderBrush with BorderDim; Tag="AccentHover"
+             opts back into the template's accent-reassert MultiTrigger so hovering the primary action doesn't
+             look less prominent. -->
+        <Setter Property="Tag" Value="AccentHover"/>
     </Style>
 
 </ResourceDictionary>

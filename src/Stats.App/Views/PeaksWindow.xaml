@@ -33,14 +33,16 @@
                         </TextBlock.Style>
                     </TextBlock>
                     <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto">
-                        <DockPanel>
+                        <DockPanel Grid.IsSharedSizeScope="True"
+                                   Width="{Binding ViewportWidth, RelativeSource={RelativeSource AncestorType=ScrollViewer}}"
+                                   MinWidth="428">
                             <Grid DockPanel.Dock="Top" Margin="6,0,6,4">
                                 <Grid.ColumnDefinitions>
                                     <ColumnDefinition Width="*" MinWidth="140"/>
-                                    <ColumnDefinition Width="Auto" MinWidth="72"/>
-                                    <ColumnDefinition Width="Auto" MinWidth="72"/>
-                                    <ColumnDefinition Width="Auto" MinWidth="72"/>
-                                    <ColumnDefinition Width="Auto" MinWidth="72"/>
+                                    <ColumnDefinition Width="Auto" MinWidth="72" SharedSizeGroup="PeakNow"/>
+                                    <ColumnDefinition Width="Auto" MinWidth="72" SharedSizeGroup="PeakMin"/>
+                                    <ColumnDefinition Width="Auto" MinWidth="72" SharedSizeGroup="PeakAvg"/>
+                                    <ColumnDefinition Width="Auto" MinWidth="72" SharedSizeGroup="PeakMax"/>
                                 </Grid.ColumnDefinitions>
                                 <TextBlock Text="Metric" Foreground="{DynamicResource TextSecondary}" FontSize="{StaticResource FontSizeDense}"/>
                                 <TextBlock Grid.Column="1" Text="Now" Foreground="{DynamicResource TextSecondary}" FontSize="{StaticResource FontSizeDense}" TextAlignment="Right"/>
@@ -55,10 +57,10 @@
                                             <Grid>
                                                 <Grid.ColumnDefinitions>
                                                     <ColumnDefinition Width="*" MinWidth="140"/>
-                                                    <ColumnDefinition Width="Auto" MinWidth="72"/>
-                                                    <ColumnDefinition Width="Auto" MinWidth="72"/>
-                                                    <ColumnDefinition Width="Auto" MinWidth="72"/>
-                                                    <ColumnDefinition Width="Auto" MinWidth="72"/>
+                                                    <ColumnDefinition Width="Auto" MinWidth="72" SharedSizeGroup="PeakNow"/>
+                                                    <ColumnDefinition Width="Auto" MinWidth="72" SharedSizeGroup="PeakMin"/>
+                                                    <ColumnDefinition Width="Auto" MinWidth="72" SharedSizeGroup="PeakAvg"/>
+                                                    <ColumnDefinition Width="Auto" MinWidth="72" SharedSizeGroup="PeakMax"/>
                                                 </Grid.ColumnDefinitions>
                                                 <TextBlock Text="{Binding Name}" Foreground="{DynamicResource TextPrimary}" FontSize="{StaticResource FontSizeLabel}" TextTrimming="CharacterEllipsis" ToolTip="{Binding Definition.DisplayName}"/>
                                                 <TextBlock Grid.Column="1" Text="{Binding NowText}" FontSize="{StaticResource FontSizeLabel}" FontWeight="SemiBold" TextAlignment="Right" Typography.NumeralAlignment="Tabular"
@@ -100,14 +102,16 @@
                         </TextBlock.Style>
                     </TextBlock>
                     <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto">
-                        <DockPanel>
+                        <DockPanel Grid.IsSharedSizeScope="True"
+                                   Width="{Binding ViewportWidth, RelativeSource={RelativeSource AncestorType=ScrollViewer}}"
+                                   MinWidth="428">
                             <Grid DockPanel.Dock="Top" Margin="6,0,6,4">
                                 <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="Auto" MinWidth="72"/>
+                                    <ColumnDefinition Width="Auto" MinWidth="72" SharedSizeGroup="AlertTime"/>
                                     <ColumnDefinition Width="*" MinWidth="140"/>
-                                    <ColumnDefinition Width="Auto" MinWidth="72"/>
-                                    <ColumnDefinition Width="Auto" MinWidth="72"/>
-                                    <ColumnDefinition Width="Auto" MinWidth="72"/>
+                                    <ColumnDefinition Width="Auto" MinWidth="72" SharedSizeGroup="AlertPeak"/>
+                                    <ColumnDefinition Width="Auto" MinWidth="72" SharedSizeGroup="AlertThreshold"/>
+                                    <ColumnDefinition Width="Auto" MinWidth="72" SharedSizeGroup="AlertDuration"/>
                                 </Grid.ColumnDefinitions>
                                 <TextBlock Text="Time" Foreground="{DynamicResource TextSecondary}" FontSize="{StaticResource FontSizeDense}"/>
                                 <TextBlock Grid.Column="1" Text="Metric" Foreground="{DynamicResource TextSecondary}" FontSize="{StaticResource FontSizeDense}"/>
@@ -121,11 +125,11 @@
                                         <Border Background="{DynamicResource TileBg}" CornerRadius="4" Padding="6,4" Margin="0,2">
                                             <Grid>
                                                 <Grid.ColumnDefinitions>
-                                                    <ColumnDefinition Width="Auto" MinWidth="72"/>
+                                                    <ColumnDefinition Width="Auto" MinWidth="72" SharedSizeGroup="AlertTime"/>
                                                     <ColumnDefinition Width="*" MinWidth="140"/>
-                                                    <ColumnDefinition Width="Auto" MinWidth="72"/>
-                                                    <ColumnDefinition Width="Auto" MinWidth="72"/>
-                                                    <ColumnDefinition Width="Auto" MinWidth="72"/>
+                                                    <ColumnDefinition Width="Auto" MinWidth="72" SharedSizeGroup="AlertPeak"/>
+                                                    <ColumnDefinition Width="Auto" MinWidth="72" SharedSizeGroup="AlertThreshold"/>
+                                                    <ColumnDefinition Width="Auto" MinWidth="72" SharedSizeGroup="AlertDuration"/>
                                                 </Grid.ColumnDefinitions>
                                                 <TextBlock Text="{Binding TimeText}" Foreground="{DynamicResource TextSecondary}" FontSize="{StaticResource FontSizeLabel}"/>
                                                 <TextBlock Grid.Column="1" Text="{Binding MetricText}" Foreground="{DynamicResource TextPrimary}" FontSize="{StaticResource FontSizeLabel}" TextTrimming="CharacterEllipsis"/>
