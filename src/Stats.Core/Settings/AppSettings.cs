@@ -130,6 +130,14 @@ public sealed class AppSettings
     /// restores the plain pre-effects look.</summary>
     public bool GraphEffects { get; set; } = true;
 
+    // ---- toast alerts ----
+    /// <summary>Raise a Windows notification (H.NotifyIcon tray balloon, rendered by Windows 10/11 as a toast) when an
+    /// alert raises. Independent of the log row and chime, which <see cref="AlertsEnabled"/> governs.</summary>
+    public bool AlertNotificationsEnabled { get; set; } = true;
+    /// <summary>Skip the notification while the dashboard window is visible and active (the user is already looking
+    /// at it). Hidden to tray, minimized, or behind another app still notifies.</summary>
+    public bool AlertNotificationsSkipWhenForeground { get; set; } = true;
+
     /// <summary>Get-or-create the TilePref for a metric id.</summary>
     public TilePref PrefFor(string metricId)
     {

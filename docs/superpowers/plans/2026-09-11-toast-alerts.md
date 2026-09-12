@@ -13,7 +13,7 @@ staged — every commit uses `git add <explicit paths>`, never `git add -A` / `g
 implementer with the file set below as its *only* write scope (disjoint across tasks); each task starts from the
 previous task's committed tip.
 
-- [ ] **Task 1 — Core policy, text, settings** (`feat(core): alert notification policy, text, and settings`).
+- [x] **Task 1 — Core policy, text, settings** (`feat(core): alert notification policy, text, and settings`).
       Owns: `src/Stats.Core/Alerts/AlertNotificationPolicy.cs` (new), `src/Stats.Core/Alerts/AlertEvent.cs`,
       `src/Stats.Core/Settings/AppSettings.cs`, `src/Stats.Core/ViewModels/SettingsViewModel.cs`,
       `tests/Stats.Core.Tests/AlertNotificationPolicyTests.cs` (new), `tests/Stats.Core.Tests/AlertEventTests.cs`

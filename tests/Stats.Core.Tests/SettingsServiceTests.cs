@@ -642,6 +642,36 @@ public class SettingsServiceTests : IDisposable
         Assert.True(l.GraphEffects);
     }
 
+    // ---- toast alerts ----
+
+    [Fact]
+    public void Load_MissingFile_AlertNotificationsDefaultOnAndSkipWhenForegroundOn()
+    {
+        var s = new SettingsService(_dir).Load();
+        Assert.True(s.AlertNotificationsEnabled);
+        Assert.True(s.AlertNotificationsSkipWhenForeground);
+    }
+
+    [Fact]
+    public void SaveThenLoad_AlertNotificationFields_RoundTrip()
+    {
+        var svc = new SettingsService(_dir);
+        svc.Save(new AppSettings { AlertNotificationsEnabled = false, AlertNotificationsSkipWhenForeground = false });
+        var loaded = new SettingsService(_dir).Load();
+        Assert.False(loaded.AlertNotificationsEnabled);
+        Assert.False(loaded.AlertNotificationsSkipWhenForeground);
+    }
+
+    [Fact]
+    public void Load_PreToastAlertsFile_DefaultsBothNotificationFieldsToTrue()
+    {
+        // A file saved before this feature has only the v1.8 alert fields — the two new bools must still load true.
+        Write("""{ "AlertsEnabled": true, "AlertHoldSeconds": 10, "AlertSoundEnabled": false }""");
+        var l = new SettingsService(_dir).Load();
+        Assert.True(l.AlertNotificationsEnabled);
+        Assert.True(l.AlertNotificationsSkipWhenForeground);
+    }
+
     private void Write(string json)
     {
         Directory.CreateDirectory(_dir);
