@@ -7,7 +7,7 @@ files listed for it; anything else it needs is a finding for the controller, not
 checkpoint, re-run by the controller: `dotnet build --nologo` (0 warnings) and `dotnet test --nologo` (green,
 0 warnings). Commit prefixes per CLAUDE.md; push after each commit.
 
-- [ ] **Task 1 — Core maths, roles, settings** (`feat(core):`): `TileKind` += `Histogram`, `FpsSummary`
+- [x] **Task 1 — Core maths, roles, settings** (`feat(core):`): `TileKind` += `Histogram`, `FpsSummary`
       (appended) and `TileKindConverter` (lenient, copy of `DashboardLayoutModeConverter`) applied to
       `TilePref.Kind`; new `HistogramBinning` (`Bin`, `Percentile`, `Fraction`, `DefaultBinCount = 12`); new
       `GameMetricRoles` (`GameMetricRole`, `RoleOf`, `Find`). Tests: `HistogramBinningTests`,
