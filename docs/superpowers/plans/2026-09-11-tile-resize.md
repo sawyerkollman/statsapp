@@ -18,7 +18,7 @@ the listed files as its only write scope; the controller re-runs the gates and c
       `src/Stats.App/Views/TileTemplates.xaml` (only the new `TileResizeGripStyle`), `src/Stats.App/Views/Icons.xaml`
       (only `Icon.ResizeGrip`), `README.md`. Does: everything in the spec's App section, including the move-drag
       canvas-coordinate correction and the Size submenu items.
-- [ ] **Task 3 — Harness + evidence** (`feat(tools): tile-resize preview substates and captures`, then
+- [x] **Task 3 — Harness + evidence** (`feat(tools): tile-resize preview substates and captures`, then
       `docs: tile-resize evidence`). Owns: `tools/Stats.UiPreview/PreviewComposition.cs`,
       `tools/Stats.UiPreview/Views/CaptureHost.cs`, `tools/Stats.UiPreview/SubstateCatalog.cs`,
       `tools/Stats.UiPreview/captures/baseline.json`, `tests/Stats.UiPreview.Tests/TileResizeSubstateTests.cs` (new),

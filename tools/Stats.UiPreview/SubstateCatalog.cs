@@ -8,7 +8,7 @@ internal static class SubstateCatalog
     private static readonly Dictionary<string, string[]> ByView = new()
     {
         ["dashboard"] = new[] { "collapsed-all", "tile-menu", "degraded", "sensor-failure", "update-offered", "update-progress", "update-error", "fps-hint", "theme-cycle",
-            "layout-free", "layout-grid", "layout-free-placed",
+            "layout-free", "layout-grid", "layout-free-placed", "layout-resized", "layout-resize-grip",
             "graphs-plain", "graphs-effects", "graphs-warmup" },
         ["picker"] = new[] { "no-results", "filtered" },
         ["settings"] = new[] { "theme-dropdown", "invalid-threshold", "invalid-limit", "invalid-hotkey", "restart-required", "startup-checking", "startup-error", "update-checking", "update-error",
