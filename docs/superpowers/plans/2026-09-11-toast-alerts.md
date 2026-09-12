@@ -37,7 +37,7 @@ previous task's committed tip.
       existing rows untouched. No `ClearNotifications`, no `customIconHandle`, no fan/poller/LHM code, nothing
       outside the Dispatcher path. Gate: build + tests (no new automated tests possible for App; the reviewer
       reads the diff against the spec's App section line by line). Push.
-- [ ] **Task 3 — Harness, captures, docs** (`feat(tools): toast-alerts settings substate and captures` then
+- [x] **Task 3 — Harness, captures, docs** (`feat(tools): toast-alerts settings substate and captures` then
       `docs: toast alerts evidence and README`).
       Owns: `tools/Stats.UiPreview/PreviewComposition.cs`, `tools/Stats.UiPreview/SubstateCatalog.cs`,
       `tools/Stats.UiPreview/captures/baseline.json`, `tests/Stats.UiPreview.Tests/ToastAlertsSubstateTests.cs`
