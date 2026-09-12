@@ -5,7 +5,7 @@ worktree `C:\claude-projects\Stats-wt\tile-resize`. Gates at every checkpoint: `
 and `dotnet test --nologo` (green, 0 warnings). Commit prefixes per CLAUDE.md. One Sonnet implementer per task with
 the listed files as its only write scope; the controller re-runs the gates and commits.
 
-- [ ] **Task 1 — Core** (`feat(core): tile size nearest/step helpers, resizable flag, same-size guard`).
+- [x] **Task 1 — Core** (`feat(core): tile size nearest/step helpers, resizable flag, same-size guard`).
       Owns: `src/Stats.Core/Settings/TileDimensions.cs`, `src/Stats.Core/ViewModels/DashboardViewModel.cs`,
       `src/Stats.Core/ViewModels/MetricTileViewModel.cs`, `src/Stats.Core/ViewModels/TileEditRecords.cs`,
       `tests/Stats.Core.Tests/DashboardLayoutTests.cs`, `tests/Stats.Core.Tests/DashboardViewModelTests.cs`,

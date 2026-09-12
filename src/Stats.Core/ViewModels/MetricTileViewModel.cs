@@ -69,6 +69,12 @@ public sealed partial class MetricTileViewModel : ObservableObject
     /// <summary>Screen-reader label for the whole tile: "&lt;DisplayName&gt;, &lt;CurrentText&gt;, &lt;Severity&gt;"
     /// (e.g. "Tctl, 72.0 °C, Normal"), bound to AutomationProperties.Name in the tile templates.</summary>
     [ObservableProperty] private string _automationLabel = "";
+    /// <summary>Tile-resize-by-drag: whether this tile's resize grip should exist at all — true in Free/Snap, false
+    /// in Auto (the core-matrix block has no <see cref="MetricTileViewModel"/> and is never resizable — owner
+    /// decision §11). Set by <see cref="DashboardViewModel.RebuildSections"/> for every tile on every rebuild
+    /// (including layout-mode switches, which rebuild too), never computed here — this VM has no reference to
+    /// <see cref="DashboardViewModel.LayoutMode"/>.</summary>
+    [ObservableProperty] private bool _isResizable;
 
     /// <summary>Recomputes every displayed field from the current <see cref="MetricHistory"/>/settings.
     /// <paramref name="thresholds"/>, when supplied, is a pre-built (Group, Unit) index the caller (typically
