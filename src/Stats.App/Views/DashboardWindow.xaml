@@ -673,6 +673,14 @@
                                             </DockPanel>
                                             <CheckBox Content="Play a sound with the notification" IsChecked="{Binding AlertSoundEnabled}" Margin="0,4,0,0"/>
 
+                                            <TextBlock Text="Windows notifications" Style="{StaticResource SettingsHeader}" Margin="0,14,0,6"/>
+                                            <CheckBox Content="Show Windows notifications" IsChecked="{Binding AlertNotificationsEnabled}"/>
+                                            <CheckBox Content="Only when the dashboard is not in the foreground"
+                                                      IsChecked="{Binding AlertNotificationsSkipWhenForeground}"
+                                                      IsEnabled="{Binding AlertNotificationsEnabled}" Margin="20,4,0,0"/>
+                                            <TextBlock Text="Click a notification to open the dashboard. Windows Focus Assist / Do not disturb may hold notifications back while a full-screen app is running."
+                                                       Foreground="{DynamicResource TextSecondary}" FontSize="11" TextWrapping="Wrap" Margin="0,6,0,0"/>
+
                                         </StackPanel>
                                     </ScrollViewer>
                                 </TabItem>

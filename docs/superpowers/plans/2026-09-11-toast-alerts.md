@@ -25,7 +25,7 @@ previous task's committed tip.
       default `true`, no `Normalize` change); `SettingsViewModel` observable mirrors + `On…Changed` handlers raising
       `SettingsChange.Alerts` (enum untouched). Tests: every name in the spec's Acceptance "Tests (Core)" bullets;
       the existing `Message_*` and alert settings tests must pass unchanged. Gate: build + tests. Push.
-- [ ] **Task 2 — App wiring + Settings tab** (`feat(app): Windows notifications for critical alerts, click opens the dashboard`).
+- [x] **Task 2 — App wiring + Settings tab** (`feat(app): Windows notifications for critical alerts, click opens the dashboard`).
       Owns: `src/Stats.App/App.xaml.cs`, `src/Stats.App/Views/DashboardWindow.xaml`. Does: `using H.NotifyIcon.Core;`
       and the `_alertNotifications` field; `SetupTray()` gains `TrayBalloonTipClicked → ShowDashboard()` and the
       `TrayBalloonTipShown` trace; `EvaluateAlerts()` loop → `ShowAlertNotification(evt, nowUtc)` (old
