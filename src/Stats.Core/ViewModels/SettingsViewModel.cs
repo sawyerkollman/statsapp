@@ -82,6 +82,8 @@ public sealed partial class SettingsViewModel : ObservableObject
         _dashboardUiScale = settings.DashboardUiScale;
         _smoothLines = settings.SmoothLines;
         _graphEffects = settings.GraphEffects;
+        _overlaySparklines = settings.OverlayGraphs == OverlayGraphs.Sparkline;
+        _overlayStatusLine = settings.OverlayStatusLine;
 
         foreach (var def in definitions.Where(IsLimitCandidate))
         {
@@ -171,6 +173,11 @@ public sealed partial class SettingsViewModel : ObservableObject
     [ObservableProperty] private bool _smoothLines;
     /// <summary>Glow, gradients, pulse, and eased bar/gauge fills; see <see cref="AppSettings.GraphEffects"/>.</summary>
     [ObservableProperty] private bool _graphEffects;
+    /// <summary>Mirrors <see cref="AppSettings.OverlayGraphs"/> as a bool for the checkbox — exactly like
+    /// <see cref="OverlayIsVertical"/> mirrors <see cref="AppSettings.OverlayOrientation"/>.</summary>
+    [ObservableProperty] private bool _overlaySparklines;
+    /// <summary>Mirrors <see cref="AppSettings.OverlayStatusLine"/>.</summary>
+    [ObservableProperty] private bool _overlayStatusLine;
 
     public IReadOnlyList<string> ThemePresetNames => ThemePresets.Names;
     public IReadOnlyList<string> AccentSwatches => ThemePresets.AccentSwatches;
@@ -343,6 +350,20 @@ public sealed partial class SettingsViewModel : ObservableObject
         if (!_loaded) return;
         _s.GraphEffects = value;
         Raise(SettingsChange.Graphs);
+    }
+
+    partial void OnOverlaySparklinesChanged(bool value)
+    {
+        if (!_loaded) return;
+        _s.OverlayGraphs = value ? OverlayGraphs.Sparkline : OverlayGraphs.None;
+        Raise(SettingsChange.Overlay);
+    }
+
+    partial void OnOverlayStatusLineChanged(bool value)
+    {
+        if (!_loaded) return;
+        _s.OverlayStatusLine = value;
+        Raise(SettingsChange.Overlay);
     }
 
     /// <summary>The checkbox is bound TwoWay, so a user click lands here first. Deliberately does not write to

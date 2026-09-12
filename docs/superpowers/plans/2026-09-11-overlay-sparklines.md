@@ -10,7 +10,7 @@ published state only), 2 (`MetricGroup` untouched), 3 (settings defaults/compat)
 packages), 6 (fan safety — read-only use of `FanController`), 7/8 (no app launch/PresentMon from the shell; build +
 tests + `tools/Stats.UiPreview --method rtb` are the only automated evidence).
 
-- [ ] **Task 1 — Core + settings** (`feat(core):`). `OverlayGraphs` enum + `OverlayGraphsConverter` (lenient,
+- [x] **Task 1 — Core + settings** (`feat(core):`). `OverlayGraphs` enum + `OverlayGraphsConverter` (lenient,
       fallback `Sparkline`), `AppSettings.OverlayGraphs`/`OverlayStatusLine` in a `// ---- overlay sparklines ----`
       block, `SettingsViewModel.OverlaySparklines`/`OverlayStatusLine` (write-through, `Raise(SettingsChange.Overlay)`,
       seeded before `_loaded`), `OverlayStatus` record + `OverlayStatusComposer.Compose(...)`,

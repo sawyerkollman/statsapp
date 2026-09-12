@@ -279,6 +279,29 @@ public class SettingsViewModelTests
     }
 
     [Fact]
+    public void OverlayExtras_WriteThroughAndRaiseOverlay()
+    {
+        var (vm, s, changes, saves) = Make();
+        vm.OverlaySparklines = false;
+        vm.OverlayStatusLine = true;
+        Assert.Equal(OverlayGraphs.None, s.OverlayGraphs);
+        Assert.True(s.OverlayStatusLine);
+        Assert.Equal(2, changes.Count(c => c == SettingsChange.Overlay));
+        Assert.Equal(2, saves());
+    }
+
+    [Fact]
+    public void Ctor_SeedsOverlaySparklinesFromEnum_WithoutRaising()
+    {
+        var s = new AppSettings { ThresholdRules = ThresholdDefaults.Rules(), OverlayGraphs = OverlayGraphs.None };
+        var changes = new List<SettingsChange>();
+        var vm = new SettingsViewModel(s, Defs, () => { });
+        vm.Changed += c => changes.Add(c);
+        Assert.False(vm.OverlaySparklines);
+        Assert.Empty(changes);
+    }
+
+    [Fact]
     public void DashboardUiScale_WritesThroughAndRaisesUiScale()
     {
         var (vm, s, changes, _) = Make();

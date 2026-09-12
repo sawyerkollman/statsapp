@@ -26,12 +26,38 @@ public sealed partial class OverlayViewModel : ObservableObject
     /// dashed outline in <c>OverlayWindow</c>; the composition root owns entering/exiting it (click-through,
     /// show/activate, tray menu header).</summary>
     [ObservableProperty] private bool _isMoveMode;
+    /// <summary>OverlayGraphs == Sparkline; re-read by <see cref="ApplyLayout"/>. Drives the Sparkline's
+    /// Visibility in OverlayWindow.</summary>
+    [ObservableProperty] private bool _showSparklines;
+    /// <summary>AppSettings.OverlayStatusLine; re-read by <see cref="ApplyLayout"/>.</summary>
+    [NotifyPropertyChangedFor(nameof(HasStatus))]
+    [ObservableProperty] private bool _showStatusLine;
+    /// <summary>Composed strip text (<see cref="OverlayStatusComposer"/>), pushed by the composition root; ""
+    /// means nothing to show.</summary>
+    [NotifyPropertyChangedFor(nameof(HasStatus))]
+    [ObservableProperty] private string _statusText = "";
+    [ObservableProperty] private bool _statusIsWarning;
 
-    /// <summary>Re-read orientation/font scale from settings (called after Settings changes).</summary>
+    /// <summary>The strip's Visibility: on in settings AND something to say.</summary>
+    public bool HasStatus => ShowStatusLine && StatusText.Length > 0;
+
+    /// <summary>Called by App (UI thread) once per refresh while the overlay is visible; null = Empty. The
+    /// toolkit-generated setters compare with EqualityComparer&lt;T&gt;.Default, so a per-tick call that changes
+    /// nothing raises nothing.</summary>
+    public void SetStatus(OverlayStatus? status)
+    {
+        status ??= OverlayStatus.Empty;
+        StatusText = status.Text;
+        StatusIsWarning = status.IsWarning;
+    }
+
+    /// <summary>Re-read orientation/font scale/sparkline+status flags from settings (called after Settings changes).</summary>
     public void ApplyLayout()
     {
         Orientation = _settings.OverlayOrientation;
         FontScale = _settings.OverlayFontScale;
+        ShowSparklines = _settings.OverlayGraphs == OverlayGraphs.Sparkline;
+        ShowStatusLine = _settings.OverlayStatusLine;
     }
 
     public void Rebuild()

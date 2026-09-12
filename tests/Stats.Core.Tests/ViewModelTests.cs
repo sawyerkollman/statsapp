@@ -261,6 +261,73 @@ public class ViewModelTests
         Assert.Equal(Severity.Crit, vm.Tiles.Single().Severity);
     }
 
+    [Fact]
+    public void Overlay_ApplyLayout_ReadsSparklineAndStatusLineFlags()
+    {
+        var store = NewStore();
+        var settings = new AppSettings { OverlayGraphs = OverlayGraphs.None, OverlayStatusLine = true };
+        var vm = new OverlayViewModel(store, settings);
+        Assert.False(vm.ShowSparklines);
+        Assert.True(vm.ShowStatusLine);
+
+        settings.OverlayGraphs = OverlayGraphs.Sparkline;
+        settings.OverlayStatusLine = false;
+        vm.ApplyLayout();
+        Assert.True(vm.ShowSparklines);
+        Assert.False(vm.ShowStatusLine);
+    }
+
+    [Fact]
+    public void Overlay_SetStatus_SameValue_RaisesNothing()
+    {
+        var store = NewStore();
+        var vm = new OverlayViewModel(store, new AppSettings());
+        vm.SetStatus(new OverlayStatus("Fans: Balanced", false));
+
+        var raised = new List<string?>();
+        vm.PropertyChanged += (_, e) => raised.Add(e.PropertyName);
+
+        vm.SetStatus(new OverlayStatus("Fans: Balanced", false));
+        Assert.Empty(raised);
+
+        vm.SetStatus(new OverlayStatus("Fans: Custom", false));
+        Assert.Contains(nameof(OverlayViewModel.StatusText), raised);
+        Assert.Contains(nameof(OverlayViewModel.HasStatus), raised);
+    }
+
+    [Fact]
+    public void Overlay_HasStatus_RequiresFlagAndText()
+    {
+        var store = NewStore();
+        var vm = new OverlayViewModel(store, new AppSettings { OverlayStatusLine = false });
+
+        vm.SetStatus(new OverlayStatus("Fans: Balanced", false));
+        Assert.False(vm.HasStatus); // text without the flag
+
+        vm.SetStatus(OverlayStatus.Empty);
+        vm.ShowStatusLine = true;
+        Assert.False(vm.HasStatus); // flag without text
+
+        vm.SetStatus(new OverlayStatus("Fans: Balanced", false));
+        Assert.True(vm.HasStatus); // both
+
+        vm.SetStatus(null);
+        Assert.False(vm.HasStatus);
+    }
+
+    [Fact]
+    public void Overlay_Rebuild_KeepsStatus()
+    {
+        var store = NewStore();
+        var settings = new AppSettings { OverlayMetrics = { "cpu.temp" } };
+        var vm = new OverlayViewModel(store, settings);
+        vm.SetStatus(new OverlayStatus("Fans: Balanced", false));
+
+        vm.Rebuild();
+
+        Assert.Equal("Fans: Balanced", vm.StatusText);
+    }
+
     // ---- history double-buffer (v1.8 §10 "History arrays") ----
 
     [Fact]
