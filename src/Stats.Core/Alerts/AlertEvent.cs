@@ -13,7 +13,8 @@ public sealed record AlertEvent(
     string Unit,
     float PeakValue,
     float Threshold,
-    bool LowerIsWorse)
+    bool LowerIsWorse,
+    string Format = "F0")
 {
     /// <summary>e.g. "CPU Package 96 °C — crit ≥ 92" (inverted rules read "crit ≤ 30"). Built with
     /// <see cref="ValueFormatter"/> so the peak reads exactly like the tile/tray does; the threshold is a bare
@@ -23,9 +24,10 @@ public sealed record AlertEvent(
     /// <summary>Toast title, e.g. "CPU Package critical".</summary>
     public string NotificationTitle => $"{DisplayName} critical";
 
-    /// <summary>Toast body, e.g. "96 °C for 10 s (crit ≥ 92)" — peak via ValueFormatter exactly like Message and
-    /// the Peaks row (MetricDefinition built with the default "F0" format, so "96.4" reads "96" everywhere); the
-    /// threshold is a bare "0.#" invariant number; "≤" for lower-is-worse rules.</summary>
+    /// <summary>Toast body, e.g. "96 °C for 10 s (crit ≥ 92)" — peak via ValueFormatter with the metric's own
+    /// <see cref="Format"/> (stamped from the MetricDefinition by AlertEngine), so it reads exactly like the tile
+    /// and the Peaks row: an F0 metric shows "96", an F1 metric "15.7"; the threshold is a bare "0.#" invariant
+    /// number; "≤" for lower-is-worse rules.</summary>
     public string NotificationBody(int holdSeconds) =>
         $"{PeakText} for {holdSeconds} s (crit {Symbol} {ThresholdText})";
 
@@ -33,7 +35,7 @@ public sealed record AlertEvent(
     {
         get
         {
-            var def = new MetricDefinition(MetricId, DisplayName, default, "", Unit);
+            var def = new MetricDefinition(MetricId, DisplayName, default, "", Unit, Format);
             return ValueFormatter.Format(def, PeakValue);
         }
     }

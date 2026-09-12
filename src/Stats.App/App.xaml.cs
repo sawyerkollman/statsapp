@@ -599,6 +599,13 @@ public partial class App : Application
             Trace.WriteLine($"[Stats] alert notification skipped ({(_settings.AlertNotificationsEnabled ? "dashboard in foreground" : "notifications off")}): {evt.NotificationTitle}");
             return;
         }
+        if (_tray is null)
+        {
+            // The tray was never created (ForceCreate threw at logon / explorer restart) — say so instead of
+            // reporting "requested" and burning a cool-down on a toast nobody can see.
+            Trace.WriteLine("[Stats] alert notification failed: no tray icon: " + evt.NotificationTitle);
+            return;
+        }
         if (!_alertNotifications.TryAccept(evt.MetricId, nowUtc))
         {
             Trace.WriteLine("[Stats] alert notification suppressed by cool-down: " + evt.NotificationTitle);
@@ -606,12 +613,19 @@ public partial class App : Application
         }
         try
         {
-            _tray?.ShowNotification(evt.NotificationTitle, evt.NotificationBody(_settings.AlertHoldSeconds),
+            _tray.ShowNotification(ClampForShell(evt.NotificationTitle, 63),
+                ClampForShell(evt.NotificationBody(_settings.AlertHoldSeconds), 255),
                 NotificationIcon.Warning, sound: false);
             Trace.WriteLine("[Stats] alert notification requested: " + evt.NotificationTitle);
         }
         catch (Exception ex) { Trace.WriteLine("[Stats] alert notification failed: " + ex.Message); }
     }
+
+    /// <summary>Shell_NotifyIcon caps a balloon title at 63 characters and its body at 255 (szInfoTitle/szInfo
+    /// minus the terminator); past that H.NotifyIcon truncates or throws, and a throw would silently lose the toast
+    /// for a verbose hardware name — so clamp with an ellipsis instead.</summary>
+    private static string ClampForShell(string text, int max) =>
+        text.Length <= max ? text : text[..(max - 1)] + "…";
 
     /// <summary>Tray icon left-click, "Open dashboard", and "Settings" all funnel through here. Show() alone
     /// covers the "not stale for a poll interval" refresh via the Dashboard window's IsVisibleChanged handler

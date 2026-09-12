@@ -42,6 +42,21 @@ public class AlertEventTests
     }
 
     [Fact]
+
+    public void NotificationBody_UsesTheEventFormat_SoAnF1MetricReadsLikeItsTile()
+
+    {
+
+        var evt = new AlertEvent(new DateTime(2026, 9, 11, 12, 0, 0), "mem.used", "Memory Used", "GB", 15.7f, 15.5f, false, "F1");
+
+        Assert.Equal("15.7 GB for 10 s (crit ≥ 15.5)", evt.NotificationBody(10));
+
+        Assert.Equal("F0", new AlertEvent(new DateTime(2026, 9, 11, 12, 0, 0), "a", "A", "°C", 96f, 92f, false).Format);
+
+    }
+
+
+    [Fact]
     public void NotificationBody_UsesTheHoldSecondsArgument()
     {
         var evt = new AlertEvent(T0, "cpu.temp", "CPU Package", "°C", 96f, 92f, LowerIsWorse: false);

@@ -9,11 +9,24 @@ routing/task ledger, so only the sections that apply are kept.
 
 - Date/time: 2026-09-12 (Windows 11 Pro, this session's worktree)
 - Repo/branch: `feature/toast-alerts` (worktree `C:\claude-projects\Stats-wt\toast-alerts`)
-- Candidate commit: HEAD `572a7f7` ("feat(app): Windows notifications for critical alerts, click opens the
-  dashboard") **+ this task's uncommitted harness/docs changes**: `tools/Stats.UiPreview/PreviewComposition.cs`,
-  `tools/Stats.UiPreview/SubstateCatalog.cs`, `tools/Stats.UiPreview/captures/baseline.json`,
-  `tests/Stats.UiPreview.Tests/ToastAlertsSubstateTests.cs` (new), `docs/toast-alerts/EVIDENCE.md` (new),
-  `README.md`. Tasks 1–2 (Core policy/settings, App wiring/Settings tab) are already committed at HEAD.
+- Candidate commit: the branch tip — Tasks 1–3 (`b7de6df`, `572a7f7`, `7fa88f2`) plus the review fix wave commit
+  that follows `7fa88f2` (see "Fix wave" below). The captures in this report were taken at `572a7f7` + Task 3's
+  files; the fix wave touched no harness file and no capturable surface (Settings tab XAML unchanged), so they
+  stand.
+
+## Fix wave (after `docs/toast-alerts/REVIEW.md`)
+
+- S1 — `AlertEvent` gained a defaulted trailing `Format` member stamped from `MetricDefinition.Format` by
+  `AlertEngine.Tick`; `PeakText` (toast body, `Message`) and `AlertRowViewModel` format the peak with it, so an F1
+  metric reads "15.7 GB" everywhere. Tests: `Raise_StampsTheDefinitionFormat_SoToastAndLogRoundLikeTheTile`,
+  `NotificationBody_UsesTheEventFormat_SoAnF1MetricReadsLikeItsTile`. Existing `Message_*` tests unchanged.
+- S2 — `App.ShowAlertNotification` clamps the title to 63 and the body to 255 characters with an ellipsis
+  (`ClampForShell`) before `ShowNotification`.
+- N1 — a null `_tray` is traced as `failed: no tray icon` before the cool-down is consumed.
+- N2 / N3 — policy doc comment states the UI-thread contract; spec's backwards-clock note corrected.
+- N4 — this section. Task 3 shipped as one commit (`feat(tools)`), not the two the plan named.
+- N5 / N6 — not changed (consistency with the existing Alerts rows; `ToString()` is unconsumed).
+- Gates after the fix wave: `dotnet build --nologo` 0 warnings; `dotnet test --nologo` 826 + 200 green.
 - .NET SDK: 9.0.316 (targeting `net8.0-windows`); Windows 11 Pro 10.0.26220.
 - Overall status: implemented, captured, visually inspected. Build/tests/captures all pass — see "Gate outcomes".
 

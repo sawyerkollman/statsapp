@@ -50,7 +50,7 @@ previous task's committed tip.
       README Alerts + Tray paragraphs. Tests: the three `ToastAlertsSubstateTests` names from the spec;
       `CompositionIsolationTests` still green (the substate only records `settings.save`). Gate: build + tests +
       captures. Push.
-- [ ] **Task 4 — Review** (Opus, whole branch): diff `feature/toast-alerts` against `feature/v1.10` and check every
+- [x] **Task 4 — Review** (Opus, whole branch): diff `feature/toast-alerts` against `feature/v1.10` and check every
       spec claim (owner decisions 1–3, assumed decisions 1–12, rule 1 thread placement, rule 3 old-file loading,
       rule 4 package pinned, rule 6 no fan files touched, "existing rows/paths byte-identical when the feature is
       off", `Message` output unchanged, trace vocabulary, harness isolation). Findings → `docs/toast-alerts/REVIEW.md`;

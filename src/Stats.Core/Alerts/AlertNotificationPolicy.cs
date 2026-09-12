@@ -1,6 +1,7 @@
 namespace Stats.Core.Alerts;
 
-/// <summary>Decides whether a raised AlertEvent becomes a Windows notification. Pure and clock-injected like
+/// <summary>Decides whether a raised AlertEvent becomes a Windows notification. UI-thread-only like AlertEngine
+/// (both are called from App.EvaluateAlerts on the Dispatcher; nothing here is synchronized). Clock-injected like
 /// AlertEngine: the App passes the same nowUtc it passed to AlertEngine.Tick. Holds two timestamps and a
 /// per-metric dictionary; nothing runs between alerts.</summary>
 public sealed class AlertNotificationPolicy
