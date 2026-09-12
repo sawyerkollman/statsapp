@@ -24,7 +24,7 @@ tests + `tools/Stats.UiPreview --method rtb` are the only automated evidence).
       (new), `tests/Stats.Core.Tests/ViewModelTests.cs`, `tests/Stats.Core.Tests/SettingsViewModelTests.cs`,
       `tests/Stats.Core.Tests/SettingsServiceTests.cs`.
       Gate: build 0 warnings; tests green 0 warnings; `Stats.Core` still references no WPF type.
-- [ ] **Task 2 — Overlay view + composition root** (`feat(app):`). `OverlayWindow.xaml`: `xmlns:controls`, tiles
+- [x] **Task 2 — Overlay view + composition root** (`feat(app):`). `OverlayWindow.xaml`: `xmlns:controls`, tiles
       host named `TilesHost`, value row `StackPanel` bound through the existing `OverlayOrientation` converter,
       `controls:Sparkline` (`Width=56`, `Height` bound to `ValueText.ActualHeight`, `Values`/`Capacity`/`Stroke`
       bindings, `ShowGuides=False`, `IsHitTestVisible=False`, `Visibility` from `ShowSparklines`, orientation
