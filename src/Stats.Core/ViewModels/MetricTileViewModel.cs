@@ -280,7 +280,7 @@ public sealed partial class MetricTileViewModel : ObservableObject
         HistogramMinText = ValueFormatter.Format(Definition, min);
         HistogramMaxText = ValueFormatter.Format(Definition, max);
 
-        var rule = thresholds?.RuleFor(Definition) ?? ThresholdEvaluator.RuleFor(Definition, _settings);
+        var rule = thresholds is not null ? thresholds.RuleFor(Definition) : ThresholdEvaluator.RuleFor(Definition, _settings);
         bool lowerIsWorse = rule?.LowerIsWorse == true;
         double p = lowerIsWorse ? 0.01 : 0.99;
 

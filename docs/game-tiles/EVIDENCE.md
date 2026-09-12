@@ -78,9 +78,9 @@ untouched). All new captures under
 
 | # | Scenario/substate | Theme | Size | File | Observation |
 | --- | --- | --- | --- | --- | --- |
-| 1 | `game` / — | Dark Amber | 1180×720 | `v14-dashboard-game-tiles-dark-amber.png` | Game section (3 tiles) sits last, after Cpu(2)/Gpu(2); FPS summary shows "144 fps" large, "1% low 92 fps · 6.9 ms" small, and an orange ratio bar at "64% of avg"; the Histogram tile shows a short cluster of 12 bars with one tall bar near the right (the shaped spike data), a "p99 17.6 ms" marker/label above it, and range labels "6.5 ms"/"17.6 ms" under the bars. |
+| 1 | `game` / — | Dark Amber | 1180×720 | `v14-dashboard-game-tiles-dark-amber.png` | Game section (3 tiles) sits last, after Cpu(2)/Gpu(2); FPS summary shows "144 fps" large, "1% low 92 fps · 6.9 ms" small, and an orange ratio bar at "64% of avg"; the Histogram tile shows a short cluster of 12 bars with one tall bar at the far left (bin 0 holds most samples) with the p99 marker line standing alone near the right edge and the spike bins as thin slivers (the shaped spike data), a "p99 17.6 ms" marker/label above it, and range labels "6.5 ms"/"17.6 ms" under the bars. |
 | 2 | `game` / — | Light | 1180×720 | `v14-dashboard-game-tiles-light.png` | Same layout and values on the Light preset; accent-orange bars/marker/ratio-bar read clearly against the light background, text stays legible. |
-| 3 | `game` / `game-tiles-large` | Dark Amber | 1180×800 | `v14-dashboard-game-tiles-large-dark-amber.png` | FPS and Frame Time tiles both render at L size (visibly wider/taller than the M "1% Low FPS" tile beside them); the FPS summary's ratio bar/caption row is pushed toward the bottom of the taller tile, consistent with L's extra vertical space. |
+| 3 | `game` / `game-tiles-large` | Dark Amber | 1180×1000 | `v14-dashboard-game-tiles-large-dark-amber.png` | FPS and Frame Time tiles both render at L size (visibly wider/taller than the M "1% Low FPS" tile beside them); the FPS summary's ratio bar/caption row is pushed toward the bottom of the taller tile, consistent with L's extra vertical space. |
 | 4 | `game` / `game-tiles-small` | Dark Amber | 1180×720 | `v14-dashboard-game-tiles-small-dark-amber.png` | FPS and Frame Time tiles both fall back to the plain `TileCompact` look (name + bare value only — "144 fps", "6.9 ms", no sparkline/bars/ratio bar), exactly like every other kind at S; the untouched "1% Low FPS" tile stays at M with its full sparkline. |
 | 5 | `game` / `graphs-plain` | Dark Amber | 1180×720 | `v14-dashboard-game-tiles-plain-dark-amber.png` | Same data as case 1 with `SmoothLines`/`GraphEffects` off — histogram bars and the marker/ratio-bar read as flat fills without the gradient/highlight/glow case 1 has; still fully legible. |
 | 6 | `game` / `graphs-warmup` | Dark Amber | 1180×720 | `v14-dashboard-game-tiles-warmup-dark-amber.png` | Store trimmed to the most recent 15 of 60 ticks (25%): the sparklines occupy only their track's right quarter; the Histogram's marker reads "p99 15.3 ms" (not 17.6 ms) because the tick-41 spike (12.9 ms) falls outside the last 15 samples while the tick-52 spike (15.3 ms) is still included — the bin/marker maths responding correctly to a smaller sample window. |
@@ -134,3 +134,17 @@ independent of whether the affected tile happens to sit inside a particular capt
   theme switch on the real app, effects-off/idle-CPU, Free/Snap drag feel, PresentMon-not-running state via the
   real app, and the 1.9.x downgrade reset) all need the real app or a real older build — none can be
   discharged from this preview harness.
+
+## Fix wave (after `docs/game-tiles/REVIEW.md`)
+
+- Candidate is now the branch tip (the fix-wave commit after `d98e820`).
+- S1: `HistogramBars` keys its geometry cache on the bins' sum and max as well as the array reference, so the
+  alternating buffers can no longer replay a stale distribution after skipped renders.
+- S2: the histogram's rule lookup only falls back to the settings scan when there is no threshold index.
+- S3: README no longer claims frame time is a histogram "by default" (Auto is unchanged; the kind is offered).
+- S4: capture 3 (`game-tiles-large`) re-taken at 1180×1000 so the L histogram tile is fully inside the frame.
+- S5: capture 1's description corrected (tall bar at the far left; the thin element on the right is the p99 marker).
+- S6: new capture `v14-dashboard-game-histogram-fps-dark-amber.png` (substate `game-histogram-fps`, Histogram on
+  `fps.avg`): the marker reads "p1 57 fps" at the left edge with the marker line at the low end — the p1 branch.
+- N2: the marker line is clamped 0.5 px inside the control at fraction 0 and 1.
+- Gates after the fix wave: build 0 warnings; 836 + 219 tests green; both re-taken captures `Warnings: []`.

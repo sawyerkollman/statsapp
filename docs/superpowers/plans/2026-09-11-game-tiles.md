@@ -63,6 +63,6 @@ checkpoint, re-run by the controller: `dotnet build --nologo` (0 warnings) and `
       `README.md`.
       Gate: build + tests (both test projects; `FixtureValidityTests`/`CompositionIsolationTests` now include `game`);
       batch reports 0 failed and every new sidecar `Warnings: []`.
-- [ ] **Task 5 — Review**: Opus whole-branch review (`docs/game-tiles/REVIEW.md`, findings B/S/N-numbered as in
+- [x] **Task 5 — Review**: Opus whole-branch review (`docs/game-tiles/REVIEW.md`, findings B/S/N-numbered as in
       `docs/graph-effects/REVIEW.md`) + fix wave in the same file-ownership split; re-run both gates and the full
       capture batch; PR to `feature/v1.10` with the spec's owner checklist (items 1–8) in the description.

@@ -228,6 +228,12 @@ public sealed class PreviewComposition
 
             // ---- game tiles (2026-09-11-game-tiles-design.md) ----
             case "game-tiles": ApplyGameTiles(c); break;
+            // Histogram on the FPS metric: its rule is LowerIsWorse, so the marker is p1 at the low end (owner
+            // decision assumed D) — the left-edge marker branch the other captures never exercise.
+            case "game-histogram-fps":
+                c.Settings.PrefFor("fps.avg").Kind = TileKind.Histogram;
+                c.Dashboard.RebuildSections();
+                break;
             case "game-tiles-large":
                 ApplyGameTiles(c);
                 c.Settings.PrefFor(FrameMetrics.FpsId).Size = TileSize.L;

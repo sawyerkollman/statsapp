@@ -26,7 +26,7 @@ Uninstall from Settings → Apps; PawnIO is left installed because other tools m
 - **Game tiles** — two extra tile kinds for the *Game* group: **FPS summary** on the FPS tile shows the
   average large, 1% low and frame time small, and a compact bar for 1% low ÷ average (e.g. "64% of avg"),
   coloured by the 1% low's own severity so it turns amber/red on stutter even while the average looks
-  fine; a missing sibling reads "—". **Histogram** (offered on every tile, frame time by default) bins the
+  fine; a missing sibling reads "—". **Histogram** (offered on every tile; pick it from the tile menu — nothing is re-templated automatically) bins the
   metric's history window into 12 bars with a p99 marker (p1 for lower-is-worse metrics like FPS) — the
   bars are per-poll averages, not individual frames, so they show the shape of a session, not a per-frame
   trace. A settings file with either kind opened by an older (1.9.x) Stats build resets all settings to

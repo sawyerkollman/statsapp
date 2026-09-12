@@ -62,6 +62,12 @@ public sealed class HistogramBars : FrameworkElement
     private StreamGeometry? _barsGeometry;
     private StreamGeometry? _highlightGeometry;
     private IReadOnlyList<int>? _cacheBins;
+    // Content fingerprint alongside the reference: MetricTileViewModel alternates exactly two int[12] buffers, so
+    // after an even number of skipped renders (collapsed group, hidden window) the *same* array comes back with new
+    // counts and a reference check alone would replay last tick's bars. Sum + max of the counts is allocation-free
+    // and changes whenever the distribution does in any way that matters visually.
+    private long _cacheBinsSum = -1;
+    private int _cacheBinsMax = -1;
     private double _cacheGeometryWidth = -1, _cacheGeometryHeight = -1;
 
     private Brush? _fillBrush;
@@ -129,10 +135,15 @@ public sealed class HistogramBars : FrameworkElement
         var track = Track;
         bool effects = GraphStyle.Effects;
 
-        if (!ReferenceEquals(_cacheBins, bins) || _cacheGeometryWidth != w || _cacheGeometryHeight != h)
+        long binsSum = 0; int binsMax = 0;
+        if (bins is not null)
+            for (int i = 0; i < bins.Count; i++) { binsSum += bins[i]; if (bins[i] > binsMax) binsMax = bins[i]; }
+        if (!ReferenceEquals(_cacheBins, bins) || binsSum != _cacheBinsSum || binsMax != _cacheBinsMax
+            || _cacheGeometryWidth != w || _cacheGeometryHeight != h)
         {
             RebuildBars(bins, w, h);
-            _cacheBins = bins; _cacheGeometryWidth = w; _cacheGeometryHeight = h;
+            _cacheBins = bins; _cacheBinsSum = binsSum; _cacheBinsMax = binsMax;
+            _cacheGeometryWidth = w; _cacheGeometryHeight = h;
         }
         if (!ReferenceEquals(_cacheStrokeForColor, stroke) || _cacheEffects != effects)
         {
@@ -165,7 +176,7 @@ public sealed class HistogramBars : FrameworkElement
         double fraction = MarkerFraction;
         if (double.IsNaN(fraction) || fraction < 0 || fraction > 1) return;
 
-        double x = fraction * w;
+        double x = Math.Clamp(fraction * w, 0.5, w - 0.5); // a 1 px line at fraction 0 or 1 would otherwise be half-clipped
         string label = MarkerLabel;
         bool hasLabel = !string.IsNullOrEmpty(label);
         double top = hasLabel ? 12 : 0;
