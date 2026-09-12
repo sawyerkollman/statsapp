@@ -43,7 +43,7 @@ tests + `tools/Stats.UiPreview --method rtb` are the only automated evidence).
       `dotnet run --project tools/Stats.UiPreview -- --scenario normal --view overlay --method rtb --output artifacts/overlay-sparklines/smoke.png`
       (default settings → sparklines on) succeeds with an empty sidecar `Warnings` array and a visible sparkline
       beside each value; the same with `--substate vertical` shows it below each value.
-- [ ] **Task 3 — Harness + docs** (`feat(tools):` for the harness commit, then `docs:` for README/evidence).
+- [x] **Task 3 — Harness + docs** (`feat(tools):` for the harness commit, then `docs:` for README/evidence).
       `SubstateCatalog.ByView["overlay"]` += `sparklines`, `sparklines-off`, `sparklines-warmup`, `status-line`,
       `status-line-warn`; `PreviewComposition`: the `Build()` warm-up trim condition extended with
       `sparklines-warmup`, and a `// ---- overlay sparklines ----` block in `ApplySubstate` per the spec's table

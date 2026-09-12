@@ -17,7 +17,8 @@ internal static class SubstateCatalog
         ["peaks"] = new[] { "empty", "populated", "long-names" },
         ["alerts"] = new[] { "empty", "ongoing" },
         ["details"] = new[] { "gap", "long-unit", "thresholds", "detail-plain", "detail-smooth", "detail-warmup" },
-        ["overlay"] = new[] { "move-mode", "vertical", "light-parent", "opacity-min", "opacity-max", "long-value" },
+        ["overlay"] = new[] { "move-mode", "vertical", "light-parent", "opacity-min", "opacity-max", "long-value",
+            "sparklines", "sparklines-off", "sparklines-warmup", "status-line", "status-line-warn" },
         ["threshold-dialog"] = new[] { "valid", "invalid", "lower-is-worse" },
         ["input-dialog"] = Array.Empty<string>(),
     };
