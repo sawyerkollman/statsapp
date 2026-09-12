@@ -74,5 +74,16 @@
   { "Method": "rtb", "Scenario": "normal", "View": "dashboard", "Substate": "graphs-warmup", "Theme": "Dark Amber", "Width": 1180, "Height": 720, "Output": "artifacts/graph-effects/v13-dashboard-graphs-warmup-dark-amber.png" },
   { "Method": "rtb", "Scenario": "normal", "View": "details", "Substate": "detail-plain", "Theme": "Dark Amber", "Width": 640, "Height": 420, "Output": "artifacts/graph-effects/v13-details-detail-plain-dark-amber.png" },
   { "Method": "rtb", "Scenario": "normal", "View": "details", "Substate": "detail-smooth", "Theme": "Dark Amber", "Width": 640, "Height": 420, "Output": "artifacts/graph-effects/v13-details-detail-smooth-dark-amber.png" },
-  { "Method": "rtb", "Scenario": "normal", "View": "details", "Substate": "detail-warmup", "Theme": "Dark Amber", "Width": 640, "Height": 420, "Output": "artifacts/graph-effects/v13-details-detail-warmup-dark-amber.png" }
+  { "Method": "rtb", "Scenario": "normal", "View": "details", "Substate": "detail-warmup", "Theme": "Dark Amber", "Width": 640, "Height": 420, "Output": "artifacts/graph-effects/v13-details-detail-warmup-dark-amber.png" },
+
+  { "Method": "rtb", "Scenario": "game", "View": "dashboard", "Theme": "Dark Amber", "Width": 1180, "Height": 720, "Output": "artifacts/game-tiles/v14-dashboard-game-tiles-dark-amber.png" },
+  { "Method": "rtb", "Scenario": "game", "View": "dashboard", "Theme": "Light", "Width": 1180, "Height": 720, "Output": "artifacts/game-tiles/v14-dashboard-game-tiles-light.png" },
+  { "Method": "rtb", "Scenario": "game", "View": "dashboard", "Substate": "game-tiles-large", "Theme": "Dark Amber", "Width": 1180, "Height": 800, "Output": "artifacts/game-tiles/v14-dashboard-game-tiles-large-dark-amber.png" },
+  { "Method": "rtb", "Scenario": "game", "View": "dashboard", "Substate": "game-tiles-small", "Theme": "Dark Amber", "Width": 1180, "Height": 720, "Output": "artifacts/game-tiles/v14-dashboard-game-tiles-small-dark-amber.png" },
+  { "Method": "rtb", "Scenario": "game", "View": "dashboard", "Substate": "graphs-plain", "Theme": "Dark Amber", "Width": 1180, "Height": 720, "Output": "artifacts/game-tiles/v14-dashboard-game-tiles-plain-dark-amber.png" },
+  { "Method": "rtb", "Scenario": "game", "View": "dashboard", "Substate": "graphs-warmup", "Theme": "Dark Amber", "Width": 1180, "Height": 720, "Output": "artifacts/game-tiles/v14-dashboard-game-tiles-warmup-dark-amber.png" },
+  { "Method": "rtb", "Scenario": "gallery", "View": "dashboard", "Substate": "game-summary-orphan", "Theme": "Dark Amber", "Width": 1180, "Height": 1660, "Output": "artifacts/game-tiles/v14-dashboard-game-summary-orphan-dark-amber.png" },
+  { "Method": "rtb", "Scenario": "missing", "View": "dashboard", "Substate": "game-tiles", "Theme": "Dark Amber", "Width": 1180, "Height": 1100, "Output": "artifacts/game-tiles/v14-dashboard-game-tiles-gap-dark-amber.png" },
+  { "Method": "rtb", "Scenario": "game", "View": "dashboard", "Substate": "layout-free", "Theme": "Dark Amber", "Width": 1180, "Height": 720, "Output": "artifacts/game-tiles/v14-dashboard-game-tiles-layout-free-dark-amber.png" },
+  { "Method": "rtb", "Scenario": "game", "View": "dashboard", "Substate": "theme-cycle", "Theme": "Dark Amber", "Width": 1180, "Height": 720, "Output": "artifacts/game-tiles/v14-dashboard-game-tiles-theme-cycle.png" }
 ]

@@ -50,7 +50,7 @@ checkpoint, re-run by the controller: `dotnet build --nologo` (0 warnings) and `
       `dotnet run --project tools/Stats.UiPreview -- --scenario dense --view dashboard --settings <that file> --theme "Dark Amber" --width 1180 --height 720 --method rtb --output artifacts/game-tiles/smoke-dense.png`
       (`dense` has series for all three Game ids), and check the PNG shows both tiles and the sidecar `Warnings`
       is empty (no binding/resource errors from the new templates).
-- [ ] **Task 4 — Harness, captures, docs** (`feat(tools):` then `docs:`): `game` scenario (shaped frame-time
+- [x] **Task 4 — Harness, captures, docs** (`feat(tools):` then `docs:`): `game` scenario (shaped frame-time
       series via `AddExact`, preset prefs) appended to `Scenarios.Names`; dashboard substates `game-tiles`,
       `game-tiles-large`, `game-tiles-small`, `game-summary-orphan` in `PreviewComposition.ApplySubstate` and
       `SubstateCatalog`; the ten `baseline.json` entries under `artifacts/game-tiles/`; `GameTilesSubstateTests`;
