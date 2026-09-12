@@ -140,8 +140,9 @@ hash after downloading an update (older releases without a published hash retain
   `%AppData%\Stats\logs\stats-YYYYMMDD.log`; the newest seven daily files are kept, and Settings can
   open the folder.
 - **Tiles** — right-click, the hover **⋯** button, or Shift+F10/the Menu key on a focused tile:
-  kind (Sparkline/Gauge/Bar/Value), size (S/M/L — 160×80/224×144/460×192), rename, gauge max,
-  thresholds, Details…, remove. The value and its unit are shown separately with stable digit
+  kind (Sparkline/Gauge/Bar/Value), size (S/M/L — 160×80/224×144/460×192, with **Larger**/**Smaller**
+  items next to the size menu — **Ctrl+Plus** / **Ctrl+Minus** on a focused tile do the same), rename,
+  gauge max, thresholds, Details…, remove. The value and its unit are shown separately with stable digit
   widths so readings don't jitter, and the options button sits in a reserved corner so it never
   covers the reading. Empty rows (no limit set, no history yet) are omitted rather than shown
   blank, and a long footer shows a tooltip with the full text. Gauge tiles show the reading beside
@@ -166,6 +167,10 @@ hash after downloading an update (older releases without a published hash retain
     keys nudge it by one step (**Shift**+arrow moves 4 steps at once).
   - **Snap to grid** — the same free canvas, but a dropped or nudged position rounds to the
     nearest 16-pixel grid line; tiles are allowed to overlap.
+
+  **Resize**: in Free or Snap, drag the grip in a tile's bottom-right corner; the outline shows
+  which size (S, M, L) it will snap to. Ctrl+Plus / Ctrl+Minus resize the focused tile in any
+  layout.
 
   **Reset tile positions…** (also in the View menu, enabled outside Auto arrange) clears every
   saved position and re-seeds a fresh packed layout. Positions are saved per tile — and for the

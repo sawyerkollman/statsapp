@@ -12,7 +12,7 @@ the listed files as its only write scope; the controller re-runs the gates and c
       `tests/Stats.Core.Tests/DashboardLayoutModeTests.cs`. Does: `TileDimensions.Nearest/Step`, `SetTileSize`
       same-size early return, `StepTileSize` + `TileSizeStep` record + `StepTileSizeEditCommand`,
       `MetricTileViewModel.IsResizable` set in `RebuildSections`; all Core tests in the spec's Acceptance.
-- [ ] **Task 2 — App** (`feat(app): resize grip, outline adorner, Ctrl+Plus/Minus, canvas-coordinate drags`).
+- [x] **Task 2 — App** (`feat(app): resize grip, outline adorner, Ctrl+Plus/Minus, canvas-coordinate drags`).
       Owns: `src/Stats.App/Controls/TileCanvasItemsControl.cs` (new), `src/Stats.App/Controls/ResizeOutlineAdorner.cs`
       (new), `src/Stats.App/Views/DashboardWindow.xaml`, `src/Stats.App/Views/DashboardWindow.xaml.cs`,
       `src/Stats.App/Views/TileTemplates.xaml` (only the new `TileResizeGripStyle`), `src/Stats.App/Views/Icons.xaml`
