@@ -50,8 +50,17 @@ public class MetricDetailViewModelTests
     }
 
     [Fact]
+    public void HistorySampleCapacity_ComesFromHistoryBuffer()
+    {
+        var h = new MetricHistory(37);
+        var vm = new MetricDetailViewModel(CpuTemp, h, SettingsWithDefaults());
+        Assert.Equal(37, vm.HistorySampleCapacity);
+    }
+
+    [Fact]
     public void TimeAxisLabels_FiveLabels_OldestToNow()
     {
+        // Buffer is full (10 of 10) — capacity == sampleCount, so this is unaffected by review B2's fix.
         var h = new MetricHistory(10);
         for (int i = 0; i < 10; i++) h.Add(i);
         var settings = SettingsWithDefaults();
@@ -60,6 +69,23 @@ public class MetricDetailViewModelTests
 
         Assert.Equal(5, vm.TimeAxisLabels.Count);
         Assert.Equal("-9m", vm.TimeAxisLabels[0]);
+        Assert.Equal("now", vm.TimeAxisLabels[^1]);
+    }
+
+    [Fact]
+    public void TimeAxisLabels_WarmUpBuffer_BasedOnCapacityNotSampleCount()
+    {
+        // Review B2: a 30-of-120 buffer at 1 s/sample must label the left edge with the full 119-second axis
+        // window the chart actually draws over (max(capacity, sampleCount) - 1 = 119 samples back), not 29
+        // seconds (the old, sampleCount-only formula that ignored Capacity entirely).
+        var h = new MetricHistory(120);
+        for (int i = 0; i < 30; i++) h.Add(i);
+        var settings = SettingsWithDefaults();
+        settings.PollIntervalSeconds = 1.0;
+        var vm = new MetricDetailViewModel(CpuTemp, h, settings);
+
+        Assert.Equal("-" + HistoryCapacity.FormatWindow(119), vm.TimeAxisLabels[0]); // "-1m59s"
+        Assert.NotEqual("-" + HistoryCapacity.FormatWindow(29), vm.TimeAxisLabels[0]); // the pre-fix value
         Assert.Equal("now", vm.TimeAxisLabels[^1]);
     }
 

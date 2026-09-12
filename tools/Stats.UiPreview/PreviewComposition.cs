@@ -86,8 +86,23 @@ public sealed class PreviewComposition
             commands.Record("settings.save");
         }
 
-        var store = new MetricStore(fixture.Definitions, capacity: 120);
-        foreach (var tick in fixture.Ticks) store.Apply(tick);
+        // Store capacity matches the fixture's own tick count (review S2) so every capture that doesn't opt into
+        // "graphs-warmup" renders a *full* buffer — the steady state the real app spends ~all its time in, and
+        // the state every other ui-polish dashboard/details baseline was implicitly assuming. Previously this was
+        // hardcoded to 120 against a 60-tick fixture, so the fixed SampleAxis (right-anchored, constant spacing)
+        // rendered every capture's line at half width, silently changing what those baselines showed.
+        var store = new MetricStore(fixture.Definitions, capacity: fixture.Ticks.Count);
+        // "graphs-warmup" (T3 of docs/superpowers/plans/2026-09-11-graph-effects.md): apply only the most recent
+        // quarter of the fixture's ticks so the ring buffer sits at 25% of its capacity — the fixed SampleAxis
+        // then right-anchors the line with visible empty space to its left. Must happen here, before the
+        // ViewModels below are built from `store`, not in ApplySubstate (which runs after they already exist).
+        int warmupTickCount = Math.Max(1, fixture.Ticks.Count / 4); // 25% of the store's capacity (== fixture.Ticks.Count)
+        // "detail-warmup" is the details-view counterpart of "graphs-warmup" — same store-level trim, so the
+        // detail window's HistoryChart (fed from the same MetricStore) shows the same 25%-full buffer.
+        var ticksToApply = substates.Contains("graphs-warmup") || substates.Contains("detail-warmup")
+            ? fixture.Ticks.Skip(Math.Max(0, fixture.Ticks.Count - warmupTickCount)).ToList()
+            : fixture.Ticks;
+        foreach (var tick in ticksToApply) store.Apply(tick);
 
         var dashboard = new DashboardViewModel(store, settings, Save)
         {
@@ -200,6 +215,23 @@ public sealed class PreviewComposition
             case "layout-free": c.Dashboard.LayoutMode = DashboardLayoutMode.Free; break;
             case "layout-grid": c.Dashboard.LayoutMode = DashboardLayoutMode.Grid; break;
             case "layout-free-placed": ApplyLayoutFreePlaced(c); break;
+
+            // ---- graph effects (T3 of docs/superpowers/plans/2026-09-11-graph-effects.md) ----
+            // Settings-level, applied here (before the window/controls exist) so GraphStyle.Apply — called by
+            // CaptureHost right after Build() returns, still before window.Show() — has the right values in hand
+            // before any control's Loaded/OnRender runs. "graphs-effects" is mostly documentary: both settings
+            // already default to true (AppSettings.SmoothLines/GraphEffects), so this substate just makes the
+            // capture's intent explicit next to "graphs-plain".
+            case "graphs-plain": c.Settings.SmoothLines = false; c.Settings.GraphEffects = false; break;
+            case "graphs-effects": c.Settings.SmoothLines = true; c.Settings.GraphEffects = true; break;
+            case "graphs-warmup": break; // history already trimmed above, before the ViewModels were built
+
+            // ---- details (graph effects) ----
+            case "detail-plain": c.Settings.SmoothLines = false; c.Settings.GraphEffects = false; break;
+            // Also a no-op against defaults, same as "graphs-effects" above (review N4) — kept as its own named
+            // substate because it targets the details view rather than the dashboard.
+            case "detail-smooth": c.Settings.SmoothLines = true; c.Settings.GraphEffects = true; break;
+            case "detail-warmup": break; // history already trimmed above, before the ViewModels were built
 
             // ---- picker ----
             case "no-results":

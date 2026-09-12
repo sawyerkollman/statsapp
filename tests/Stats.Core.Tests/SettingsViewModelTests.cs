@@ -724,6 +724,37 @@ public class SettingsViewModelTests
         Assert.Equal(1, saves());
     }
 
+    // ---- Graphs section ----
+
+    [Fact]
+    public void Ctor_LoadsGraphValuesFromSettings()
+    {
+        var s = new AppSettings { SmoothLines = false, GraphEffects = false };
+        var vm = new SettingsViewModel(s, Defs, () => { });
+        Assert.False(vm.SmoothLines);
+        Assert.False(vm.GraphEffects);
+    }
+
+    [Fact]
+    public void SmoothLines_WritesThroughAndRaisesGraphs()
+    {
+        var (vm, s, changes, saves) = Make();
+        vm.SmoothLines = false;
+        Assert.False(s.SmoothLines);
+        Assert.Equal(new[] { SettingsChange.Graphs }, changes);
+        Assert.Equal(1, saves());
+    }
+
+    [Fact]
+    public void GraphEffects_WritesThroughAndRaisesGraphs()
+    {
+        var (vm, s, changes, saves) = Make();
+        vm.GraphEffects = false;
+        Assert.False(s.GraphEffects);
+        Assert.Equal(new[] { SettingsChange.Graphs }, changes);
+        Assert.Equal(1, saves());
+    }
+
     [Fact]
     public void SelectedTrayMetric_BackToAuto_ClearsStoredId()
     {
