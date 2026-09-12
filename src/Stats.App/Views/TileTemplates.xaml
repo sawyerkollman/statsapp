@@ -277,10 +277,82 @@
         </Border>
     </DataTemplate>
 
+    <!-- Histogram: 12 bins over the tile's history window, a thin percentile marker with a control-drawn label,
+         min/max range labels under the bars (no MinMaxText footer — the bars are the distribution, session
+         min/avg/max stay in Details). -->
+    <DataTemplate x:Key="TileHistogram">
+        <Border Style="{StaticResource TileBorder}">
+            <DockPanel>
+                <Grid DockPanel.Dock="Top">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="24"/>
+                    </Grid.ColumnDefinitions>
+                    <TextBlock Grid.Column="0" Text="{Binding DisplayName}" Style="{StaticResource TileName}" ToolTip="{Binding DisplayName}"/>
+                    <TextBlock Grid.Column="1" Text="{Binding HistoryWindowTag}" Style="{StaticResource TileFoot}" Margin="4,0" VerticalAlignment="Center"/>
+                    <Button Grid.Column="2" x:Name="TileMenuButton" Style="{StaticResource TileMenuButtonStyle}"/>
+                </Grid>
+                <DockPanel DockPanel.Dock="Bottom" Margin="0,2,0,0">
+                    <TextBlock DockPanel.Dock="Right" Text="{Binding HistogramMaxText}" Style="{StaticResource TileFoot}"/>
+                    <TextBlock Text="{Binding HistogramMinText}" Style="{StaticResource TileFoot}"/>
+                </DockPanel>
+                <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="0,4,0,0">
+                    <TextBlock Text="{Binding ValueText}" Style="{StaticResource TileValue}"/>
+                    <TextBlock Text="{Binding UnitText}" Style="{StaticResource TileUnit}"/>
+                    <TextBlock Style="{StaticResource TileSeverityGlyph}"/>
+                </StackPanel>
+                <controls:HistogramBars Bins="{Binding HistogramBins}" MarkerFraction="{Binding HistogramMarkerFraction}"
+                                        MarkerLabel="{Binding HistogramMarkerText}"
+                                        Stroke="{Binding Severity, Converter={StaticResource SeverityToBrush}, ConverterParameter=accent}"
+                                        Track="{DynamicResource GaugeTrack}" Margin="0,4,0,0"/>
+            </DockPanel>
+        </Border>
+    </DataTemplate>
+
+    <!-- FpsSummary: average FPS at the standard reading size, a small "1% low · frame time" row, and a compact
+         ratio bar (1% low ÷ average) whose colour follows the 1% low's own severity. No history-window tag — it
+         shows current values, not a window. -->
+    <DataTemplate x:Key="TileFpsSummary">
+        <Border Style="{StaticResource TileBorder}">
+            <DockPanel>
+                <Grid DockPanel.Dock="Top">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="24"/>
+                    </Grid.ColumnDefinitions>
+                    <TextBlock Grid.Column="0" Text="{Binding DisplayName}" Style="{StaticResource TileName}" ToolTip="{Binding DisplayName}"/>
+                    <Button Grid.Column="1" x:Name="TileMenuButton" Style="{StaticResource TileMenuButtonStyle}"/>
+                </Grid>
+                <DockPanel DockPanel.Dock="Bottom" Margin="0,4,0,0">
+                    <TextBlock DockPanel.Dock="Right" Text="{Binding FpsRatioText}" Style="{StaticResource TileOptionalText}" Margin="8,0,0,0"/>
+                    <controls:LevelBar Height="6" VerticalAlignment="Center" Fraction="{Binding FpsLowRatio}"
+                                       Fill="{Binding FpsLowSeverity, Converter={StaticResource SeverityToBrush}, ConverterParameter=accent}"
+                                       Track="{DynamicResource GaugeTrack}"/>
+                </DockPanel>
+                <StackPanel DockPanel.Dock="Bottom" Orientation="Horizontal">
+                    <TextBlock Text="1% low" Style="{StaticResource TileFoot}"/>
+                    <TextBlock Text="{Binding FpsLowText}" Style="{StaticResource TileFoot}"
+                               Foreground="{Binding FpsLowSeverity, Converter={StaticResource SeverityToBrush}}" Margin="4,0,0,0"/>
+                    <TextBlock Text="&#183;" Style="{StaticResource TileFoot}" Margin="6,0"/>
+                    <TextBlock Text="{Binding FpsFrameTimeText}" Style="{StaticResource TileFoot}"
+                               Foreground="{DynamicResource TextPrimary}" ToolTip="Frame time (average over the last poll)"/>
+                </StackPanel>
+                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                    <TextBlock Text="{Binding ValueText}" Style="{StaticResource TileValue}"/>
+                    <TextBlock Text="{Binding UnitText}" Style="{StaticResource TileUnit}"/>
+                    <TextBlock Style="{StaticResource TileSeverityGlyph}"/>
+                </StackPanel>
+            </DockPanel>
+        </Border>
+    </DataTemplate>
+
     <views:TileTemplateSelector x:Key="TileSelector"
                                 Compact="{StaticResource TileCompact}"
                                 Sparkline="{StaticResource TileSparkline}"
                                 Gauge="{StaticResource TileGauge}"
                                 Bar="{StaticResource TileBar}"
-                                Value="{StaticResource TileValueTemplate}"/>
+                                Value="{StaticResource TileValueTemplate}"
+                                Histogram="{StaticResource TileHistogram}"
+                                FpsSummary="{StaticResource TileFpsSummary}"/>
 </ResourceDictionary>

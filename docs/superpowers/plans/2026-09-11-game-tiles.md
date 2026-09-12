@@ -32,7 +32,7 @@ checkpoint, re-run by the controller: `dotnet build --nologo` (0 warnings) and `
       Gate: build + tests; `Tile_Kind_AutoRules`, `Tile_Kind_PercentOutsideCpuGpu_StaysSparkline`,
       `Tile_Kind_And_Size_PrefOverride` and every `MetricTileViewModelTests` case pass unmodified (Auto path
       byte-identical).
-- [ ] **Task 3 — App control, templates, menu** (`feat(app):`): new `HistogramBars` control (DPs `Bins`,
+- [x] **Task 3 — App control, templates, menu** (`feat(app):`): new `HistogramBars` control (DPs `Bins`,
       `MarkerFraction`, `MarkerLabel`, `Stroke`, `Track`; cached geometry/pens; `ThemeManager.Changed`/
       `GraphStyle.Changed` subscription; control-drawn label; effects = gradient + highlight + marker glow; no
       animation); `CurveRenderer.BarBrushFor`; `TileHistogram` and `TileFpsSummary` DataTemplates and the two

@@ -99,4 +99,23 @@ internal static class CurveRenderer
         pen.Freeze();
         return pen;
     }
+
+    /// <summary>Fill brush for <see cref="HistogramBars"/>' bars, from <paramref name="stroke"/>'s colour (or
+    /// Orange for a non-solid brush): plain → a flat 0xCC-alpha solid brush; <paramref name="effects"/> → a
+    /// vertical gradient (0xE6 at the top fading to 0x99 at the bottom), same shape as <see cref="FillBrushFor"/>.
+    /// Frozen.</summary>
+    public static Brush BarBrushFor(Brush stroke, bool effects)
+    {
+        var c = stroke is SolidColorBrush sc ? sc.Color : Colors.Orange;
+        if (!effects)
+        {
+            var flat = new SolidColorBrush(Color.FromArgb(0xCC, c.R, c.G, c.B));
+            flat.Freeze();
+            return flat;
+        }
+        var gradient = new LinearGradientBrush(
+            Color.FromArgb(0xE6, c.R, c.G, c.B), Color.FromArgb(0x99, c.R, c.G, c.B), 90);
+        gradient.Freeze();
+        return gradient;
+    }
 }
