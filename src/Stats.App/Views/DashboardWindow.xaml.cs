@@ -48,6 +48,10 @@ public partial class DashboardWindow : Window
     private bool _resizeExceededThreshold;
     private TileSize _resizeCandidate;
     private ResizeOutlineAdorner? _resizeAdorner;
+    /// <summary>The layer <see cref="_resizeAdorner"/> was added to — removal goes through this rather than re-looking
+    /// it up from the adorned container, which may already be detached (a rebuild mid-drag) and would return null,
+    /// leaving the outline painted forever.</summary>
+    private AdornerLayer? _resizeAdornerLayer;
 
     /// <summary>Whichever header button (Metrics or Settings) most recently opened the flyout — Escape returns
     /// keyboard focus here (DESIGN.md §5); falls back to the Metrics button if the flyout was opened some other
@@ -309,6 +313,7 @@ public partial class DashboardWindow : Window
             if (AdornerLayer.GetAdornerLayer(_resizeContainer) is AdornerLayer layer)
             {
                 _resizeAdorner = new ResizeOutlineAdorner(_resizeContainer);
+                _resizeAdornerLayer = layer;
                 layer.Add(_resizeAdorner);
             }
         }
@@ -358,8 +363,9 @@ public partial class DashboardWindow : Window
     private void RemoveResizeAdorner()
     {
         if (_resizeAdorner is null) return;
-        AdornerLayer.GetAdornerLayer(_resizeAdorner.AdornedElement)?.Remove(_resizeAdorner);
+        _resizeAdornerLayer?.Remove(_resizeAdorner);
         _resizeAdorner = null;
+        _resizeAdornerLayer = null;
     }
 
     /// <summary>The Canvas panel hosting <paramref name="container"/> — Free/Snap move and resize drags measure
@@ -577,7 +583,13 @@ public partial class DashboardWindow : Window
     /// Ctrl+Plus/Minus as a scroll gesture.</summary>
     private bool TryStepTileSize(object sender, KeyEventArgs e)
     {
-        if (Keyboard.Modifiers != ModifierKeys.Control) return false;
+        // A grip drag is in flight: stepping now would rebuild the container under the captured mouse and make
+        // LostMouseCapture apply the drag candidate on top — ignore the key until the drag ends (Esc cancels it).
+        if (_resizeContainer is not null) return false;
+        // Ctrl is required; Shift is tolerated because "+" is Shift+OemPlus on a US layout (the browser/VS zoom
+        // convention, and what the menu's "Ctrl++" gesture text promises); Alt/Win never match.
+        var mods = Keyboard.Modifiers;
+        if ((mods & ModifierKeys.Control) == 0 || (mods & (ModifierKeys.Alt | ModifierKeys.Windows)) != 0) return false;
         int delta = e.Key switch
         {
             Key.OemPlus or Key.Add => 1,

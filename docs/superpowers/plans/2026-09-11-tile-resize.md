@@ -24,5 +24,5 @@ the listed files as its only write scope; the controller re-runs the gates and c
       `tools/Stats.UiPreview/captures/baseline.json`, `tests/Stats.UiPreview.Tests/TileResizeSubstateTests.cs` (new),
       `docs/tile-resize/EVIDENCE.md` (new). Does: the substates, manifest entries, tests, captures (new ones plus the
       re-taken layout/Auto captures with the pixel comparison), evidence report incl. "What the harness could not show".
-- [ ] **Task 4 — Review**: Opus whole-branch review → `docs/tile-resize/REVIEW.md`; fix wave; gates + captures re-run;
+- [x] **Task 4 — Review**: Opus whole-branch review → `docs/tile-resize/REVIEW.md`; fix wave; gates + captures re-run;
       PR `feature/tile-resize` → `feature/v1.10` with the spec's owner checklist.

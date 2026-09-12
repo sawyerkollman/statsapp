@@ -269,6 +269,9 @@
                         </ItemsControl.ItemTemplate>
                     </ItemsControl>
 
+                    <!-- AdornerDecorator: the resize outline adorner renders into this layer (clipped and scrolled with the
+                         canvas) instead of the window's, so it never paints over the header — layout-transparent. -->
+                    <AdornerDecorator>
                     <Grid Width="{Binding CanvasWidth}" Height="{Binding CanvasHeight}"
                           HorizontalAlignment="Left" VerticalAlignment="Top">
                         <!-- Core-matrix block layer: a single-item Canvas so Canvas.Left/Top (bound to the window's
@@ -330,7 +333,11 @@
                                         <Setter.Value>
                                             <ControlTemplate TargetType="ContentControl">
                                                 <Grid>
-                                                    <ContentPresenter/>
+                                                    <!-- Named so the focus trigger below can stamp Tag="FocusWithin" on it: TileMenuButtonStyle's
+                                                         keyboard-focus reveal binds AncestorType=ContentPresenter, which inside this template
+                                                         resolves to THIS presenter (a descendant of the focused ContentControl, whose own
+                                                         IsKeyboardFocusWithin is always false) — the Tag relays the container's focus state. -->
+                                                    <ContentPresenter x:Name="TileContent"/>
                                                     <!-- Icon glyph declared here (not in TileResizeGripStyle): a
                                                          Style Setter can't hold a shared Path instance reused
                                                          across every tile container's grip — this ControlTemplate
@@ -351,6 +358,7 @@
                                                     </Trigger>
                                                     <Trigger Property="IsKeyboardFocusWithin" Value="True">
                                                         <Setter TargetName="TileResizeGrip" Property="Visibility" Value="Visible"/>
+                                                        <Setter TargetName="TileContent" Property="Tag" Value="FocusWithin"/>
                                                     </Trigger>
                                                     <DataTrigger Binding="{Binding IsResizable}" Value="False">
                                                         <Setter TargetName="TileResizeGrip" Property="Visibility" Value="Collapsed"/>
@@ -363,6 +371,7 @@
                             </ItemsControl.ItemContainerStyle>
                         </controls:TileCanvasItemsControl>
                     </Grid>
+                    </AdornerDecorator>
                 </DockPanel>
             </ScrollViewer>
 

@@ -205,3 +205,14 @@ entries, captures, and this evidence report); they are flagged here so they land
 | Visual (`layout-resize-grip`) | Pass | Grip glyph renders at the first tile's bottom-right corner on keyboard focus; pixel-diff isolates the change to exactly that 12×12 region |
 | Regression (Auto unchanged) | Pass | `v2-dashboard-dense.png` byte-identical (SHA-256) pre- vs post-Task-3 |
 | Regression (Free/Grid/Free-placed unchanged) | Pass | All six `v13-layout-*.png` entries byte-identical (SHA-256) pre- vs post-Task-3 |
+
+## Fix wave (after `docs/tile-resize/REVIEW.md`)
+
+- Candidate is now the branch tip (the fix-wave commit after `6727edf`).
+- B1: focusing a Free tile now reveals the existing "⋯" tile-options button as well as the resize grip — the
+  re-taken `v14-layout-resize-grip-dark-amber.png` differs from `v13-layout-free-dark-amber.png` in two regions
+  (top-right "⋯", bottom-right grip), where the pre-fix capture differed in one. The "Visual evidence" note above
+  that reported a single 12×12 region described the bug, not the intended state.
+- S4: the resize outline now renders into an `AdornerDecorator` that wraps the Free canvas, so it scrolls and clips
+  with the canvas; `v13-layout-free-dark-amber.png` re-taken after the change is byte-identical to the branch base.
+- S1/S2/S3: keyboard and adorner lifecycle fixes; not capturable (owner checklist).
