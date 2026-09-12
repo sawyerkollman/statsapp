@@ -1,3 +1,4 @@
+using Stats.Core.Frames;
 using Stats.Core.Metrics;
 using Stats.Core.Sensors;
 using Stats.Core.Settings;
@@ -562,5 +563,36 @@ public class DashboardViewModelTests
         Assert.False(vm.IsEmpty);
         vm.RemoveTileCommand.Execute("disk.c");
         Assert.True(vm.IsEmpty);
+    }
+
+    // ---- game tiles (Task 2: RebuildSections passes the store through) ----
+
+    [Fact]
+    public void SetTileKind_Histogram_RebuildsTileAsHistogram_AndSavesOnce()
+    {
+        var (vm, s, _, saves) = Make("gpu.clock");
+        vm.SetTileKind("gpu.clock", TileKind.Histogram);
+        Assert.Equal(TileKind.Histogram, s.TilePrefs["gpu.clock"].Kind);
+        Assert.Equal(TileKind.Histogram, vm.Tiles.Single().Kind);
+        Assert.Equal(1, saves());
+    }
+
+    [Fact]
+    public void RebuildSections_PassesStore_SoFpsSummaryResolvesSiblings()
+    {
+        var store = new MetricStore(FrameMetrics.Definitions);
+        store.Apply(new SensorSnapshot(new Dictionary<string, float?>
+        {
+            [FrameMetrics.FpsId] = 96f,
+            [FrameMetrics.LowId] = 61f,
+            [FrameMetrics.FrameTimeId] = 10.4f,
+        }, DateTime.UtcNow));
+        var s = new AppSettings { DashboardMetrics = new() { FrameMetrics.FpsId } };
+        s.PrefFor(FrameMetrics.FpsId).Kind = TileKind.FpsSummary;
+        var vm = new DashboardViewModel(store, s, () => { });
+
+        var tile = vm.Tiles.Single();
+        Assert.Equal(TileKind.FpsSummary, tile.Kind);
+        Assert.NotEqual("—", tile.FpsLowText);
     }
 }

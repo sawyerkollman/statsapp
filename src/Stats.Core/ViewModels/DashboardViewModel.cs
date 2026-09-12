@@ -426,7 +426,7 @@ public sealed partial class DashboardViewModel : ObservableObject
             };
             foreach (var id in ids)
             {
-                var tile = new MetricTileViewModel(defsById[id], _store[id], _settings);
+                var tile = new MetricTileViewModel(defsById[id], _store[id], _settings, _store);
                 tile.Refresh(thresholds);
                 section.Tiles.Add(tile);
                 Tiles.Add(tile);

@@ -19,7 +19,7 @@ checkpoint, re-run by the controller: `dotnet build --nologo` (0 warnings) and `
       `tests/Stats.Core.Tests/SettingsServiceTests.cs` (append only).
       Gate: build + tests; the existing `"Kind": "Gauge"` round-trip and every layout-mode/graph-effects test still
       pass untouched.
-- [ ] **Task 2 — Tile view model** (`feat(core):`): `MetricTileViewModel` optional `MetricStore? store` ctor
+- [x] **Task 2 — Tile view model** (`feat(core):`): `MetricTileViewModel` optional `MetricStore? store` ctor
       argument, sibling resolution via `GameMetricRoles` in the ctor, `GameRole`, the nine new observable outputs,
       `RefreshHistogram`/`RefreshFpsSummary` gated on `_store != null` and `Kind` (alternating `int[12]` buffers,
       reusable percentile scratch, p1 for `LowerIsWorse` rules), the `FpsSummary` line in `ResolveKind`,
