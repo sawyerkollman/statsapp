@@ -1,5 +1,6 @@
 using Stats.Core.Alerts;
 using Stats.Core.Metrics;
+using Stats.Core.ViewModels;
 using Stats.Core.Settings;
 
 namespace Stats.Core.Tests;
