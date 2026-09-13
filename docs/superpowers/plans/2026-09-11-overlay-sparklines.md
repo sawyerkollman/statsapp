@@ -58,7 +58,7 @@ tests + `tools/Stats.UiPreview --method rtb` are the only automated evidence).
       (new), `docs/overlay-sparklines/EVIDENCE.md` (new), `README.md`. (`artifacts/` is git-ignored; captures stay
       local.)
       Gate: build 0 warnings; tests green 0 warnings; all eleven captures rendered with no sidecar warnings.
-- [ ] **Task 4 — Review**: Opus whole-branch review against the spec (rule 1/6 read-only fan use, rule 3 compat,
+- [x] **Task 4 — Review**: Opus whole-branch review against the spec (rule 1/6 read-only fan use, rule 3 compat,
       off-path identity, no theme-replaced brush on the panel, no continuous animation, XAML binding paths) + fix
       wave (`fix(core):`/`fix(app):`/`fix(tools):`), findings in `docs/overlay-sparklines/REVIEW.md`; the reviewer
       captures the plain `--view overlay` (400×200, rtb, Dark Amber) from a `feature/v1.10` worktree and confirms

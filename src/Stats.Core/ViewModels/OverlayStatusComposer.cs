@@ -52,7 +52,9 @@ public static class OverlayStatusComposer
 
         if (!string.IsNullOrWhiteSpace(frameReason))
         {
-            segments.Add(frameReason.Trim().TrimEnd('.'));
+            var reason = frameReason.Trim();
+            if (reason.EndsWith('.')) reason = reason[..^1]; // exactly one trailing period, not every one
+            segments.Add(reason);
             isWarning = true;
         }
 

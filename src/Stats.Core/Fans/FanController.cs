@@ -641,6 +641,19 @@ public sealed class FanController
         }
     }
 
+    /// <summary>Just each channel's <see cref="FanChannelStatus"/>, in <see cref="Views"/> order — for callers
+    /// that poll once per tick (the overlay status strip) and must not allocate a full view per channel to read
+    /// one field. Same brief lock as <see cref="Views"/>; never touches hardware.</summary>
+    public IReadOnlyList<FanChannelStatus> Statuses()
+    {
+        lock (_gate)
+        {
+            var list = new List<FanChannelStatus>(_backend.Channels.Count);
+            foreach (var ch in _backend.Channels) list.Add(Rt(ch.Id).Status);
+            return list;
+        }
+    }
+
     public IReadOnlyList<FanChannelView> Views()
     {
         lock (_gate)

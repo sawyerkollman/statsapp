@@ -73,14 +73,14 @@ is the committed evidence.
 | `normal` / `overlay` / `status-line` | Dark Amber | 400×200 | `v13-overlay-status-line-dark-amber.png` | `... --substate status-line ...` | A new line appears below the tiles reading `Fans: Balanced · Game mode: gaming (Balanced since 14:30)` in the secondary (gray) text colour, no glyph — the informational style. |
 | `normal` / `overlay` / `status-line-warn` | Dark Amber | 400×200 | `v13-overlay-status-line-warn-dark-amber.png` | `... --substate status-line-warn ...` | The strip reads `Fans: Custom — write failed · Game mode: desktop · PresentMon: access denied (simulated)` in amber/warn text with the triangular `Icon.Warn` glyph to its left — the warning style, severity not conveyed by colour alone. |
 | `normal` / `overlay` / `status-line-warn` | Light | 400×200 | `v13-overlay-status-line-warn-light.png` | `... --substate status-line-warn --theme "Light" ...` | Same warning strip/glyph/text as the Dark Amber capture — pinned `OverlayWarn` survives the Light preset the same way the sparkline strokes do. |
-| `normal` / `overlay` / `vertical+status-line-warn` | Dark Amber | 200×400 | `v13-overlay-vertical-status-line-warn-dark-amber.png` | `... --substate vertical+status-line-warn --width 200 --height 400 ...` | The same warning text wraps across three lines under the narrower 200-wide column instead of one, and the panel's width is unchanged from the plain vertical capture — confirms the strip's `MaxWidth` binding to the tiles host only ever adds height. |
+| `normal` / `overlay` / `vertical+status-line-warn` | Dark Amber | 200×400 | `v13-overlay-vertical-status-line-warn-dark-amber.png` | `... --substate vertical+status-line-warn --width 200 --height 400 ...` | (Re-taken after the fix wave.) The warning text wraps inside the tiles' width — the panel keeps the same width as the `vertical+sparklines` capture and only grows in height; before the fix the strip's outer margin sat outside its MaxWidth and the panel widened by ~87 px (review B1). |
 | `settings` / `settings` / `category-overlay` | Dark Amber | 1180×900 | `v13-settings-overlay-dark-amber.png` | `... --scenario settings --view settings --substate category-overlay ... --width 1180 --height 900 ...` | The Overlay settings tab shows both new checkboxes directly after Click-through: "Sparklines beside each value" (checked, matching the `Sparkline` default) and "Status line (fan control, game mode, FPS source)" (unchecked, matching the `false` default). |
 
 ## What the harness can show
 
 Sparkline presence/size/placement per orientation, stroke = value colour at Normal/Warn/Crit, the fixed axis
 during warm-up, the off path's narrower measured width, both themes, the strip's text/glyph/colour/wrapping and
-that it does not widen the panel, the Settings checkboxes.
+that it does not widen the panel (true only after the review fix wave, see below), the Settings checkboxes.
 
 ## What the harness cannot show
 
@@ -117,3 +117,19 @@ elevation prompt cannot be exercised from this shell).
   shell, per CLAUDE.md rule 8).
 - Remaining checks: Task 4 (whole-branch review) and the spec's owner checklist — both need the real, running
   Stats app and are out of this task's scope.
+
+## Fix wave (after `docs/overlay-sparklines/REVIEW.md`)
+
+- Candidate is now the branch tip (the fix-wave commit after `81f303c`).
+- B1: `vertical+status-line-warn` re-taken — 100×392, i.e. the tiles' own width (`vertical+sparklines` is 100×202)
+  plus height; the strip wraps inside the tiles' width and breaks the two over-wide tokens. Before the fix the
+  panel widened to 187 px. `status-line-warn` (horizontal) re-taken: 425×85, unchanged width vs `sparklines`.
+- S1: new capture `v13-overlay-vertical-sparklines-off-dark-amber.png` (`vertical+sparklines-off`, 97×132) —
+  the vertical off path: plain stacked values, no sparkline column.
+- Off path re-checked after the fix: `v13-overlay-sparklines-off-dark-amber.png` is byte-identical to the base's
+  `artifacts/ui-polish/before/v12-overlay-light-parent.png` (the base's plain overlay).
+- S2/S3/S4: status-only fan accessor, glyph alignment, single-period trim — not capturable beyond the strip
+  captures above (owner checklist).
+- Observation for the owner: at the vertical overlay's natural width (~100 px with sparklines) the strip is very
+  narrow and long tokens get emergency-broken; if that reads badly on a real screen, the alternative is a wider
+  minimum for the strip in vertical mode (a spec change, not a bug).

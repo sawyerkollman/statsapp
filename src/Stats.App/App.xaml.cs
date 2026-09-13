@@ -433,7 +433,7 @@ public partial class App : Application
         bool fanEnabled = _fanController is { } fc && fc.Enabled;                 // getter only: brief lock on AppSettings.SyncRoot
         string? profile = fanEnabled ? _fanController!.ActiveProfile : null;
         IReadOnlyList<FanChannelStatus> statuses = fanEnabled
-            ? _fanController!.Views().Select(v => v.Status).ToList()               // same UI-thread call FansViewModel.Refresh makes
+            ? _fanController!.Statuses()                                           // status-only read: no per-channel view allocation each tick
             : Array.Empty<FanChannelStatus>();
         string? game = _settings.GameModeEnabled ? _gameMode?.StatusText : null;   // volatile string composed on the poll thread
         _overlayVm.SetStatus(OverlayStatusComposer.Compose(fanEnabled, profile, statuses, game, FrameStatus()));
