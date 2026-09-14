@@ -512,4 +512,27 @@ public class DashboardLayoutModeTests
         Assert.True(vm.CanvasWidth >= grown.X + grown.Width + DashboardLayout.Gap);
         Assert.True(vm.CanvasWidth > extentBefore);
     }
+
+    // ---- IsResizable ----
+
+    [Fact]
+    public void IsResizable_TrueInFreeAndGrid_FalseInAuto_AndAfterModeSwitch()
+    {
+        var (freeVm, _, _, _) = Make(DashboardLayoutMode.Free, showCoreMatrix: false, "cpu.temp", "gpu.clock");
+        Assert.All(freeVm.Tiles, t => Assert.True(t.IsResizable));
+
+        var (gridVm, _, _, _) = Make(DashboardLayoutMode.Grid, showCoreMatrix: false, "cpu.temp", "gpu.clock");
+        Assert.All(gridVm.Tiles, t => Assert.True(t.IsResizable));
+
+        var (autoVm, _, _, _) = Make(DashboardLayoutMode.Auto, showCoreMatrix: false, "cpu.temp", "gpu.clock");
+        Assert.All(autoVm.Tiles, t => Assert.False(t.IsResizable));
+
+        // RebuildSections recreates every MetricTileViewModel, so the flag must be re-applied to the new
+        // instances on a mode switch too, not just at construction.
+        autoVm.SetLayoutModeCommand.Execute(DashboardLayoutMode.Free);
+        Assert.All(autoVm.Tiles, t => Assert.True(t.IsResizable));
+
+        freeVm.SetLayoutModeCommand.Execute(DashboardLayoutMode.Auto);
+        Assert.All(freeVm.Tiles, t => Assert.False(t.IsResizable));
+    }
 }

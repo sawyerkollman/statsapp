@@ -67,6 +67,10 @@
   { "Scenario": "dense", "View": "dashboard", "Substate": "layout-free-placed", "Theme": "Dark Amber", "Width": 1180, "Height": 720, "Method": "rtb", "Output": "artifacts/ui-polish/layout/v13-layout-free-placed-dark-amber.png" },
   { "Scenario": "dense", "View": "dashboard", "Substate": "layout-free-placed", "Theme": "Light", "Width": 1180, "Height": 720, "Method": "rtb", "Output": "artifacts/ui-polish/layout/v13-layout-free-placed-light.png" },
 
+  { "Scenario": "dense", "View": "dashboard", "Substate": "layout-resized", "Theme": "Dark Amber", "Width": 1180, "Height": 720, "Method": "rtb", "Output": "artifacts/ui-polish/layout/v14-layout-resized-dark-amber.png" },
+  { "Scenario": "dense", "View": "dashboard", "Substate": "layout-resized", "Theme": "Light", "Width": 1180, "Height": 720, "Method": "rtb", "Output": "artifacts/ui-polish/layout/v14-layout-resized-light.png" },
+  { "Scenario": "dense", "View": "dashboard", "Substate": "layout-free+layout-resize-grip", "Theme": "Dark Amber", "Width": 1180, "Height": 720, "Method": "rtb", "Output": "artifacts/ui-polish/layout/v14-layout-resize-grip-dark-amber.png" },
+
   { "Method": "rtb", "Scenario": "normal", "View": "dashboard", "Substate": "graphs-plain", "Theme": "Dark Amber", "Width": 1180, "Height": 720, "Output": "artifacts/graph-effects/v13-dashboard-graphs-plain-dark-amber.png" },
   { "Method": "rtb", "Scenario": "normal", "View": "dashboard", "Substate": "graphs-plain", "Theme": "Light", "Width": 1180, "Height": 720, "Output": "artifacts/graph-effects/v13-dashboard-graphs-plain-light.png" },
   { "Method": "rtb", "Scenario": "normal", "View": "dashboard", "Substate": "graphs-effects", "Theme": "Dark Amber", "Width": 1180, "Height": 720, "Output": "artifacts/graph-effects/v13-dashboard-graphs-effects-dark-amber.png" },

@@ -216,6 +216,10 @@ public sealed class PreviewComposition
             case "layout-grid": c.Dashboard.LayoutMode = DashboardLayoutMode.Grid; break;
             case "layout-free-placed": ApplyLayoutFreePlaced(c); break;
 
+            // ---- tile resize by drag (docs/superpowers/specs/2026-09-11-tile-resize-design.md "Preview harness") ----
+            case "layout-resized": ApplyLayoutResized(c); break;
+            case "layout-resize-grip": break; // visual-tree substate — applied in CaptureHost (focuses the first Free container so the grip renders); pair with "layout-free" to reach Free mode first
+
             // ---- graph effects (T3 of docs/superpowers/plans/2026-09-11-graph-effects.md) ----
             // Settings-level, applied here (before the window/controls exist) so GraphStyle.Apply — called by
             // CaptureHost right after Build() returns, still before window.Show() — has the right values in hand
@@ -353,6 +357,29 @@ public sealed class PreviewComposition
             c.Dashboard.SetTilePosition(tiles[2].Definition.Id, 980, 60);
         if (c.Dashboard.CoreMatrix is not null)
             c.Dashboard.SetCoreMatrixPosition(760, 540); // moved off its seeded (0,0) spot
+    }
+
+    /// <summary>Tile-resize-by-drag preview substate (docs/superpowers/specs/2026-09-11-tile-resize-design.md
+    /// "Preview harness"): Free layout, seeded, then three of the "dense" fixture's seeded tiles are explicitly
+    /// resized through <see cref="DashboardViewModel.SetTileSize"/> — the same VM-level call a grip-drag release or
+    /// Ctrl+Plus/Minus ends in — so the capture shows mixed sizes with top-left anchoring and an extended canvas.
+    /// Reuses the same three CPU tiles <see cref="ApplyLayoutFreePlaced"/> repositions: the "dense" fixture's seed
+    /// pack (<c>Scenarios.Dense</c>) cycles <c>TileSize</c> S, M, L, S, M, L, … across its <c>Tile()</c> calls, so
+    /// tiles[0..2] (cpu.temp.tctl / cpu.power.package / cpu.power.tdc) start at S / M / L respectively:
+    ///   - cpu.temp.tctl: S -> M ("one S-to-M", per the spec)
+    ///   - cpu.power.package: M -> L ("one to L")
+    ///   - cpu.power.tdc: L -> S ("one to S")
+    /// </summary>
+    private static void ApplyLayoutResized(PreviewComposition c)
+    {
+        c.Dashboard.LayoutMode = DashboardLayoutMode.Free; // seeds every still-unplaced tile + the core-matrix block
+        var tiles = c.Dashboard.Tiles;
+        if (tiles.Count >= 3)
+        {
+            c.Dashboard.SetTileSize(tiles[0].Definition.Id, TileSize.M); // cpu.temp.tctl: S -> M
+            c.Dashboard.SetTileSize(tiles[1].Definition.Id, TileSize.L); // cpu.power.package: M -> L
+            c.Dashboard.SetTileSize(tiles[2].Definition.Id, TileSize.S); // cpu.power.tdc: L -> S
+        }
     }
 
     private static void ApplyFanManual(PreviewComposition c)

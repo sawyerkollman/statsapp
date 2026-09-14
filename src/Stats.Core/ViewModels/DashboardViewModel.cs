@@ -305,12 +305,27 @@ public sealed partial class DashboardViewModel : ObservableObject
 
     /// <summary>S9: a tile grown S→L in Free/Snap can push past the canvas's current extent — RebuildSections
     /// (via <see cref="AfterPrefChange"/>) already recomputes it every time, but do so explicitly too so the
-    /// contract holds even if that call site ever stops recomputing unconditionally on every rebuild.</summary>
+    /// contract holds even if that call site ever stops recomputing unconditionally on every rebuild.
+    ///
+    /// Tile-resize-by-drag (owner decision assumed §6): returns without rebuilding or saving when the pref already
+    /// holds <paramref name="size"/> — a resize-grip drag back to the current size, or a saturated Ctrl+Plus/Minus
+    /// press via <see cref="StepTileSize"/>, must be a true no-op (no flicker, no spurious save).</summary>
     public void SetTileSize(string id, TileSize size)
     {
-        _settings.PrefFor(id).Size = size;
+        var pref = _settings.PrefFor(id);
+        if (pref.Size == size) return;
+        pref.Size = size;
         AfterPrefChange();
         RecomputeCanvasExtent();
+    }
+
+    /// <summary>Ctrl+Plus/Minus and the tile menu's Size submenu's Larger/Smaller items (owner decision assumed §7):
+    /// steps the tile's current size by <paramref name="delta"/> (±1) through <see cref="TileDimensions.Step"/>
+    /// (saturating at S/L) and applies it via <see cref="SetTileSize"/>, which already no-ops a saturated step.</summary>
+    public void StepTileSize(string id, int delta)
+    {
+        var current = _settings.PrefFor(id).Size;
+        SetTileSize(id, TileDimensions.Step(current, delta));
     }
 
     public void SetTileMax(string id, float? max) { _settings.PrefFor(id).Max = max is > 0 ? max : null; AfterPrefChange(); }
@@ -359,6 +374,7 @@ public sealed partial class DashboardViewModel : ObservableObject
 
     [RelayCommand] private void SetTileKindEdit(TileKindEdit edit) => SetTileKind(edit.Id, edit.Kind);
     [RelayCommand] private void SetTileSizeEdit(TileSizeEdit edit) => SetTileSize(edit.Id, edit.Size);
+    [RelayCommand] private void StepTileSizeEdit(TileSizeStep step) => StepTileSize(step.Id, step.Delta);
     [RelayCommand] private void SetTileMaxEdit(TileMaxEdit edit) => SetTileMax(edit.Id, edit.Max);
     [RelayCommand] private void RenameTileEdit(TileRenameEdit edit) => RenameTile(edit.Id, edit.Name);
     [RelayCommand] private void SetTileThresholdEdit(TileThresholdEdit edit) => SetTileThresholds(edit.Id, edit.Rule);
@@ -428,6 +444,10 @@ public sealed partial class DashboardViewModel : ObservableObject
             {
                 var tile = new MetricTileViewModel(defsById[id], _store[id], _settings);
                 tile.Refresh(thresholds);
+                // Tile-resize-by-drag: the grip (and Ctrl+Plus/Minus) only apply outside Auto — every tile gets
+                // this re-set on every rebuild, including the ones OnLayoutModeChanged triggers, since Tiles is
+                // rebuilt from scratch here and a fresh MetricTileViewModel otherwise defaults to false.
+                tile.IsResizable = LayoutMode != DashboardLayoutMode.Auto;
                 section.Tiles.Add(tile);
                 Tiles.Add(tile);
             }
