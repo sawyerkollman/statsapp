@@ -145,8 +145,9 @@ public sealed class Sparkline : FrameworkElement
     /// (FillBehavior.Stop) — nothing runs between ticks, so idle cost is zero.</summary>
     private static void OnValuesChanged(DependencyObject d, DependencyPropertyChangedEventArgs e)
     {
-        if (!GraphStyle.Motion) return;
         var ctrl = (Sparkline)d;
+        ctrl._cacheValues = null;
+        if (!GraphStyle.Motion) return;
         var oldValues = e.OldValue as IReadOnlyList<float>;
         var newValues = e.NewValue as IReadOnlyList<float>;
         if (newValues is null) return;

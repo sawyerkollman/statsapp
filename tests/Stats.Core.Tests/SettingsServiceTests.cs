@@ -648,6 +648,8 @@ public class SettingsServiceTests : IDisposable
 
     [Theory]
     [InlineData("\"Bars\"")]
+    [InlineData("\"99\"")]
+    [InlineData("\"-1\"")]
     [InlineData("7")]
     [InlineData("null")]
     [InlineData("{}")]
