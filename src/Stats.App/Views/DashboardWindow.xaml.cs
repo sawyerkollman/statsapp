@@ -399,7 +399,7 @@ public partial class DashboardWindow : Window
         }
         if (Vm is not DashboardViewModel vm) return;
         if ((sender as FrameworkElement)?.DataContext is not MetricTileViewModel tile) return;
-        if (!TryGetArrowDelta(e.Key, out var dx, out var dy)) return;
+        if (!TryGetArrowDelta(e.Key, Keyboard.Modifiers, out var dx, out var dy)) return;
         double step = DashboardLayout.GridSize * (Keyboard.Modifiers.HasFlag(ModifierKeys.Shift) ? 4 : 1);
         vm.SetTilePosition(tile.Definition.Id, tile.X + dx * step, tile.Y + dy * step);
         e.Handled = true;
@@ -452,7 +452,7 @@ public partial class DashboardWindow : Window
     private void CoreMatrixBlock_PreviewKeyDown(object sender, KeyEventArgs e)
     {
         if (Vm is not DashboardViewModel vm) return;
-        if (!TryGetArrowDelta(e.Key, out var dx, out var dy)) return;
+        if (!TryGetArrowDelta(e.Key, Keyboard.Modifiers, out var dx, out var dy)) return;
         double step = DashboardLayout.GridSize * (Keyboard.Modifiers.HasFlag(ModifierKeys.Shift) ? 4 : 1);
         vm.SetCoreMatrixPosition(vm.CoreMatrixX + dx * step, vm.CoreMatrixY + dy * step);
         e.Handled = true;
@@ -463,9 +463,10 @@ public partial class DashboardWindow : Window
     private void CoreMatrixBlock_SizeChanged(object sender, SizeChangedEventArgs e) =>
         Vm?.SetCoreMatrixSize(e.NewSize.Width, e.NewSize.Height);
 
-    private static bool TryGetArrowDelta(Key key, out double dx, out double dy)
+    private static bool TryGetArrowDelta(Key key, ModifierKeys modifiers, out double dx, out double dy)
     {
         dx = dy = 0;
+        if ((modifiers & (ModifierKeys.Control | ModifierKeys.Alt | ModifierKeys.Windows)) != 0) return false;
         switch (key)
         {
             case Key.Left: dx = -1; return true;
@@ -625,14 +626,26 @@ public partial class DashboardWindow : Window
         foreach (var s in new[] { TileSize.S, TileSize.M, TileSize.L })
         {
             var mi = new MenuItem { Header = s switch { TileSize.S => "Small", TileSize.L => "Large", _ => "Medium" }, IsCheckable = true, IsChecked = tile.Size == s };
-            mi.Click += (_, _) => vm.SetTileSizeEditCommand.Execute(new TileSizeEdit(id, s));
+            mi.Click += (_, _) =>
+            {
+                vm.SetTileSizeEditCommand.Execute(new TileSizeEdit(id, s));
+                FocusTileById(id);
+            };
             size.Items.Add(mi);
         }
         size.Items.Add(new Separator());
         var larger = new MenuItem { Header = "Larger", InputGestureText = "Ctrl++", IsEnabled = tile.Size != TileSize.L };
-        larger.Click += (_, _) => vm.StepTileSizeEditCommand.Execute(new TileSizeStep(id, 1));
+        larger.Click += (_, _) =>
+        {
+            vm.StepTileSizeEditCommand.Execute(new TileSizeStep(id, 1));
+            FocusTileById(id);
+        };
         var smaller = new MenuItem { Header = "Smaller", InputGestureText = "Ctrl+-", IsEnabled = tile.Size != TileSize.S };
-        smaller.Click += (_, _) => vm.StepTileSizeEditCommand.Execute(new TileSizeStep(id, -1));
+        smaller.Click += (_, _) =>
+        {
+            vm.StepTileSizeEditCommand.Execute(new TileSizeStep(id, -1));
+            FocusTileById(id);
+        };
         size.Items.Add(larger);
         size.Items.Add(smaller);
         var rename = new MenuItem { Header = "Rename…" };

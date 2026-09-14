@@ -121,6 +121,8 @@ public class DashboardLayoutModeConverterTests
     [InlineData("\"grid\"", DashboardLayoutMode.Grid)] // case-insensitive
     [InlineData("\"Auto\"", DashboardLayoutMode.Auto)]
     [InlineData("\"NotARealMode\"", DashboardLayoutMode.Auto)] // unrecognized string
+    [InlineData("\"99\"", DashboardLayoutMode.Auto)]
+    [InlineData("\"-1\"", DashboardLayoutMode.Auto)]
     [InlineData("null", DashboardLayoutMode.Auto)]
     [InlineData("42", DashboardLayoutMode.Auto)]
     [InlineData("true", DashboardLayoutMode.Auto)]
