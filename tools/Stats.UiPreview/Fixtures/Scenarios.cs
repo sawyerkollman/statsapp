@@ -14,7 +14,7 @@ public static class Scenarios
 {
     public static readonly IReadOnlyList<string> Names = new[]
     {
-        "normal", "dense", "thresholds", "missing", "empty", "fans", "settings", "gallery",
+        "normal", "dense", "thresholds", "missing", "empty", "fans", "settings", "gallery", "game",
     };
 
     public static ScenarioFixture Build(string name)
@@ -29,6 +29,7 @@ public static class Scenarios
             "fans" => Fans(),
             "settings" => Settings(),
             "gallery" => Gallery(),
+            "game" => Game(),
             _ => throw new ArgumentException($"Unknown scenario '{name}'. Valid: {string.Join(", ", Names)}", nameof(name)),
         };
         return WithDetailUnitExtra(fixture);
@@ -446,6 +447,69 @@ public static class Scenarios
             TilePrefs = prefs,
             MetricLimits = new() { ["gallery.limit"] = 142f },
             ThresholdOverrides = new() { ["gallery.inverted"] = new ThresholdRule { Warn = 30, Crit = 15, LowerIsWorse = true } },
+        };
+    }
+
+    // ---- game (2026-09-11-game-tiles-design.md: Histogram + FpsSummary tiles) ----
+
+    private static ScenarioFixture Game()
+    {
+        var rng = new Random(TimeSeries.Seed);
+        var b = new SnapshotBuilder(rng);
+        const string cpuHw = "AMD Ryzen 9 7950X";
+        const string gpuHw = "NVIDIA GeForce RTX 5070 Ti";
+
+        var defs = new List<MetricDefinition>
+        {
+            M("cpu.temp.tctl", "Tctl/Tdie", MetricGroup.Cpu, cpuHw, "°C", "F1"),
+            M("cpu.load.total", "CPU Total", MetricGroup.Cpu, cpuHw, "%"),
+            M("gpu.temp.core", "GPU Core", MetricGroup.Gpu, gpuHw, "°C", "F1"),
+            M("gpu.load.core", "GPU Load", MetricGroup.Gpu, gpuHw, "%"),
+        };
+        defs.AddRange(FrameMetrics.Definitions);
+
+        b.Add("cpu.temp.tctl", 62f, 1.5f).Add("cpu.load.total", 24f, 3f)
+         .Add("gpu.temp.core", 56f, 1.5f).Add("gpu.load.core", 42f, 4f);
+
+        // Shaped frame-time series (spec: "Preview harness" — uniform-noise series from Add are deliberately
+        // avoided for frame time, they give a flat, meaningless histogram): seeded noise around 6.9 ms with five
+        // explicit stutter spikes at fixed tick indices, so the Histogram tile's 12 bins show a visible
+        // distribution with a real right tail and a p99 marker that sits above the noise floor.
+        var spikes = new Dictionary<int, float> { [9] = 14.2f, [23] = 11.8f, [24] = 17.6f, [41] = 12.9f, [52] = 15.3f };
+        var frameTime = new float?[TimeSeries.Ticks];
+        for (int i = 0; i < TimeSeries.Ticks; i++)
+            frameTime[i] = spikes.TryGetValue(i, out var spike) ? spike : 6.9f + (float)((rng.NextDouble() * 2 - 1) * 0.4);
+        frameTime[TimeSeries.Ticks - 1] = 6.9f; // exact "current" tick, like every other series in this file
+
+        // fps.avg tracks frame time tick-for-tick (round(1000 / frameTime)) so the FpsSummary tile's average and
+        // the Histogram tile's frame-time distribution describe the same simulated session, except the final
+        // ("current") tick is pinned to the round number 144 rather than whatever 1000/6.9 rounds to.
+        var fpsAvg = new float?[TimeSeries.Ticks];
+        for (int i = 0; i < TimeSeries.Ticks; i++)
+            fpsAvg[i] = MathF.Round(1000f / frameTime[i]!.Value);
+        fpsAvg[TimeSeries.Ticks - 1] = 144f;
+
+        b.AddExact(FrameMetrics.FrameTimeId, frameTime);
+        b.AddExact(FrameMetrics.FpsId, fpsAvg);
+        b.Add(FrameMetrics.LowId, 92f, 3f);
+
+        var dash = new List<string> { "cpu.temp.tctl", "cpu.load.total", "gpu.temp.core", "gpu.load.core" };
+        dash.AddRange(new[] { FrameMetrics.FpsId, FrameMetrics.LowId, FrameMetrics.FrameTimeId });
+
+        return new ScenarioFixture
+        {
+            Name = "game",
+            Definitions = defs,
+            Ticks = b.Build(),
+            DashboardMetrics = dash,
+            OverlayMetrics = new() { FrameMetrics.FpsId },
+            TilePrefs = new()
+            {
+                [FrameMetrics.FpsId] = new TilePref { Kind = TileKind.FpsSummary, Size = TileSize.M },
+                [FrameMetrics.FrameTimeId] = new TilePref { Kind = TileKind.Histogram, Size = TileSize.M },
+                // fps.low1 is deliberately left Auto (renders as a sparkline) — a comparison point beside the
+                // two new tile kinds, per the spec.
+            },
         };
     }
 }
