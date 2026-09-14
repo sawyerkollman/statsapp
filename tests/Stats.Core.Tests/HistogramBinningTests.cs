@@ -35,6 +35,24 @@ public class HistogramBinningTests
     }
 
     [Fact]
+    public void Bin_IgnoresAllNonFiniteValues_AndHandlesExtremeFiniteRange()
+    {
+        float[] samples = { float.NegativeInfinity, -float.MaxValue, 0f, float.MaxValue, float.PositiveInfinity, float.NaN };
+        Span<int> counts = stackalloc int[HistogramBinning.DefaultBinCount];
+
+        int finite = HistogramBinning.Bin(samples, counts, out var min, out var max);
+
+        Assert.Equal(3, finite);
+        Assert.Equal(-float.MaxValue, min);
+        Assert.Equal(float.MaxValue, max);
+        Assert.Equal(1, counts[0]);
+        Assert.Equal(1, counts[^1]);
+        int total = 0;
+        foreach (var count in counts) total += count;
+        Assert.Equal(3, total);
+    }
+
+    [Fact]
     public void Bin_MaxValueLandsInLastBin_MinInFirst()
     {
         float[] samples = { 0f, 100f };
@@ -115,6 +133,16 @@ public class HistogramBinningTests
     }
 
     [Fact]
+    public void Percentile_IgnoresAllNonFiniteValues_AndRejectsNaNPercentile()
+    {
+        float[] samples = { float.NegativeInfinity, 1f, 2f, float.PositiveInfinity, float.NaN };
+        var scratch = new float[samples.Length];
+
+        Assert.Equal(2f, HistogramBinning.Percentile(samples, 0.99, scratch));
+        Assert.Throws<ArgumentException>(() => HistogramBinning.Percentile(samples, double.NaN, scratch));
+    }
+
+    [Fact]
     public void Percentile_NoFinite_ReturnsNaN()
     {
         float[] samples = { float.NaN, float.NaN };
@@ -149,5 +177,7 @@ public class HistogramBinningTests
         Assert.Equal(1.0, HistogramBinning.Fraction(15f, 0f, 10f));  // clamped above range
         Assert.Equal(0.5, HistogramBinning.Fraction(7f, 7f, 7f));    // degenerate range
         Assert.True(double.IsNaN(HistogramBinning.Fraction(float.NaN, 0f, 10f)));
+        Assert.True(double.IsNaN(HistogramBinning.Fraction(float.PositiveInfinity, 0f, 10f)));
+        Assert.True(double.IsNaN(HistogramBinning.Fraction(5f, float.NegativeInfinity, 10f)));
     }
 }

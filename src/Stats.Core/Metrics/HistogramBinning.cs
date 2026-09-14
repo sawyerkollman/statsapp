@@ -10,7 +10,7 @@ public static class HistogramBinning
 
     /// <summary>Clears <paramref name="counts"/>, then counts every finite sample of <paramref name="samples"/>
     /// into <paramref name="counts"/>.Length equal-width bins over [min, max] (min/max = the finite min/max of
-    /// <paramref name="samples"/>). Returns the finite sample count. NaN samples are skipped entirely (they widen
+    /// <paramref name="samples"/>). Returns the finite sample count. Non-finite samples are skipped entirely (they widen
     /// neither the range nor any bin). No finite sample → returns 0, <paramref name="min"/> = <paramref name="max"/>
     /// = NaN, every count stays zero. A degenerate range (max − min &lt; 1e-6f) puts every finite sample in
     /// counts[counts.Length / 2] (min and max both report the single value). Otherwise
@@ -27,7 +27,7 @@ public static class HistogramBinning
         int finite = 0;
         foreach (var v in samples)
         {
-            if (float.IsNaN(v)) continue;
+            if (!float.IsFinite(v)) continue;
             finite++;
             if (v < min) min = v;
             if (v > max) max = v;
@@ -40,7 +40,7 @@ public static class HistogramBinning
             return 0;
         }
 
-        float range = max - min;
+        double range = (double)max - min;
         if (range < 1e-6f)
         {
             counts[counts.Length / 2] += finite;
@@ -50,8 +50,8 @@ public static class HistogramBinning
 
         foreach (var v in samples)
         {
-            if (float.IsNaN(v)) continue;
-            int bin = (int)((v - min) / range * counts.Length);
+            if (!float.IsFinite(v)) continue;
+            int bin = (int)(((double)v - min) / range * counts.Length);
             if (bin >= counts.Length) bin = counts.Length - 1;
             counts[bin]++;
         }
@@ -63,17 +63,17 @@ public static class HistogramBinning
     /// <paramref name="scratch"/>[0..n), sorts that slice ascending, returns
     /// scratch[clamp(ceil(p · n) − 1, 0, n − 1)] — the same rank rule as
     /// <see cref="Frames.FrameStatsAggregator"/>.Snapshot's 1% low. Returns NaN when n == 0 (no finite sample). p
-    /// outside [0, 1], or scratch shorter than samples, throws <see cref="ArgumentException"/>. Allocation-free
+    /// outside [0, 1] (including NaN), or scratch shorter than samples, throws <see cref="ArgumentException"/>. Allocation-free
     /// when the caller reuses <paramref name="scratch"/> across calls.</summary>
     public static float Percentile(ReadOnlySpan<float> samples, double p, Span<float> scratch)
     {
-        if (p is < 0 or > 1) throw new ArgumentException("p must be within [0, 1].", nameof(p));
+        if (double.IsNaN(p) || p is < 0 or > 1) throw new ArgumentException("p must be within [0, 1].", nameof(p));
         if (scratch.Length < samples.Length) throw new ArgumentException("scratch must be at least as long as samples.", nameof(scratch));
 
         int n = 0;
         foreach (var v in samples)
         {
-            if (!float.IsNaN(v)) scratch[n++] = v;
+            if (float.IsFinite(v)) scratch[n++] = v;
         }
 
         if (n == 0) return float.NaN;
@@ -87,16 +87,15 @@ public static class HistogramBinning
     }
 
     /// <summary>Position of <paramref name="value"/> within [<paramref name="min"/>, <paramref name="max"/>] as
-    /// 0..1 (clamped); 0.5 when the range is degenerate (max − min &lt; 1e-6f); NaN when <paramref name="value"/>
-    /// is NaN.</summary>
+    /// 0..1 (clamped); 0.5 when the range is degenerate (max − min &lt; 1e-6f); NaN when any input is non-finite.</summary>
     public static double Fraction(float value, float min, float max)
     {
-        if (float.IsNaN(value)) return double.NaN;
+        if (!float.IsFinite(value) || !float.IsFinite(min) || !float.IsFinite(max)) return double.NaN;
 
-        float range = max - min;
+        double range = (double)max - min;
         if (range < 1e-6f) return 0.5;
 
-        double fraction = (value - min) / range;
+        double fraction = ((double)value - min) / range;
         return Math.Clamp(fraction, 0.0, 1.0);
     }
 }

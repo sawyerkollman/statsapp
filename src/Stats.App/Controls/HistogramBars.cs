@@ -20,7 +20,7 @@ public sealed class HistogramBars : FrameworkElement
     /// <c>int[]</c>) satisfies it directly.</summary>
     public static readonly DependencyProperty BinsProperty = DependencyProperty.Register(
         nameof(Bins), typeof(IReadOnlyList<int>), typeof(HistogramBars),
-        new FrameworkPropertyMetadata(null, FrameworkPropertyMetadataOptions.AffectsRender));
+        new FrameworkPropertyMetadata(null, FrameworkPropertyMetadataOptions.AffectsRender, OnBinsChanged));
 
     /// <summary>Marker x as a fraction of width. NaN or outside [0, 1] draws no marker/label.</summary>
     public static readonly DependencyProperty MarkerFractionProperty = DependencyProperty.Register(
@@ -62,12 +62,6 @@ public sealed class HistogramBars : FrameworkElement
     private StreamGeometry? _barsGeometry;
     private StreamGeometry? _highlightGeometry;
     private IReadOnlyList<int>? _cacheBins;
-    // Content fingerprint alongside the reference: MetricTileViewModel alternates exactly two int[12] buffers, so
-    // after an even number of skipped renders (collapsed group, hidden window) the *same* array comes back with new
-    // counts and a reference check alone would replay last tick's bars. Sum + max of the counts is allocation-free
-    // and changes whenever the distribution does in any way that matters visually.
-    private long _cacheBinsSum = -1;
-    private int _cacheBinsMax = -1;
     private double _cacheGeometryWidth = -1, _cacheGeometryHeight = -1;
 
     private Brush? _fillBrush;
@@ -125,6 +119,9 @@ public sealed class HistogramBars : FrameworkElement
         return pen;
     }
 
+    private static void OnBinsChanged(DependencyObject d, DependencyPropertyChangedEventArgs e) =>
+        ((HistogramBars)d)._cacheBins = null;
+
     protected override void OnRender(DrawingContext dc)
     {
         double w = ActualWidth, h = ActualHeight;
@@ -135,14 +132,10 @@ public sealed class HistogramBars : FrameworkElement
         var track = Track;
         bool effects = GraphStyle.Effects;
 
-        long binsSum = 0; int binsMax = 0;
-        if (bins is not null)
-            for (int i = 0; i < bins.Count; i++) { binsSum += bins[i]; if (bins[i] > binsMax) binsMax = bins[i]; }
-        if (!ReferenceEquals(_cacheBins, bins) || binsSum != _cacheBinsSum || binsMax != _cacheBinsMax
-            || _cacheGeometryWidth != w || _cacheGeometryHeight != h)
+        if (!ReferenceEquals(_cacheBins, bins) || _cacheGeometryWidth != w || _cacheGeometryHeight != h)
         {
             RebuildBars(bins, w, h);
-            _cacheBins = bins; _cacheBinsSum = binsSum; _cacheBinsMax = binsMax;
+            _cacheBins = bins;
             _cacheGeometryWidth = w; _cacheGeometryHeight = h;
         }
         if (!ReferenceEquals(_cacheStrokeForColor, stroke) || _cacheEffects != effects)

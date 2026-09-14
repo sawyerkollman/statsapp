@@ -72,7 +72,7 @@
         <Setter Property="VerticalAlignment" Value="Center"/>
         <Setter Property="Margin" Value="4,0,0,0"/>
         <Style.Triggers>
-            <DataTrigger Binding="{Binding SeverityGlyph}" Value="">
+            <DataTrigger Binding="{Binding Text, RelativeSource={RelativeSource Self}}" Value="">
                 <Setter Property="Visibility" Value="Collapsed"/>
             </DataTrigger>
         </Style.Triggers>
@@ -334,6 +334,9 @@
                     <TextBlock Text="1% low" Style="{StaticResource TileFoot}"/>
                     <TextBlock Text="{Binding FpsLowText}" Style="{StaticResource TileFoot}"
                                Foreground="{Binding FpsLowSeverity, Converter={StaticResource SeverityToBrush}}" Margin="4,0,0,0"/>
+                    <TextBlock Text="{Binding FpsLowSeverityGlyph}" Style="{StaticResource TileSeverityGlyph}"
+                               Foreground="{Binding FpsLowSeverity, Converter={StaticResource SeverityToBrush}}"
+                               ToolTip="{Binding FpsLowSeverity, StringFormat=1% low severity: {0}}"/>
                     <TextBlock Text="&#183;" Style="{StaticResource TileFoot}" Margin="6,0"/>
                     <TextBlock Text="{Binding FpsFrameTimeText}" Style="{StaticResource TileFoot}"
                                Foreground="{DynamicResource TextPrimary}" ToolTip="Frame time (average over the last poll)"/>
