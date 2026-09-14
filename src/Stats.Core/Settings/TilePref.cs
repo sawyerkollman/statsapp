@@ -12,4 +12,9 @@ public sealed class TilePref
     public string? Name { get; set; }
     /// <summary>Explicit scale max for Gauge/Bar; null = derive (limit → 100 for % → session max).</summary>
     public float? Max { get; set; }
+    /// <summary>Canvas position for Free/Grid dashboard layout; null = not yet placed (seeded by
+    /// <see cref="ViewModels.DashboardViewModel"/>'s pack). Never touched while <see cref="AppSettings.DashboardLayoutMode"/>
+    /// is Auto.</summary>
+    public double? X { get; set; }
+    public double? Y { get; set; }
 }

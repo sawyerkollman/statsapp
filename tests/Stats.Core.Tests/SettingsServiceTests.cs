@@ -516,6 +516,102 @@ public class SettingsServiceTests : IDisposable
         Assert.True(loaded.FanSafetyBannerCollapsed);
     }
 
+    // ---- dashboard layout modes ----
+
+    [Fact]
+    public void Load_MissingFile_DashboardLayoutModeDefaultsToAuto_NoPositions()
+    {
+        var s = new SettingsService(_dir).Load();
+        Assert.Equal(DashboardLayoutMode.Auto, s.DashboardLayoutMode);
+        Assert.Null(s.CoreMatrixX);
+        Assert.Null(s.CoreMatrixY);
+    }
+
+    [Theory]
+    [InlineData(DashboardLayoutMode.Auto)]
+    [InlineData(DashboardLayoutMode.Free)]
+    [InlineData(DashboardLayoutMode.Grid)]
+    public void SaveThenLoad_DashboardLayoutMode_RoundTrips_AsString(DashboardLayoutMode mode)
+    {
+        var svc = new SettingsService(_dir);
+        svc.Save(new AppSettings { DashboardLayoutMode = mode });
+        var json = File.ReadAllText(Path.Combine(_dir, "settings.json"));
+        Assert.Contains($"\"DashboardLayoutMode\": \"{mode}\"", json);
+        Assert.Equal(mode, new SettingsService(_dir).Load().DashboardLayoutMode);
+    }
+
+    [Fact]
+    public void Load_UnknownDashboardLayoutMode_FallsBackToAuto_WithoutWipingOtherSettings()
+    {
+        Write("""{ "PollIntervalSeconds": 2.5, "DashboardLayoutMode": "Freeform", "DashboardMetrics": ["a"] }""");
+        var loaded = new SettingsService(_dir).Load();
+        Assert.Equal(DashboardLayoutMode.Auto, loaded.DashboardLayoutMode);
+        // A bad enum string must not fall through to SettingsService.Load's whole-object catch-all default —
+        // everything else in the same file must still have loaded.
+        Assert.Equal(2.5, loaded.PollIntervalSeconds);
+        Assert.Equal(new[] { "a" }, loaded.DashboardMetrics);
+    }
+
+    [Fact]
+    public void Load_NullOrNonStringDashboardLayoutMode_FallsBackToAuto()
+    {
+        Write("""{ "DashboardLayoutMode": null }""");
+        Assert.Equal(DashboardLayoutMode.Auto, new SettingsService(_dir).Load().DashboardLayoutMode);
+        Write("""{ "DashboardLayoutMode": 1 }""");
+        Assert.Equal(DashboardLayoutMode.Auto, new SettingsService(_dir).Load().DashboardLayoutMode);
+    }
+
+    [Theory]
+    [InlineData(200.0, 200.0)]
+    [InlineData(0.0, 0.0)]
+    [InlineData(-5.0, null)]
+    [InlineData(150_000.0, null)]
+    public void Load_SanitizesCoreMatrixPosition(double stored, double? expected)
+    {
+        var svc = new SettingsService(_dir);
+        svc.Save(new AppSettings { CoreMatrixX = stored, CoreMatrixY = stored });
+        var loaded = new SettingsService(_dir).Load();
+        Assert.Equal(expected, loaded.CoreMatrixX);
+        Assert.Equal(expected, loaded.CoreMatrixY);
+    }
+
+    [Fact]
+    public void Load_OverflowingCoreMatrixPosition_SanitizesToNull()
+    {
+        // A JSON number literal too large for double parses to PositiveInfinity rather than throwing — exercises
+        // the same ">100000" guard as an ordinary absurd value, without needing a NaN literal JSON has no syntax for.
+        Write("""{ "CoreMatrixX": 1e400, "CoreMatrixY": 1e400 }""");
+        var loaded = new SettingsService(_dir).Load();
+        Assert.Null(loaded.CoreMatrixX);
+        Assert.Null(loaded.CoreMatrixY);
+    }
+
+    [Fact]
+    public void SaveThenLoad_TilePrefPosition_RoundTrips()
+    {
+        var svc = new SettingsService(_dir);
+        var s = new AppSettings();
+        s.PrefFor("cpu.temp").X = 96.0;
+        s.PrefFor("cpu.temp").Y = 232.0;
+        svc.Save(s);
+        var pref = new SettingsService(_dir).Load().TilePrefs["cpu.temp"];
+        Assert.Equal(96.0, pref.X);
+        Assert.Equal(232.0, pref.Y);
+    }
+
+    [Fact]
+    public void Load_SanitizesTilePrefPosition_NegativeAndAbsurdBecomeNull()
+    {
+        var svc = new SettingsService(_dir);
+        var s = new AppSettings();
+        s.PrefFor("a").X = -10;
+        s.PrefFor("a").Y = 200_000;
+        svc.Save(s);
+        var pref = new SettingsService(_dir).Load().TilePrefs["a"];
+        Assert.Null(pref.X);
+        Assert.Null(pref.Y);
+    }
+
     private void Write(string json)
     {
         Directory.CreateDirectory(_dir);

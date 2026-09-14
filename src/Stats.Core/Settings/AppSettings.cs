@@ -109,6 +109,19 @@ public sealed class AppSettings
     /// to be warned about again — e.g. MSI Afterburner left on its Auto fan setting. Persisted; "Don't warn again" adds to it.</summary>
     public List<string> IgnoredFanConflicts { get; set; } = new();
 
+    // ---- dashboard layout modes ----
+    /// <summary>Auto (grouped WrapPanel, default/unchanged) vs Free/Grid (one whole-dashboard canvas with
+    /// persisted per-tile positions — see <see cref="TilePref.X"/>/<see cref="TilePref.Y"/>). See
+    /// <see cref="DashboardLayoutModeConverter"/> for why an unrecognized stored value falls back to Auto instead
+    /// of throwing.</summary>
+    [JsonConverter(typeof(DashboardLayoutModeConverter))]
+    public DashboardLayoutMode DashboardLayoutMode { get; set; } = DashboardLayoutMode.Auto;
+    /// <summary>Core-matrix block position for Free/Grid layout; null = not yet placed (seeded by
+    /// <see cref="ViewModels.DashboardViewModel"/>'s pack the first time a non-Auto mode has no position to show).
+    /// Never touched while <see cref="DashboardLayoutMode"/> is Auto.</summary>
+    public double? CoreMatrixX { get; set; }
+    public double? CoreMatrixY { get; set; }
+
     /// <summary>Get-or-create the TilePref for a metric id.</summary>
     public TilePref PrefFor(string metricId)
     {

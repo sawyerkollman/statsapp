@@ -164,7 +164,13 @@
                 <ScaleTransform ScaleX="{Binding UiScale}" ScaleY="{Binding UiScale}"/>
             </Grid.LayoutTransform>
 
-            <ScrollViewer VerticalScrollBarVisibility="Auto" Visibility="{Binding IsEmpty, Converter={StaticResource InverseBoolToVis}}">
+            <ScrollViewer VerticalScrollBarVisibility="Auto">
+                <ScrollViewer.Visibility>
+                    <MultiBinding Converter="{StaticResource AllTrueToVis}">
+                        <Binding Path="IsAutoLayout"/>
+                        <Binding Path="IsEmpty" Converter="{StaticResource InverseBool}"/>
+                    </MultiBinding>
+                </ScrollViewer.Visibility>
                 <ItemsControl Margin="16,16,16,16" ItemsSource="{Binding Sections}">
                     <ItemsControl.ItemTemplate>
                         <DataTemplate>
@@ -229,6 +235,96 @@
                         </DataTemplate>
                     </ItemsControl.ItemTemplate>
                 </ItemsControl>
+            </ScrollViewer>
+
+            <!-- Free/Snap dashboard layout (dashboard layout modes): one whole-dashboard canvas, group headers
+                 gone. The core-matrix block and the tiles are two overlaid same-size Canvas layers inside one
+                 fixed-size Grid (CanvasWidth/CanvasHeight) rather than a single CompositeCollection — the design
+                 doc explicitly allows this as an equivalent ("a second small ItemsControl for the block overlaid
+                 in the same Canvas-sized Grid"); it sidesteps needing one DataTemplateSelector to dispatch on both
+                 MetricTileViewModel and CoreMatrixViewModel, and keeps the block's Canvas.Left/Top bound straight
+                 to DataContext.CoreMatrixX/Y instead of routing it through an ItemContainerStyle meant for tiles. -->
+            <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto">
+                <ScrollViewer.Visibility>
+                    <MultiBinding Converter="{StaticResource AllTrueToVis}">
+                        <Binding Path="IsAutoLayout" Converter="{StaticResource InverseBool}"/>
+                        <Binding Path="IsEmpty" Converter="{StaticResource InverseBool}"/>
+                    </MultiBinding>
+                </ScrollViewer.Visibility>
+                <DockPanel Margin="16">
+                    <!-- StatusLines (per-group status text, e.g. "PresentMon: access denied") — same warn-styled
+                         look as the Auto group header's status line. An empty collection renders as a zero-height
+                         ItemsControl, so no explicit Visibility toggle is needed for the "collapsed when empty" rule. -->
+                    <ItemsControl DockPanel.Dock="Top" ItemsSource="{Binding StatusLines}" Margin="0,0,0,8">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <StackPanel Orientation="Horizontal" Margin="0,0,0,2">
+                                    <Path Style="{StaticResource IconGlyph}" Data="{StaticResource Icon.Warn}" Width="12" Height="12"
+                                          Fill="{DynamicResource WarnBrush}" Margin="0,0,4,0"/>
+                                    <TextBlock Text="{Binding}" Foreground="{DynamicResource WarnBrush}" FontSize="{StaticResource FontSizeDense}"
+                                               TextWrapping="Wrap" VerticalAlignment="Center"/>
+                                </StackPanel>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+
+                    <Grid Width="{Binding CanvasWidth}" Height="{Binding CanvasHeight}"
+                          HorizontalAlignment="Left" VerticalAlignment="Top">
+                        <!-- Core-matrix block layer: a single-item Canvas so Canvas.Left/Top (bound to the window's
+                             own DataContext.CoreMatrixX/Y, not an item's) can position it. It is the bottom layer —
+                             below the tiles layer, unlike Auto's template where the block sits above the tiles — a
+                             deliberate trade-off: a tile dragged over the block permanently blocks grabbing the
+                             block in that overlapped region (see docs/layout-modes/REVIEW.md N1). -->
+                        <Canvas Visibility="{Binding CoreMatrix, Converter={StaticResource NullToVis}}">
+                            <Canvas.Resources>
+                                <DataTemplate DataType="{x:Type vm:CoreMatrixViewModel}">
+                                    <views:CoreMatrixView/>
+                                </DataTemplate>
+                            </Canvas.Resources>
+                            <ContentControl Content="{Binding CoreMatrix}"
+                                            Canvas.Left="{Binding CoreMatrixX}" Canvas.Top="{Binding CoreMatrixY}"
+                                            Focusable="True" KeyboardNavigation.IsTabStop="True"
+                                            FocusVisualStyle="{StaticResource StatsFocusVisual}"
+                                            AutomationProperties.Name="CPU core matrix"
+                                            PreviewMouseLeftButtonDown="CoreMatrixBlock_PreviewMouseLeftButtonDown"
+                                            PreviewMouseMove="CoreMatrixBlock_PreviewMouseMove"
+                                            PreviewMouseLeftButtonUp="CoreMatrixBlock_PreviewMouseLeftButtonUp"
+                                            LostMouseCapture="CoreMatrixBlock_LostMouseCapture"
+                                            PreviewKeyDown="CoreMatrixBlock_PreviewKeyDown"
+                                            SizeChanged="CoreMatrixBlock_SizeChanged"/>
+                        </Canvas>
+
+                        <!-- Tiles layer: reuses TileSelector (identical templates to Auto) and reuses Tile_MouseRightButtonUp,
+                             TileMenuButton_Click, and Tile_PreviewKeyDown (Shift+F10/Apps context menu) from the Auto
+                             ItemContainerStyle verbatim — see DashboardWindow.xaml.cs. Drag uses new FreeTile_* handlers
+                             (direct Canvas.Left/Top manipulation) instead of Auto's DragDrop.DoDragDrop reorder path;
+                             a second PreviewKeyDown EventSetter adds arrow-key nudge alongside the reused menu-key one. -->
+                        <ItemsControl ItemsSource="{Binding Tiles}" ItemTemplateSelector="{StaticResource TileSelector}">
+                            <ItemsControl.ItemsPanel>
+                                <ItemsPanelTemplate>
+                                    <Canvas/>
+                                </ItemsPanelTemplate>
+                            </ItemsControl.ItemsPanel>
+                            <ItemsControl.ItemContainerStyle>
+                                <Style TargetType="ContentPresenter">
+                                    <Setter Property="Canvas.Left" Value="{Binding X}"/>
+                                    <Setter Property="Canvas.Top" Value="{Binding Y}"/>
+                                    <Setter Property="Focusable" Value="True"/>
+                                    <Setter Property="KeyboardNavigation.IsTabStop" Value="True"/>
+                                    <Setter Property="FocusVisualStyle" Value="{StaticResource StatsFocusVisual}"/>
+                                    <EventSetter Event="PreviewMouseLeftButtonDown" Handler="FreeTile_PreviewMouseLeftButtonDown"/>
+                                    <EventSetter Event="PreviewMouseMove" Handler="FreeTile_PreviewMouseMove"/>
+                                    <EventSetter Event="PreviewMouseLeftButtonUp" Handler="FreeTile_PreviewMouseLeftButtonUp"/>
+                                    <EventSetter Event="LostMouseCapture" Handler="FreeTile_LostMouseCapture"/>
+                                    <EventSetter Event="MouseRightButtonUp" Handler="Tile_MouseRightButtonUp"/>
+                                    <EventSetter Event="Button.Click" Handler="TileMenuButton_Click"/>
+                                    <EventSetter Event="PreviewKeyDown" Handler="Tile_PreviewKeyDown"/>
+                                    <EventSetter Event="PreviewKeyDown" Handler="FreeTile_PreviewKeyDown"/>
+                                </Style>
+                            </ItemsControl.ItemContainerStyle>
+                        </ItemsControl>
+                    </Grid>
+                </DockPanel>
             </ScrollViewer>
 
             <!-- Empty state (DESIGN.md §3 "If no dashboard metrics are selected, show a clear empty state and an
