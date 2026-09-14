@@ -749,6 +749,8 @@
                                             </DockPanel>
                                             <CheckBox Content="Click-through (mouse passes through the overlay; turn off to drag it)" Margin="0,4"
                                                       IsChecked="{Binding OverlayClickThrough}"/>
+                                            <CheckBox Content="Sparklines beside each value" Margin="0,4" IsChecked="{Binding OverlaySparklines}"/>
+                                            <CheckBox Content="Status line (fan control, game mode, FPS source)" Margin="0,4" IsChecked="{Binding OverlayStatusLine}"/>
                                             <DockPanel Margin="0,4">
                                                 <TextBlock Text="Toggle hotkey" Width="90" Style="{StaticResource SettingsLabel}"/>
                                                 <Button DockPanel.Dock="Right" Content="Clear" Click="HotkeyClear_Click" Style="{StaticResource HeaderButton}" FontSize="11"/>
