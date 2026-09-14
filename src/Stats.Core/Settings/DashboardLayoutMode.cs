@@ -38,6 +38,7 @@ public sealed class DashboardLayoutModeConverter : JsonConverter<DashboardLayout
 
         return reader.TokenType == JsonTokenType.String
             && Enum.TryParse<DashboardLayoutMode>(reader.GetString(), ignoreCase: true, out var mode)
+            && Enum.IsDefined(mode)
                 ? mode
                 : DashboardLayoutMode.Auto;
     }
