@@ -37,6 +37,7 @@ public sealed class OverlayGraphsConverter : JsonConverter<OverlayGraphs>
 
         return reader.TokenType == JsonTokenType.String
             && Enum.TryParse<OverlayGraphs>(reader.GetString(), ignoreCase: true, out var mode)
+            && Enum.IsDefined(mode)
                 ? mode
                 : OverlayGraphs.Sparkline;
     }

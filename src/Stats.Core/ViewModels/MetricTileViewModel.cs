@@ -143,6 +143,7 @@ public sealed partial class MetricTileViewModel : ObservableObject
     /// colour goes amber/red on stutter even while the average is fine. <see cref="Severity.Normal"/> when there is
     /// no 1%-low sibling.</summary>
     [ObservableProperty] private Severity _fpsLowSeverity;
+    [ObservableProperty] private string _fpsLowSeverityGlyph = "";
     /// <summary>1%-low ÷ average, clamped to [0, 1]; 0 when either is unavailable.</summary>
     [ObservableProperty] private float _fpsLowRatio;
     /// <summary>"64% of avg"; "" under the same condition as <see cref="FpsLowRatio"/> staying 0.</summary>
@@ -201,7 +202,9 @@ public sealed partial class MetricTileViewModel : ObservableObject
         }
         else if (Kind == TileKind.FpsSummary)
         {
-            automationLabel = $"{automationLabel}, 1% low {FpsLowText}, frame time {FpsFrameTimeText}";
+            automationLabel = FpsLowText == "—"
+                ? $"{automationLabel}, 1% low unavailable, frame time {FpsFrameTimeText}"
+                : $"{automationLabel}, 1% low {FpsLowText}, {FpsLowSeverity}, frame time {FpsFrameTimeText}";
             if (FpsRatioText.Length > 0) automationLabel = $"{automationLabel}, {FpsRatioText}";
         }
         AutomationLabel = automationLabel;
@@ -313,6 +316,7 @@ public sealed partial class MetricTileViewModel : ObservableObject
         FpsLowSeverity = _lowDef is null
             ? Severity.Normal
             : thresholds is not null ? thresholds.Evaluate(_lowDef, low) : ThresholdEvaluator.Evaluate(_lowDef, low, _settings);
+        FpsLowSeverityGlyph = FpsLowSeverity switch { Severity.Crit => "‼", Severity.Warn => "▲", _ => "" };
 
         var avg = _history.Current;
         if (avg is float a && a > 0 && low is float l)

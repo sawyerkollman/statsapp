@@ -664,10 +664,13 @@ public class SettingsServiceTests : IDisposable
         Assert.Equal(TileKind.FpsSummary, loaded.TilePrefs["fps.avg"].Kind);
     }
 
-    [Fact]
-    public void Load_UnknownTileKind_FallsBackToAuto_WithoutWipingOtherSettings()
+    [Theory]
+    [InlineData("Donut")]
+    [InlineData("7")]
+    [InlineData("-1")]
+    public void Load_UnknownTileKind_FallsBackToAuto_WithoutWipingOtherSettings(string kind)
     {
-        Write("""{ "PollIntervalSeconds": 2.5, "TilePrefs": { "a": { "Kind": "Donut" } } }""");
+        Write($$"""{ "PollIntervalSeconds": 2.5, "TilePrefs": { "a": { "Kind": "{{kind}}" } } }""");
         var loaded = new SettingsService(_dir).Load();
         Assert.Equal(TileKind.Auto, loaded.TilePrefs["a"].Kind);
         // A bad enum string on one tile pref must not fall through to SettingsService.Load's whole-object
@@ -692,6 +695,8 @@ public class SettingsServiceTests : IDisposable
 
     [Theory]
     [InlineData("\"Bars\"")]
+    [InlineData("\"99\"")]
+    [InlineData("\"-1\"")]
     [InlineData("7")]
     [InlineData("null")]
     [InlineData("{}")]

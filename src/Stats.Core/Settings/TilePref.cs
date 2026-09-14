@@ -26,6 +26,7 @@ public sealed class TileKindConverter : JsonConverter<TileKind>
 
         return reader.TokenType == JsonTokenType.String
             && Enum.TryParse<TileKind>(reader.GetString(), ignoreCase: true, out var kind)
+            && Enum.IsDefined(kind)
                 ? kind
                 : TileKind.Auto;
     }

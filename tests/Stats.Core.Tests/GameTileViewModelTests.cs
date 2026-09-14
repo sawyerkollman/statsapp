@@ -156,6 +156,20 @@ public class GameTileViewModelTests
         Assert.Equal(0.635f, tile.FpsLowRatio, 3);
         Assert.Equal("64% of avg", tile.FpsRatioText);
         Assert.Equal(Severity.Normal, tile.FpsLowSeverity);
+        Assert.Equal("", tile.FpsLowSeverityGlyph);
+        Assert.Contains("1% low 61 fps, Normal", tile.AutomationLabel);
+
+        store.Apply(new SensorSnapshot(new Dictionary<string, float?>
+        {
+            [FrameMetrics.FpsId] = 96f,
+            [FrameMetrics.LowId] = 20f,
+            [FrameMetrics.FrameTimeId] = 10.4f,
+        }, DateTime.UtcNow));
+        tile.Refresh();
+
+        Assert.Equal(Severity.Warn, tile.FpsLowSeverity);
+        Assert.Equal("▲", tile.FpsLowSeverityGlyph);
+        Assert.Contains("1% low 20 fps, Warn", tile.AutomationLabel);
 
         store.Apply(new SensorSnapshot(new Dictionary<string, float?>
         {
@@ -166,6 +180,8 @@ public class GameTileViewModelTests
         tile.Refresh();
 
         Assert.Equal(Severity.Crit, tile.FpsLowSeverity); // 30/15 LowerIsWorse override on fps.low1
+        Assert.Equal("‼", tile.FpsLowSeverityGlyph);
+        Assert.Contains("1% low 12 fps, Crit", tile.AutomationLabel);
     }
 
     [Fact]
@@ -186,6 +202,9 @@ public class GameTileViewModelTests
         Assert.Equal(0f, tile.FpsLowRatio);
         Assert.Equal("", tile.FpsRatioText);
         Assert.Equal(Severity.Normal, tile.FpsLowSeverity);
+        Assert.Equal("", tile.FpsLowSeverityGlyph);
+        Assert.Contains("1% low unavailable", tile.AutomationLabel);
+        Assert.DoesNotContain("1% low —, Normal", tile.AutomationLabel);
     }
 
     [Fact]
@@ -204,6 +223,7 @@ public class GameTileViewModelTests
         Assert.Equal("—", tile.FpsFrameTimeText);
         Assert.Equal(0f, tile.FpsLowRatio);
         Assert.Equal("", tile.FpsRatioText);
+        Assert.Contains("1% low unavailable", tile.AutomationLabel);
     }
 
     [Fact]
@@ -242,7 +262,7 @@ public class GameTileViewModelTests
 
         tile.Refresh();
 
-        Assert.Equal("FPS, 96 fps, Normal, 1% low 61 fps, frame time 10.4 ms, 64% of avg", tile.AutomationLabel);
+        Assert.Equal("FPS, 96 fps, Normal, 1% low 61 fps, Normal, frame time 10.4 ms, 64% of avg", tile.AutomationLabel);
     }
 
     [Fact]

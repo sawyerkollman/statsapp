@@ -57,9 +57,19 @@
                      MaxWidth, or one unbreakable word) widens the StackPanel, which widens TilesHost, which raises
                      MaxWidth again — a feedback loop that grew the panel until the text fit instead of wrapping.
                      ClipToBounds keeps a word wider than the tiles from painting past the strip. -->
-                <Border MaxWidth="{Binding ActualWidth, ElementName=TilesHost}" Padding="10,4,10,0" ClipToBounds="True"
+                <Border Padding="10,4,10,0" ClipToBounds="True"
                         HorizontalAlignment="Left"
                         Visibility="{Binding HasStatus, Converter={StaticResource BoolToVis}}">
+                    <Border.Style>
+                        <Style TargetType="Border">
+                            <Setter Property="MaxWidth" Value="{Binding ActualWidth, ElementName=TilesHost}"/>
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding HasItems, ElementName=TilesHost}" Value="False">
+                                    <Setter Property="MaxWidth" Value="240"/>
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </Border.Style>
                 <Grid>
                     <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
                     <Path Style="{StaticResource IconGlyph}" Data="{StaticResource Icon.Warn}" Width="12" Height="12"
