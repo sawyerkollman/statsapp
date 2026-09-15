@@ -239,6 +239,9 @@ public static class CaptureHost
                     DispatcherUtil.WaitFrames();
                     OpenThemeDropdown(window, c);
                     break;
+                case "layout-resize-grip" when window is DashboardWindow:
+                    FocusFirstFreeTileContainer(window);
+                    break;
             }
         }
         if (spec.View == "alerts" && window is PeaksWindow pw) SelectAlertsTab(pw);
@@ -294,6 +297,21 @@ public static class CaptureHost
         combo.Focus();
         DispatcherUtil.WaitFrames(3);
         combo.IsDropDownOpen = true;
+        DispatcherUtil.WaitFrames();
+    }
+
+    /// <summary>"layout-resize-grip" (docs/superpowers/specs/2026-09-11-tile-resize-design.md "Preview harness"):
+    /// pairs with "layout-free" (applied first, at the composition level in PreviewComposition.ApplySubstate) —
+    /// finds the Free canvas (<c>x:Name="FreeTilesList"</c> in DashboardWindow.xaml, a TileCanvasItemsControl) and
+    /// keyboard-focuses its first tile container, so that container's IsKeyboardFocusWithin trigger shows its
+    /// resize grip (the grip is otherwise only visible on IsMouseOver, which this headless harness cannot fake).</summary>
+    private static void FocusFirstFreeTileContainer(Window window)
+    {
+        var freeList = VisualTreeUtil.FirstDescendant<FrameworkElement>(window, e => e.Name == "FreeTilesList");
+        if (freeList is null) return;
+        var container = VisualTreeUtil.FirstDescendant<ContentControl>(freeList, e => e.DataContext is MetricTileViewModel);
+        if (container is null) return;
+        Keyboard.Focus(container);
         DispatcherUtil.WaitFrames();
     }
 

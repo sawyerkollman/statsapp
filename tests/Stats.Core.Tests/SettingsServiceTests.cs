@@ -516,6 +516,36 @@ public class SettingsServiceTests : IDisposable
         Assert.True(loaded.FanSafetyBannerCollapsed);
     }
 
+    // ---- graph effects ----
+
+    [Fact]
+    public void Load_MissingFile_SmoothLinesAndGraphEffects_DefaultTrue()
+    {
+        var s = new SettingsService(_dir).Load();
+        Assert.True(s.SmoothLines);
+        Assert.True(s.GraphEffects);
+    }
+
+    [Fact]
+    public void SaveThenLoad_SmoothLinesAndGraphEffects_RoundTrip()
+    {
+        var svc = new SettingsService(_dir);
+        svc.Save(new AppSettings { SmoothLines = false, GraphEffects = false });
+        var loaded = new SettingsService(_dir).Load();
+        Assert.False(loaded.SmoothLines);
+        Assert.False(loaded.GraphEffects);
+    }
+
+    [Fact]
+    public void Load_PreGraphEffectsFile_DefaultsBothToTrue()
+    {
+        // A file saved before v1.10 has neither field — missing bools must still load as true, not false.
+        Write("""{ "PollIntervalSeconds": 1.0, "DashboardMetrics": [ "a" ] }""");
+        var l = new SettingsService(_dir).Load();
+        Assert.True(l.SmoothLines);
+        Assert.True(l.GraphEffects);
+    }
+
     // ---- dashboard layout modes ----
 
     [Fact]
@@ -612,36 +642,35 @@ public class SettingsServiceTests : IDisposable
         Assert.Null(pref.Y);
     }
 
-    // ---- graph effects ----
+    // ---- toast alerts ----
 
     [Fact]
-    public void Load_MissingFile_SmoothLinesAndGraphEffects_DefaultTrue()
+    public void Load_MissingFile_AlertNotificationsDefaultOnAndSkipWhenForegroundOn()
     {
         var s = new SettingsService(_dir).Load();
-        Assert.True(s.SmoothLines);
-        Assert.True(s.GraphEffects);
+        Assert.True(s.AlertNotificationsEnabled);
+        Assert.True(s.AlertNotificationsSkipWhenForeground);
     }
 
     [Fact]
-    public void SaveThenLoad_SmoothLinesAndGraphEffects_RoundTrip()
+    public void SaveThenLoad_AlertNotificationFields_RoundTrip()
     {
         var svc = new SettingsService(_dir);
-        svc.Save(new AppSettings { SmoothLines = false, GraphEffects = false });
+        svc.Save(new AppSettings { AlertNotificationsEnabled = false, AlertNotificationsSkipWhenForeground = false });
         var loaded = new SettingsService(_dir).Load();
-        Assert.False(loaded.SmoothLines);
-        Assert.False(loaded.GraphEffects);
+        Assert.False(loaded.AlertNotificationsEnabled);
+        Assert.False(loaded.AlertNotificationsSkipWhenForeground);
     }
 
     [Fact]
-    public void Load_PreGraphEffectsFile_DefaultsBothToTrue()
+    public void Load_PreToastAlertsFile_DefaultsBothNotificationFieldsToTrue()
     {
-        // A file saved before v1.10 has neither field — missing bools must still load as true, not false.
-        Write("""{ "PollIntervalSeconds": 1.0, "DashboardMetrics": [ "a" ] }""");
+        // A file saved before this feature has only the v1.8 alert fields — the two new bools must still load true.
+        Write("""{ "AlertsEnabled": true, "AlertHoldSeconds": 10, "AlertSoundEnabled": false }""");
         var l = new SettingsService(_dir).Load();
-        Assert.True(l.SmoothLines);
-        Assert.True(l.GraphEffects);
+        Assert.True(l.AlertNotificationsEnabled);
+        Assert.True(l.AlertNotificationsSkipWhenForeground);
     }
-
     // ---- tile kind (Histogram / FpsSummary + lenient converter) ----
 
     [Fact]
@@ -688,7 +717,6 @@ public class SettingsServiceTests : IDisposable
         Write("""{ "TilePrefs": { "a": { "Kind": {} } } }""");
         Assert.Equal(TileKind.Auto, new SettingsService(_dir).Load().TilePrefs["a"].Kind);
     }
-
     private void Write(string json)
     {
         Directory.CreateDirectory(_dir);

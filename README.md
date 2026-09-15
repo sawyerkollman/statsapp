@@ -80,10 +80,18 @@ Uninstall from Settings → Apps; PawnIO is left installed because other tools m
   and load. *1% Low FPS* starts on its own lower scale (warn 30, crit 15) so it isn't permanently
   amber; per-tile overrides for an inverted metric take the warn value first (e.g. `60/30`).
 - **Alerts** — when a monitored metric holds Crit for a hold time (default 10 s, Settings → Alerts,
-  1–120 s), Stats shows a tray balloon and can optionally play a chime (off by default). The *Peaks*
-  window's **Alerts** tab logs each alert's time, metric, peak value, threshold, and duration (live
-  "ongoing" until the metric recovers) for the current session, newest first, capped at 200 rows.
-  Alerts evaluate even while the dashboard and overlay are hidden.
+  1–120 s), Stats raises a Windows notification titled `<metric> critical` with a body like `96 °C for
+  10 s (crit ≥ 92)`, and can optionally play a chime (off by default) — the chime is the only sound a
+  Stats alert ever makes. Clicking the notification opens the dashboard. Two checkboxes under Settings →
+  Alerts → Windows notifications control it: **Show Windows notifications** (default on) and **Only
+  when the dashboard is not in the foreground** (default on, so Stats stays quiet while you're already
+  looking at it); notifications are rate-limited to a global 10 s cool-down across all metrics plus at
+  most one per metric per 60 s. Windows Focus Assist / Do not disturb (e.g. behind a full-screen game)
+  may hold a notification back in Action Center instead of showing it on screen. The *Peaks* window's
+  **Alerts** tab logs each alert's time, metric, peak value, threshold, and duration (live "ongoing"
+  until the metric recovers) for the current session, newest first, capped at 200 rows, independent of
+  the notification settings and the chime. Alerts evaluate even while the dashboard and overlay are
+  hidden.
 
 ## Run from source
 
@@ -149,8 +157,9 @@ hash after downloading an update (older releases without a published hash retain
   open the folder.
 - **Tiles** — right-click, the hover **⋯** button, or Shift+F10/the Menu key on a focused tile:
   kind (Sparkline/Gauge/Bar/Value/Histogram, plus FPS summary on the FPS tile), size (S/M/L —
-  160×80/224×144/460×192), rename, gauge max,
-  thresholds, Details…, remove. The value and its unit are shown separately with stable digit
+  160×80/224×144/460×192, with **Larger**/**Smaller** items next to the size menu — **Ctrl+Plus** /
+  **Ctrl+Minus** on a focused tile do the same), rename, gauge max, thresholds, Details…, remove. The
+  value and its unit are shown separately with stable digit
   widths so readings don't jitter, and the options button sits in a reserved corner so it never
   covers the reading. Empty rows (no limit set, no history yet) are omitted rather than shown
   blank, and a long footer shows a tooltip with the full text. Gauge tiles show the reading beside
@@ -176,6 +185,10 @@ hash after downloading an update (older releases without a published hash retain
   - **Snap to grid** — the same free canvas, but a dropped or nudged position rounds to the
     nearest 16-pixel grid line; tiles are allowed to overlap.
 
+  **Resize**: in Free or Snap, drag the grip in a tile's bottom-right corner; the outline shows
+  which size (S, M, L) it will snap to. Ctrl+Plus / Ctrl+Minus resize the focused tile in any
+  layout.
+
   **Reset tile positions…** (also in the View menu, enabled outside Auto arrange) clears every
   saved position and re-seeds a fresh packed layout. Positions are saved per tile — and for the
   core matrix block — in `settings.json`, so a Free or Snap layout you build is exactly where you
@@ -196,7 +209,7 @@ hash after downloading an update (older releases without a published hash retain
   moving overlay"), **Esc**, or toggling the overlay.
 - **Tray** — icon shows CPU temp by default (or the metric you pick in Settings), tinted by severity;
   close button hides to tray; left-click reopens; right-click: dashboard / overlay / peaks / settings /
-  move overlay / exit.
+  move overlay / exit; alert notifications click through to the dashboard the same way.
 - **FPS hint** — when FPS metrics are available but none is on the dashboard or overlay, a dismissible
   "Gaming? Add FPS, 1% lows and frame time from ☰ Metrics" banner shows until you add one or click
   Got it (remembered across restarts); the *Game* group

@@ -125,7 +125,36 @@
             <DataTrigger Binding="{Binding RelativeSource={RelativeSource AncestorType=ContentPresenter}, Path=IsKeyboardFocusWithin}" Value="True">
                 <Setter Property="Visibility" Value="Visible"/>
             </DataTrigger>
+            <!-- Free/Snap containers are ContentControls whose template presenter relays the container's focus state as
+                 Tag="FocusWithin" (see DashboardWindow.xaml's TileCanvasItemsControl template); Auto's container
+                 presenter has a null Tag, so this trigger is inert there. -->
+            <DataTrigger Binding="{Binding RelativeSource={RelativeSource AncestorType=ContentPresenter}, Path=Tag}" Value="FocusWithin">
+                <Setter Property="Visibility" Value="Visible"/>
+            </DataTrigger>
         </Style.Triggers>
+    </Style>
+
+    <!-- Tile-resize-by-drag: bottom-right resize grip on the Free/Snap canvas's TileCanvasItemsControl container
+         template (DashboardWindow.xaml's ItemContainerStyle Template) — 14x14 (the 6-unit TileBorder margin plus
+         a 2-unit inset, so the grip sits at the tile's true visual bottom-right corner), Background transparent so
+         the whole box (not just the glyph) hit-tests, Cursor=SizeNWSE, excluded from Tab order (the container
+         itself already carries keyboard focus) and from the move-drag hit test (DashboardWindow's
+         FindAncestorNamedOrSelf). The icon glyph itself is declared directly in the ControlTemplate rather than
+         here — a Style Setter can't hold a shared Path instance reused across every tile container's grip.
+         Collapsed by default, shown via that ControlTemplate's own triggers on IsMouseOver/IsKeyboardFocusWithin
+         (same recipe as TileMenuButtonStyle above), collapsed again when the tile isn't resizable. -->
+    <Style x:Key="TileResizeGripStyle" TargetType="Border">
+        <Setter Property="Width" Value="14"/>
+        <Setter Property="Height" Value="14"/>
+        <Setter Property="HorizontalAlignment" Value="Right"/>
+        <Setter Property="VerticalAlignment" Value="Bottom"/>
+        <Setter Property="Margin" Value="0,0,8,8"/>
+        <Setter Property="Background" Value="Transparent"/>
+        <Setter Property="Cursor" Value="SizeNWSE"/>
+        <Setter Property="Focusable" Value="False"/>
+        <Setter Property="AutomationProperties.Name" Value="Resize tile"/>
+        <Setter Property="ToolTip" Value="Drag to resize (S / M / L)"/>
+        <Setter Property="Visibility" Value="Collapsed"/>
     </Style>
 
     <!-- S: name + value only, no chart/footer (v1.8 §4 "Compact") -->
