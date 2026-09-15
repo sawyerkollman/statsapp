@@ -16,7 +16,7 @@ public sealed partial class AlertRowViewModel : ObservableObject
         MetricId = evt.MetricId;
         _timeText = evt.RaisedAtLocal.ToString("HH:mm:ss", CultureInfo.InvariantCulture);
         _metricText = evt.DisplayName;
-        var def = new MetricDefinition(evt.MetricId, evt.DisplayName, default, "", evt.Unit);
+        var def = new MetricDefinition(evt.MetricId, evt.DisplayName, default, "", evt.Unit, evt.Format);
         _peakText = ValueFormatter.Format(def, evt.PeakValue);
         var symbol = evt.LowerIsWorse ? "≤" : "≥";
         _thresholdText = $"{symbol} {ValueFormatter.Format(def, evt.Threshold)}";

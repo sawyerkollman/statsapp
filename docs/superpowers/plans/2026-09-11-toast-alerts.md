@@ -13,7 +13,7 @@ staged — every commit uses `git add <explicit paths>`, never `git add -A` / `g
 implementer with the file set below as its *only* write scope (disjoint across tasks); each task starts from the
 previous task's committed tip.
 
-- [ ] **Task 1 — Core policy, text, settings** (`feat(core): alert notification policy, text, and settings`).
+- [x] **Task 1 — Core policy, text, settings** (`feat(core): alert notification policy, text, and settings`).
       Owns: `src/Stats.Core/Alerts/AlertNotificationPolicy.cs` (new), `src/Stats.Core/Alerts/AlertEvent.cs`,
       `src/Stats.Core/Settings/AppSettings.cs`, `src/Stats.Core/ViewModels/SettingsViewModel.cs`,
       `tests/Stats.Core.Tests/AlertNotificationPolicyTests.cs` (new), `tests/Stats.Core.Tests/AlertEventTests.cs`
@@ -25,7 +25,7 @@ previous task's committed tip.
       default `true`, no `Normalize` change); `SettingsViewModel` observable mirrors + `On…Changed` handlers raising
       `SettingsChange.Alerts` (enum untouched). Tests: every name in the spec's Acceptance "Tests (Core)" bullets;
       the existing `Message_*` and alert settings tests must pass unchanged. Gate: build + tests. Push.
-- [ ] **Task 2 — App wiring + Settings tab** (`feat(app): Windows notifications for critical alerts, click opens the dashboard`).
+- [x] **Task 2 — App wiring + Settings tab** (`feat(app): Windows notifications for critical alerts, click opens the dashboard`).
       Owns: `src/Stats.App/App.xaml.cs`, `src/Stats.App/Views/DashboardWindow.xaml`. Does: `using H.NotifyIcon.Core;`
       and the `_alertNotifications` field; `SetupTray()` gains `TrayBalloonTipClicked → ShowDashboard()` and the
       `TrayBalloonTipShown` trace; `EvaluateAlerts()` loop → `ShowAlertNotification(evt, nowUtc)` (old
@@ -37,7 +37,7 @@ previous task's committed tip.
       existing rows untouched. No `ClearNotifications`, no `customIconHandle`, no fan/poller/LHM code, nothing
       outside the Dispatcher path. Gate: build + tests (no new automated tests possible for App; the reviewer
       reads the diff against the spec's App section line by line). Push.
-- [ ] **Task 3 — Harness, captures, docs** (`feat(tools): toast-alerts settings substate and captures` then
+- [x] **Task 3 — Harness, captures, docs** (`feat(tools): toast-alerts settings substate and captures` then
       `docs: toast alerts evidence and README`).
       Owns: `tools/Stats.UiPreview/PreviewComposition.cs`, `tools/Stats.UiPreview/SubstateCatalog.cs`,
       `tools/Stats.UiPreview/captures/baseline.json`, `tests/Stats.UiPreview.Tests/ToastAlertsSubstateTests.cs`
@@ -50,7 +50,7 @@ previous task's committed tip.
       README Alerts + Tray paragraphs. Tests: the three `ToastAlertsSubstateTests` names from the spec;
       `CompositionIsolationTests` still green (the substate only records `settings.save`). Gate: build + tests +
       captures. Push.
-- [ ] **Task 4 — Review** (Opus, whole branch): diff `feature/toast-alerts` against `feature/v1.10` and check every
+- [x] **Task 4 — Review** (Opus, whole branch): diff `feature/toast-alerts` against `feature/v1.10` and check every
       spec claim (owner decisions 1–3, assumed decisions 1–12, rule 1 thread placement, rule 3 old-file loading,
       rule 4 package pinned, rule 6 no fan files touched, "existing rows/paths byte-identical when the feature is
       off", `Message` output unchanged, trace vocabulary, harness isolation). Findings → `docs/toast-alerts/REVIEW.md`;

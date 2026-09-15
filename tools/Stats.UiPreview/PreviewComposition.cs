@@ -207,20 +207,7 @@ public sealed class PreviewComposition
                 break;
             case "tile-menu": break; // visual-tree substate — applied in CaptureHost
 
-            // ---- dashboard layout modes (docs/superpowers/specs/2026-09-11-dashboard-layout-modes-design.md) ----
-            // Setting LayoutMode (rather than poking AppSettings.DashboardLayoutMode directly) runs the VM's own
-            // OnLayoutModeChanged hook, which persists, calls RebuildSections(), and — since RebuildSections runs
-            // PlaceUnpositioned() whenever LayoutMode != Auto — seeds every still-null tile/core-matrix position
-            // deterministically. That is the easy, harness-friendly path the design calls out explicitly.
-            case "layout-free": c.Dashboard.LayoutMode = DashboardLayoutMode.Free; break;
-            case "layout-grid": c.Dashboard.LayoutMode = DashboardLayoutMode.Grid; break;
-            case "layout-free-placed": ApplyLayoutFreePlaced(c); break;
-
-            // ---- tile resize by drag (docs/superpowers/specs/2026-09-11-tile-resize-design.md "Preview harness") ----
-            case "layout-resized": ApplyLayoutResized(c); break;
-            case "layout-resize-grip": break; // visual-tree substate — applied in CaptureHost (focuses the first Free container so the grip renders); pair with "layout-free" to reach Free mode first
-
-            // ---- graph effects (T3 of docs/superpowers/plans/2026-09-11-graph-effects.md) ----
+    // ---- graph effects (T3 of docs/superpowers/plans/2026-09-11-graph-effects.md) ----
             // Settings-level, applied here (before the window/controls exist) so GraphStyle.Apply — called by
             // CaptureHost right after Build() returns, still before window.Show() — has the right values in hand
             // before any control's Loaded/OnRender runs. "graphs-effects" is mostly documentary: both settings
@@ -234,8 +221,21 @@ public sealed class PreviewComposition
             case "detail-plain": c.Settings.SmoothLines = false; c.Settings.GraphEffects = false; break;
             // Also a no-op against defaults, same as "graphs-effects" above (review N4) — kept as its own named
             // substate because it targets the details view rather than the dashboard.
-            case "detail-smooth": c.Settings.SmoothLines = true; c.Settings.GraphEffects = true; break;
-            case "detail-warmup": break; // history already trimmed above, before the ViewModels were built
+    case "detail-smooth": c.Settings.SmoothLines = true; c.Settings.GraphEffects = true; break;
+    case "detail-warmup": break; // history already trimmed above, before the ViewModels were built
+
+    // ---- dashboard layout modes (docs/superpowers/specs/2026-09-11-dashboard-layout-modes-design.md) ----
+            // Setting LayoutMode (rather than poking AppSettings.DashboardLayoutMode directly) runs the VM's own
+            // OnLayoutModeChanged hook, which persists, calls RebuildSections(), and — since RebuildSections runs
+            // PlaceUnpositioned() whenever LayoutMode != Auto — seeds every still-null tile/core-matrix position
+            // deterministically. That is the easy, harness-friendly path the design calls out explicitly.
+    case "layout-free": c.Dashboard.LayoutMode = DashboardLayoutMode.Free; break;
+    case "layout-grid": c.Dashboard.LayoutMode = DashboardLayoutMode.Grid; break;
+    case "layout-free-placed": ApplyLayoutFreePlaced(c); break;
+
+            // ---- tile resize by drag (docs/superpowers/specs/2026-09-11-tile-resize-design.md "Preview harness") ----
+            case "layout-resized": ApplyLayoutResized(c); break;
+            case "layout-resize-grip": break; // visual-tree substate — applied in CaptureHost (focuses the first Free container so the grip renders); pair with "layout-free" to reach Free mode first
 
             // ---- picker ----
             case "no-results":
@@ -285,6 +285,12 @@ public sealed class PreviewComposition
             case "settings-update-error":
                 c.Dashboard.IsPickerOpen = true; c.Dashboard.FlyoutTabIndex = 1;
                 c.SettingsVm.ApplyManualCheckResult("Update check failed: could not reach github.com (simulated)", failed: true);
+                break;
+
+            // ---- toast alerts (docs/superpowers/specs/2026-09-11-toast-alerts-design.md) ----
+            case "alerts-notify-off":
+                c.Dashboard.IsPickerOpen = true; c.Dashboard.FlyoutTabIndex = 1;
+                c.SettingsVm.AlertNotificationsEnabled = false; // through the VM so the checkbox binding sees it; write-through records one "settings.save"
                 break;
 
             // ---- fans ----
