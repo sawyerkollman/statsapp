@@ -140,6 +140,8 @@ public class SettingsServiceTests : IDisposable
         Assert.True(l.ShowCoreMatrix);
         Assert.Equal("Ctrl+Shift+O", l.OverlayHotkey);
         Assert.Equal(Stats.Core.Metrics.ThresholdDefaults.Rules().Count, l.ThresholdRules.Count);
+        Assert.Equal(OverlayGraphs.Sparkline, l.OverlayGraphs);
+        Assert.False(l.OverlayStatusLine);
     }
 
     [Theory]
@@ -642,6 +644,112 @@ public class SettingsServiceTests : IDisposable
         Assert.Null(pref.Y);
     }
 
+    // ---- toast alerts ----
+
+    [Fact]
+    public void Load_MissingFile_AlertNotificationsDefaultOnAndSkipWhenForegroundOn()
+    {
+        var s = new SettingsService(_dir).Load();
+        Assert.True(s.AlertNotificationsEnabled);
+        Assert.True(s.AlertNotificationsSkipWhenForeground);
+    }
+
+    [Fact]
+    public void SaveThenLoad_AlertNotificationFields_RoundTrip()
+    {
+        var svc = new SettingsService(_dir);
+        svc.Save(new AppSettings { AlertNotificationsEnabled = false, AlertNotificationsSkipWhenForeground = false });
+        var loaded = new SettingsService(_dir).Load();
+        Assert.False(loaded.AlertNotificationsEnabled);
+        Assert.False(loaded.AlertNotificationsSkipWhenForeground);
+    }
+
+    [Fact]
+    public void Load_PreToastAlertsFile_DefaultsBothNotificationFieldsToTrue()
+    {
+        // A file saved before this feature has only the v1.8 alert fields — the two new bools must still load true.
+        Write("""{ "AlertsEnabled": true, "AlertHoldSeconds": 10, "AlertSoundEnabled": false }""");
+        var l = new SettingsService(_dir).Load();
+        Assert.True(l.AlertNotificationsEnabled);
+        Assert.True(l.AlertNotificationsSkipWhenForeground);
+    }
+    // ---- tile kind (Histogram / FpsSummary + lenient converter) ----
+
+    [Fact]
+    public void SaveThenLoad_TileKind_HistogramAndFpsSummary_RoundTrip_AsString()
+    {
+        var svc = new SettingsService(_dir);
+        var s = new AppSettings();
+        s.PrefFor("fps.frametime").Kind = TileKind.Histogram;
+        s.PrefFor("fps.avg").Kind = TileKind.FpsSummary;
+        svc.Save(s);
+
+        var json = File.ReadAllText(Path.Combine(_dir, "settings.json"));
+        Assert.Contains("\"Kind\": \"Histogram\"", json);
+        Assert.Contains("\"Kind\": \"FpsSummary\"", json);
+
+        var loaded = new SettingsService(_dir).Load();
+        Assert.Equal(TileKind.Histogram, loaded.TilePrefs["fps.frametime"].Kind);
+        Assert.Equal(TileKind.FpsSummary, loaded.TilePrefs["fps.avg"].Kind);
+    }
+
+    [Theory]
+    [InlineData("Donut")]
+    [InlineData("7")]
+    [InlineData("-1")]
+    public void Load_UnknownTileKind_FallsBackToAuto_WithoutWipingOtherSettings(string kind)
+    {
+        Write($$"""{ "PollIntervalSeconds": 2.5, "TilePrefs": { "a": { "Kind": "{{kind}}" } } }""");
+        var loaded = new SettingsService(_dir).Load();
+        Assert.Equal(TileKind.Auto, loaded.TilePrefs["a"].Kind);
+        // A bad enum string on one tile pref must not fall through to SettingsService.Load's whole-object
+        // catch-all default — everything else in the same file must still have loaded.
+        Assert.Equal(2.5, loaded.PollIntervalSeconds);
+    }
+
+    [Fact]
+    public void Load_NullOrNonStringTileKind_FallsBackToAuto()
+    {
+        Write("""{ "TilePrefs": { "a": { "Kind": null } } }""");
+        Assert.Equal(TileKind.Auto, new SettingsService(_dir).Load().TilePrefs["a"].Kind);
+
+        Write("""{ "TilePrefs": { "a": { "Kind": 7 } } }""");
+        Assert.Equal(TileKind.Auto, new SettingsService(_dir).Load().TilePrefs["a"].Kind);
+
+        Write("""{ "TilePrefs": { "a": { "Kind": {} } } }""");
+        Assert.Equal(TileKind.Auto, new SettingsService(_dir).Load().TilePrefs["a"].Kind);
+    }
+
+    // ---- overlay sparklines ----
+
+    [Theory]
+    [InlineData("\"Bars\"")]
+    [InlineData("\"99\"")]
+    [InlineData("\"-1\"")]
+    [InlineData("7")]
+    [InlineData("null")]
+    [InlineData("{}")]
+    [InlineData("[]")]
+    public void Load_BadOverlayGraphs_FallsBackToSparkline_KeepingOtherFields(string badValue)
+    {
+        Write($$"""{ "PollIntervalSeconds": 2.0, "OverlayStatusLine": true, "OverlayGraphs": {{badValue}} }""");
+        var loaded = new SettingsService(_dir).Load();
+        Assert.Equal(OverlayGraphs.Sparkline, loaded.OverlayGraphs);
+        Assert.Equal(2.0, loaded.PollIntervalSeconds);
+        Assert.True(loaded.OverlayStatusLine);
+    }
+
+    [Fact]
+    public void SaveThenLoad_RoundTripsOverlayGraphs_AsMemberName()
+    {
+        var svc = new SettingsService(_dir);
+        svc.Save(new AppSettings { OverlayGraphs = OverlayGraphs.None, OverlayStatusLine = true });
+        var json = File.ReadAllText(Path.Combine(_dir, "settings.json"));
+        Assert.Contains("\"OverlayGraphs\": \"None\"", json);
+        var loaded = new SettingsService(_dir).Load();
+        Assert.Equal(OverlayGraphs.None, loaded.OverlayGraphs);
+        Assert.True(loaded.OverlayStatusLine);
+    }
     private void Write(string json)
     {
         Directory.CreateDirectory(_dir);

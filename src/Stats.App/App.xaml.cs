@@ -8,6 +8,7 @@ using System.Windows.Controls;
 using System.Windows.Resources;
 using System.Windows.Threading;
 using H.NotifyIcon;
+using H.NotifyIcon.Core;
 using Stats.App.Helpers;
 using Stats.App.Tray;
 using Stats.App.Views;
@@ -49,6 +50,7 @@ public partial class App : Application
     private PeaksWindow? _peaks;
     private PeaksViewModel? _peaksVm;
     private AlertEngine? _alertEngine;
+    private readonly AlertNotificationPolicy _alertNotifications = new();
     private AlertLogViewModel? _alertLog;
     private MetricDetailWindow? _detail;
     private MetricDetailViewModel? _detailVm;
@@ -261,7 +263,7 @@ public partial class App : Application
         // immediately whenever the window *becomes* visible — including a --minimized launch's first ShowDashboard()
         // and every subsequent hide/show — so a freshly shown window is never stale for a whole poll interval.
         _dashboard.IsVisibleChanged += (_, e) => { if (e.NewValue is true) { _dashboardVm.RefreshAll(); _dashboardVm.SetGroupStatus(MetricGroup.Game, FrameStatus()); } };
-        _overlay.IsVisibleChanged += (_, e) => { if (e.NewValue is true) _overlayVm?.RefreshAll(); };
+        _overlay.IsVisibleChanged += (_, e) => { if (e.NewValue is true) { _overlayVm?.RefreshAll(); PushOverlayStatus(); } };
         _overlay.IsVisibleChanged += (_, e) => _dashboardVm.IsOverlayVisible = e.NewValue is true;
         SessionEnding += (_, _) => ExitApp();
         if (!startMinimized) _dashboard.Show(); // --minimized: dashboard/tray/services/poller are still fully constructed above, just not shown
@@ -424,6 +426,21 @@ public partial class App : Application
         return cut > 0 ? msg[..(cut + 1)] : msg;
     }
 
+    /// <summary>Composes the overlay status strip from already-published state and pushes it (no-op when
+    /// unchanged). UI thread only; reads published state only (rule 1) and never calls a FanController setter,
+    /// SetMode, ApplyProfile or Enabled's setter (rule 6).</summary>
+    private void PushOverlayStatus()
+    {
+        if (_overlayVm is null || _settings is null || !_settings.OverlayStatusLine) return;
+        bool fanEnabled = _fanController is { } fc && fc.Enabled;                 // getter only: brief lock on AppSettings.SyncRoot
+        string? profile = fanEnabled ? _fanController!.ActiveProfile : null;
+        IReadOnlyList<FanChannelStatus> statuses = fanEnabled
+            ? _fanController!.Statuses()                                           // status-only read: no per-channel view allocation each tick
+            : Array.Empty<FanChannelStatus>();
+        string? game = _settings.GameModeEnabled ? _gameMode?.StatusText : null;   // volatile string composed on the poll thread
+        _overlayVm.SetStatus(OverlayStatusComposer.Compose(fanEnabled, profile, statuses, game, FrameStatus()));
+    }
+
     private void RestoreWindowBounds()
     {
         if (_dashboard is null || _settings is null) return;
@@ -489,6 +506,8 @@ public partial class App : Application
         menu.Items.Add(exit);
         _tray.ContextMenu = menu;
         _tray.TrayLeftMouseUp += (_, _) => ShowDashboard();
+        _tray.TrayBalloonTipClicked += (_, _) => ShowDashboard();
+        _tray.TrayBalloonTipShown += (_, _) => Trace.WriteLine("[Stats] alert notification shown");
         // TaskbarIcon only materializes the shell icon on Loaded; created in code it must be forced.
         try { _tray.ForceCreate(enablesEfficiencyMode: false); }
         catch (Exception) { /* shell not ready (logon / explorer restart); dashboard still usable */ }
@@ -544,7 +563,7 @@ public partial class App : Application
             _dashboardVm.RefreshAll();
             _dashboardVm.SetGroupStatus(MetricGroup.Game, FrameStatus());
         }
-        if (_overlay is { IsVisible: true }) _overlayVm?.RefreshAll();
+        if (_overlay is { IsVisible: true }) { _overlayVm?.RefreshAll(); PushOverlayStatus(); }
         UpdateTrayTooltip();
         if (_settings?.AlertsEnabled == true) EvaluateAlerts();
         if (_peaks is { IsVisible: true }) _peaksVm?.Refresh();
@@ -554,8 +573,8 @@ public partial class App : Application
 
     /// <summary>Builds one <see cref="AlertSample"/> per metric in the union of the dashboard and overlay
     /// selections (evaluated regardless of whether either window is visible), ticks <see cref="_alertEngine"/>,
-    /// and surfaces any raised alert as a tray balloon (optionally with a chime) plus a log row. A balloon failure
-    /// (e.g. the shell not being ready) must never take the refresh path down with it.</summary>
+    /// and surfaces any raised alert as a Windows notification (see <see cref="ShowAlertNotification"/>) plus a
+    /// log row and an optional chime.</summary>
     private void EvaluateAlerts()
     {
         if (_store is null || _settings is null || _alertEngine is null || _alertLog is null) return;
@@ -572,15 +591,56 @@ public partial class App : Application
             samples.Add(new AlertSample(def, history.Current, severity, rule));
         }
 
-        foreach (var evt in _alertEngine.Tick(samples, DateTime.UtcNow))
+        var nowUtc = DateTime.UtcNow;
+        foreach (var evt in _alertEngine.Tick(samples, nowUtc))
         {
             _alertLog.Add(evt);
-            try { _tray?.ShowNotification("Stats alert", evt.Message); }
-            catch (Exception ex) { System.Diagnostics.Trace.WriteLine("[Stats] alert balloon failed: " + ex.Message); }
+            ShowAlertNotification(evt, nowUtc);
             if (_settings.AlertSoundEnabled)
                 try { System.Media.SystemSounds.Exclamation.Play(); } catch { /* audio device unavailable */ }
         }
     }
+
+    /// <summary>Owner decisions 2–3 of the toast-alerts spec: gate (setting, foreground) → cool-down → one
+    /// H.NotifyIcon balloon (Windows renders it as a toast) with sound off — the Exclamation chime in EvaluateAlerts
+    /// is the only alert sound. Every outcome is traced; a shell failure must never take the refresh down.</summary>
+    private void ShowAlertNotification(AlertEvent evt, DateTime nowUtc)
+    {
+        if (_settings is null) return;
+        bool dashboardIsForeground = _dashboard is { IsVisible: true, IsActive: true };
+        if (!AlertNotificationPolicy.ShouldNotify(_settings.AlertNotificationsEnabled,
+                _settings.AlertNotificationsSkipWhenForeground, dashboardIsForeground))
+        {
+            Trace.WriteLine($"[Stats] alert notification skipped ({(_settings.AlertNotificationsEnabled ? "dashboard in foreground" : "notifications off")}): {evt.NotificationTitle}");
+            return;
+        }
+        if (_tray is null)
+        {
+            // The tray was never created (ForceCreate threw at logon / explorer restart) — say so instead of
+            // reporting "requested" and burning a cool-down on a toast nobody can see.
+            Trace.WriteLine("[Stats] alert notification failed: no tray icon: " + evt.NotificationTitle);
+            return;
+        }
+        if (!_alertNotifications.TryAccept(evt.MetricId, nowUtc))
+        {
+            Trace.WriteLine("[Stats] alert notification suppressed by cool-down: " + evt.NotificationTitle);
+            return;
+        }
+        try
+        {
+            _tray.ShowNotification(ClampForShell(evt.NotificationTitle, 63),
+                ClampForShell(evt.NotificationBody(_settings.AlertHoldSeconds), 255),
+                NotificationIcon.Warning, sound: false);
+            Trace.WriteLine("[Stats] alert notification requested: " + evt.NotificationTitle);
+        }
+        catch (Exception ex) { Trace.WriteLine("[Stats] alert notification failed: " + ex.Message); }
+    }
+
+    /// <summary>Shell_NotifyIcon caps a balloon title at 63 characters and its body at 255 (szInfoTitle/szInfo
+    /// minus the terminator); past that H.NotifyIcon truncates or throws, and a throw would silently lose the toast
+    /// for a verbose hardware name — so clamp with an ellipsis instead.</summary>
+    private static string ClampForShell(string text, int max) =>
+        text.Length <= max ? text : text[..(max - 1)] + "…";
 
     /// <summary>Tray icon left-click, "Open dashboard", and "Settings" all funnel through here. Show() alone
     /// covers the "not stale for a poll interval" refresh via the Dashboard window's IsVisibleChanged handler
@@ -756,6 +816,7 @@ public partial class App : Application
                     if (_overlayVm?.IsMoveMode != true) ClickThrough.Set(_overlay, _settings.OverlayClickThrough);
                 }
                 _overlayVm?.ApplyLayout();
+                PushOverlayStatus();
                 break;
             case SettingsChange.Hotkey:
                 ApplyHotkey();
@@ -771,7 +832,12 @@ public partial class App : Application
                 else { _updateCts?.Cancel(); _updateCts?.Dispose(); _updateCts = null; }
                 break;
             case SettingsChange.Alerts:
-                if (_alertEngine is not null) _alertEngine.HoldSeconds = _settings.AlertHoldSeconds;
+                if (_alertEngine is not null)
+                {
+                    _alertEngine.HoldSeconds = _settings.AlertHoldSeconds;
+                    if (!_settings.AlertsEnabled) _alertEngine.Reset(DateTime.UtcNow); // ends in-flight episodes (finalizes "ongoing" rows) so a re-enable starts clean
+                }
+                if (!_settings.AlertsEnabled) _alertNotifications.Reset();
                 break;
             case SettingsChange.Tray:
                 _trayCpuTempDef = TrayMetricSelector.Resolve(_settings.TrayMetricId, _definitions)

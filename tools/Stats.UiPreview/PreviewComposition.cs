@@ -99,7 +99,10 @@ public sealed class PreviewComposition
         int warmupTickCount = Math.Max(1, fixture.Ticks.Count / 4); // 25% of the store's capacity (== fixture.Ticks.Count)
         // "detail-warmup" is the details-view counterpart of "graphs-warmup" — same store-level trim, so the
         // detail window's HistoryChart (fed from the same MetricStore) shows the same 25%-full buffer.
-        var ticksToApply = substates.Contains("graphs-warmup") || substates.Contains("detail-warmup")
+        // "sparklines-warmup" (T3 of docs/superpowers/plans/2026-09-11-overlay-sparklines.md) is the overlay
+        // counterpart of "graphs-warmup"/"detail-warmup" — same store-level trim, so the overlay's Sparkline
+        // (fed from the same MetricStore) shows the same 25%-full buffer with its fixed, right-anchored SampleAxis.
+        var ticksToApply = substates.Contains("graphs-warmup") || substates.Contains("detail-warmup") || substates.Contains("sparklines-warmup")
             ? fixture.Ticks.Skip(Math.Max(0, fixture.Ticks.Count - warmupTickCount)).ToList()
             : fixture.Ticks;
         foreach (var tick in ticksToApply) store.Apply(tick);
@@ -217,6 +220,35 @@ public sealed class PreviewComposition
             case "graphs-effects": c.Settings.SmoothLines = true; c.Settings.GraphEffects = true; break;
             case "graphs-warmup": break; // history already trimmed above, before the ViewModels were built
 
+            // ---- game tiles (2026-09-11-game-tiles-design.md) ----
+            case "game-tiles": ApplyGameTiles(c); break;
+            // Histogram on the FPS metric: its rule is LowerIsWorse, so the marker is p1 at the low end (owner
+            // decision assumed D) — the left-edge marker branch the other captures never exercise.
+            case "game-histogram-fps":
+                c.Settings.PrefFor("fps.avg").Kind = TileKind.Histogram;
+                c.Dashboard.RebuildSections();
+                break;
+            case "game-tiles-large":
+                ApplyGameTiles(c);
+                c.Settings.PrefFor(FrameMetrics.FpsId).Size = TileSize.L;
+                c.Settings.PrefFor(FrameMetrics.FrameTimeId).Size = TileSize.L;
+                c.Dashboard.RebuildSections();
+                break;
+            case "game-tiles-small":
+                ApplyGameTiles(c);
+                c.Settings.PrefFor(FrameMetrics.FpsId).Size = TileSize.S;
+                c.Settings.PrefFor(FrameMetrics.FrameTimeId).Size = TileSize.S;
+                c.Dashboard.RebuildSections();
+                break;
+            case "game-summary-orphan":
+                foreach (var def in c.Definitions)
+                {
+                    if (c.Settings.DashboardMetrics.Contains(def.Id) && GameMetricRoles.RoleOf(def) == GameMetricRole.Fps)
+                        c.Settings.PrefFor(def.Id).Kind = TileKind.FpsSummary;
+                }
+                c.Dashboard.RebuildSections();
+                break;
+
             // ---- details (graph effects) ----
             case "detail-plain": c.Settings.SmoothLines = false; c.Settings.GraphEffects = false; break;
             // Also a no-op against defaults, same as "graphs-effects" above (review N4) — kept as its own named
@@ -232,6 +264,10 @@ public sealed class PreviewComposition
     case "layout-free": c.Dashboard.LayoutMode = DashboardLayoutMode.Free; break;
     case "layout-grid": c.Dashboard.LayoutMode = DashboardLayoutMode.Grid; break;
     case "layout-free-placed": ApplyLayoutFreePlaced(c); break;
+
+            // ---- tile resize by drag (docs/superpowers/specs/2026-09-11-tile-resize-design.md "Preview harness") ----
+            case "layout-resized": ApplyLayoutResized(c); break;
+            case "layout-resize-grip": break; // visual-tree substate — applied in CaptureHost (focuses the first Free container so the grip renders); pair with "layout-free" to reach Free mode first
 
             // ---- picker ----
             case "no-results":
@@ -283,6 +319,12 @@ public sealed class PreviewComposition
                 c.SettingsVm.ApplyManualCheckResult("Update check failed: could not reach github.com (simulated)", failed: true);
                 break;
 
+            // ---- toast alerts (docs/superpowers/specs/2026-09-11-toast-alerts-design.md) ----
+            case "alerts-notify-off":
+                c.Dashboard.IsPickerOpen = true; c.Dashboard.FlyoutTabIndex = 1;
+                c.SettingsVm.AlertNotificationsEnabled = false; // through the VM so the checkbox binding sees it; write-through records one "settings.save"
+                break;
+
             // ---- fans ----
             case "off": c.Fans.Enabled = false; break;
             case "on": c.Fans.Enabled = true; break;
@@ -326,12 +368,56 @@ public sealed class PreviewComposition
                 c.Overlay.Rebuild();
                 break;
 
+            // ---- overlay sparklines (docs/superpowers/specs/2026-09-11-overlay-sparklines-design.md) ----
+            // "sparklines"/"sparklines-off" flip AppSettings.OverlayGraphs then re-run ApplyLayout() so
+            // OverlayViewModel.ShowSparklines picks it up before the window/controls exist — "sparklines" is
+            // documentary (Sparkline is already the default), like "graphs-effects". "sparklines-warmup" needs no
+            // work here; the store-level trim above already applied only the most recent quarter of the fixture's
+            // ticks. "status-line"/"status-line-warn" inject a status through the real OverlayStatusComposer with
+            // fixture inputs in the real producers' formats (game-mode text as GameModeSwitcher.UpdateStatus emits
+            // it, PresentMon text as App.FrameStatus() would hand over) — no real hardware, no GameModeSwitcher
+            // exposure, no timezone-dependent HH:mm.
+            case "sparklines": c.Settings.OverlayGraphs = OverlayGraphs.Sparkline; c.Overlay.ApplyLayout(); break;
+            case "sparklines-off": c.Settings.OverlayGraphs = OverlayGraphs.None; c.Overlay.ApplyLayout(); break;
+            case "sparklines-warmup": break; // history already trimmed above, before the ViewModels were built
+            case "status-line":
+                c.Settings.OverlayStatusLine = true;
+                c.Overlay.ApplyLayout();
+                c.Overlay.SetStatus(OverlayStatusComposer.Compose(
+                    true, "Balanced", new[] { FanChannelStatus.Active, FanChannelStatus.Idle },
+                    "Game mode: gaming (Balanced since 14:30)", null));
+                break;
+            case "status-line-warn":
+                c.Settings.OverlayStatusLine = true;
+                c.Overlay.ApplyLayout();
+                c.Overlay.SetStatus(OverlayStatusComposer.Compose(
+                    true, null, new[] { FanChannelStatus.WriteFailed, FanChannelStatus.Active },
+                    "Game mode: desktop", "PresentMon: access denied (simulated)."));
+                break;
+
             // ---- threshold-dialog ----
             case "valid": case "invalid": case "lower-is-worse": break; // applied in CaptureHost (owns the dialog instance)
 
             default:
                 throw new ArgumentException($"Unknown substate '{substate}'.", nameof(substate));
         }
+    }
+
+    /// <summary>"game-tiles" substate (docs/superpowers/specs/2026-09-11-game-tiles-design.md): sets the FPS
+    /// tile's kind to <see cref="TileKind.FpsSummary"/> and the frame-time tile's kind to
+    /// <see cref="TileKind.Histogram"/> through the public pref API, adding <see cref="FrameMetrics.FrameTimeId"/>
+    /// to the dashboard selection first when it is not already there (the "missing" scenario defines the id but
+    /// never selects it for the dashboard, so applying this substate there is what produces the all-gap
+    /// histogram tile). Documentary on "game" (both prefs are already set by the fixture itself). Shared by
+    /// "game-tiles-large"/"game-tiles-small", which layer a <see cref="TileSize"/> override and their own
+    /// <see cref="DashboardViewModel.RebuildSections"/> call on top.</summary>
+    private static void ApplyGameTiles(PreviewComposition c)
+    {
+        if (!c.Settings.DashboardMetrics.Contains(FrameMetrics.FrameTimeId))
+            c.Settings.DashboardMetrics.Add(FrameMetrics.FrameTimeId);
+        c.Settings.PrefFor(FrameMetrics.FpsId).Kind = TileKind.FpsSummary;
+        c.Settings.PrefFor(FrameMetrics.FrameTimeId).Kind = TileKind.Histogram;
+        c.Dashboard.RebuildSections();
     }
 
     /// <summary>Free layout, seeded, then a few tiles are explicitly moved — including one deliberately overlapping
@@ -353,6 +439,29 @@ public sealed class PreviewComposition
             c.Dashboard.SetTilePosition(tiles[2].Definition.Id, 980, 60);
         if (c.Dashboard.CoreMatrix is not null)
             c.Dashboard.SetCoreMatrixPosition(760, 540); // moved off its seeded (0,0) spot
+    }
+
+    /// <summary>Tile-resize-by-drag preview substate (docs/superpowers/specs/2026-09-11-tile-resize-design.md
+    /// "Preview harness"): Free layout, seeded, then three of the "dense" fixture's seeded tiles are explicitly
+    /// resized through <see cref="DashboardViewModel.SetTileSize"/> — the same VM-level call a grip-drag release or
+    /// Ctrl+Plus/Minus ends in — so the capture shows mixed sizes with top-left anchoring and an extended canvas.
+    /// Reuses the same three CPU tiles <see cref="ApplyLayoutFreePlaced"/> repositions: the "dense" fixture's seed
+    /// pack (<c>Scenarios.Dense</c>) cycles <c>TileSize</c> S, M, L, S, M, L, … across its <c>Tile()</c> calls, so
+    /// tiles[0..2] (cpu.temp.tctl / cpu.power.package / cpu.power.tdc) start at S / M / L respectively:
+    ///   - cpu.temp.tctl: S -> M ("one S-to-M", per the spec)
+    ///   - cpu.power.package: M -> L ("one to L")
+    ///   - cpu.power.tdc: L -> S ("one to S")
+    /// </summary>
+    private static void ApplyLayoutResized(PreviewComposition c)
+    {
+        c.Dashboard.LayoutMode = DashboardLayoutMode.Free; // seeds every still-unplaced tile + the core-matrix block
+        var tiles = c.Dashboard.Tiles;
+        if (tiles.Count >= 3)
+        {
+            c.Dashboard.SetTileSize(tiles[0].Definition.Id, TileSize.M); // cpu.temp.tctl: S -> M
+            c.Dashboard.SetTileSize(tiles[1].Definition.Id, TileSize.L); // cpu.power.package: M -> L
+            c.Dashboard.SetTileSize(tiles[2].Definition.Id, TileSize.S); // cpu.power.tdc: L -> S
+        }
     }
 
     private static void ApplyFanManual(PreviewComposition c)

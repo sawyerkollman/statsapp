@@ -279,6 +279,29 @@ public class SettingsViewModelTests
     }
 
     [Fact]
+    public void OverlayExtras_WriteThroughAndRaiseOverlay()
+    {
+        var (vm, s, changes, saves) = Make();
+        vm.OverlaySparklines = false;
+        vm.OverlayStatusLine = true;
+        Assert.Equal(OverlayGraphs.None, s.OverlayGraphs);
+        Assert.True(s.OverlayStatusLine);
+        Assert.Equal(2, changes.Count(c => c == SettingsChange.Overlay));
+        Assert.Equal(2, saves());
+    }
+
+    [Fact]
+    public void Ctor_SeedsOverlaySparklinesFromEnum_WithoutRaising()
+    {
+        var s = new AppSettings { ThresholdRules = ThresholdDefaults.Rules(), OverlayGraphs = OverlayGraphs.None };
+        var changes = new List<SettingsChange>();
+        var vm = new SettingsViewModel(s, Defs, () => { });
+        vm.Changed += c => changes.Add(c);
+        Assert.False(vm.OverlaySparklines);
+        Assert.Empty(changes);
+    }
+
+    [Fact]
     public void DashboardUiScale_WritesThroughAndRaisesUiScale()
     {
         var (vm, s, changes, _) = Make();
@@ -672,6 +695,37 @@ public class SettingsViewModelTests
         vm.AlertSoundEnabled = true;
         Assert.True(s.AlertSoundEnabled);
         Assert.Contains(SettingsChange.Alerts, changes);
+    }
+
+    // ---- Windows notifications (toast alerts) ----
+
+    [Fact]
+    public void Ctor_LoadsAlertNotificationValuesFromSettings()
+    {
+        var s = new AppSettings { AlertNotificationsEnabled = false, AlertNotificationsSkipWhenForeground = false };
+        var vm = new SettingsViewModel(s, Defs, () => { });
+        Assert.False(vm.AlertNotificationsEnabled);
+        Assert.False(vm.AlertNotificationsSkipWhenForeground);
+    }
+
+    [Fact]
+    public void AlertNotificationsEnabled_WritesThroughAndRaisesAlerts()
+    {
+        var (vm, s, changes, saves) = Make();
+        vm.AlertNotificationsEnabled = false;
+        Assert.False(s.AlertNotificationsEnabled);
+        Assert.Equal(new[] { SettingsChange.Alerts }, changes);
+        Assert.Equal(1, saves());
+    }
+
+    [Fact]
+    public void AlertNotificationsSkipWhenForeground_WritesThroughAndRaisesAlerts()
+    {
+        var (vm, s, changes, saves) = Make();
+        vm.AlertNotificationsSkipWhenForeground = false;
+        Assert.False(s.AlertNotificationsSkipWhenForeground);
+        Assert.Equal(new[] { SettingsChange.Alerts }, changes);
+        Assert.Equal(1, saves());
     }
 
     // ---- Tray metric picker (v1.8 §5) ----

@@ -79,9 +79,13 @@ public sealed partial class SettingsViewModel : ObservableObject
         _alertsEnabled = settings.AlertsEnabled;
         _alertHoldSeconds = settings.AlertHoldSeconds;
         _alertSoundEnabled = settings.AlertSoundEnabled;
+        _alertNotificationsEnabled = settings.AlertNotificationsEnabled;
+        _alertNotificationsSkipWhenForeground = settings.AlertNotificationsSkipWhenForeground;
         _dashboardUiScale = settings.DashboardUiScale;
         _smoothLines = settings.SmoothLines;
         _graphEffects = settings.GraphEffects;
+        _overlaySparklines = settings.OverlayGraphs == OverlayGraphs.Sparkline;
+        _overlayStatusLine = settings.OverlayStatusLine;
 
         foreach (var def in definitions.Where(IsLimitCandidate))
         {
@@ -163,6 +167,11 @@ public sealed partial class SettingsViewModel : ObservableObject
     [ObservableProperty] private bool _alertsEnabled;
     [ObservableProperty] private int _alertHoldSeconds;
     [ObservableProperty] private bool _alertSoundEnabled;
+    /// <summary>Show a Windows notification for a raised alert; see <see cref="AppSettings.AlertNotificationsEnabled"/>.</summary>
+    [ObservableProperty] private bool _alertNotificationsEnabled;
+    /// <summary>Skip the notification while the dashboard is in the foreground; see
+    /// <see cref="AppSettings.AlertNotificationsSkipWhenForeground"/>.</summary>
+    [ObservableProperty] private bool _alertNotificationsSkipWhenForeground;
     /// <summary>Dashboard-wide UI scale (see <see cref="AppSettings.DashboardUiScale"/>); clamped 0.9–1.3.</summary>
     [ObservableProperty] private double _dashboardUiScale;
     /// <summary>Selected entry of <see cref="TrayMetricOptions"/>; the first entry (Id null) is "Auto".</summary>
@@ -171,6 +180,11 @@ public sealed partial class SettingsViewModel : ObservableObject
     [ObservableProperty] private bool _smoothLines;
     /// <summary>Glow, gradients, pulse, and eased bar/gauge fills; see <see cref="AppSettings.GraphEffects"/>.</summary>
     [ObservableProperty] private bool _graphEffects;
+    /// <summary>Mirrors <see cref="AppSettings.OverlayGraphs"/> as a bool for the checkbox — exactly like
+    /// <see cref="OverlayIsVertical"/> mirrors <see cref="AppSettings.OverlayOrientation"/>.</summary>
+    [ObservableProperty] private bool _overlaySparklines;
+    /// <summary>Mirrors <see cref="AppSettings.OverlayStatusLine"/>.</summary>
+    [ObservableProperty] private bool _overlayStatusLine;
 
     public IReadOnlyList<string> ThemePresetNames => ThemePresets.Names;
     public IReadOnlyList<string> AccentSwatches => ThemePresets.AccentSwatches;
@@ -315,6 +329,20 @@ public sealed partial class SettingsViewModel : ObservableObject
         Raise(SettingsChange.Alerts);
     }
 
+    partial void OnAlertNotificationsEnabledChanged(bool value)
+    {
+        if (!_loaded) return;
+        _s.AlertNotificationsEnabled = value;
+        Raise(SettingsChange.Alerts);
+    }
+
+    partial void OnAlertNotificationsSkipWhenForegroundChanged(bool value)
+    {
+        if (!_loaded) return;
+        _s.AlertNotificationsSkipWhenForeground = value;
+        Raise(SettingsChange.Alerts);
+    }
+
     partial void OnSelectedTrayMetricChanged(TrayMetricOption value)
     {
         if (!_loaded) return;
@@ -343,6 +371,20 @@ public sealed partial class SettingsViewModel : ObservableObject
         if (!_loaded) return;
         _s.GraphEffects = value;
         Raise(SettingsChange.Graphs);
+    }
+
+    partial void OnOverlaySparklinesChanged(bool value)
+    {
+        if (!_loaded) return;
+        _s.OverlayGraphs = value ? OverlayGraphs.Sparkline : OverlayGraphs.None;
+        Raise(SettingsChange.Overlay);
+    }
+
+    partial void OnOverlayStatusLineChanged(bool value)
+    {
+        if (!_loaded) return;
+        _s.OverlayStatusLine = value;
+        Raise(SettingsChange.Overlay);
     }
 
     /// <summary>The checkbox is bound TwoWay, so a user click lands here first. Deliberately does not write to

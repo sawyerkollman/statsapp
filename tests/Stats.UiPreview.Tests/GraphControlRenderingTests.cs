@@ -26,6 +26,24 @@ public class GraphControlRenderingTests
         }
     });
 
+    [Fact]
+    public void Histogram_RebuildsWhenAMutableBufferReturnsWithSameSumAndMaximum() => RunSta(() =>
+    {
+        var chart = new HistogramBars();
+        chart.Measure(new Size(300, 150));
+        chart.Arrange(new Rect(0, 0, 300, 150));
+        int[] a = [8, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+        chart.Bins = a;
+        Render(chart);
+        var field = typeof(HistogramBars).GetField("_barsGeometry", BindingFlags.Instance | BindingFlags.NonPublic)!;
+        var first = field.GetValue(chart);
+        chart.Bins = new[] { 5, 5, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 };
+        a[0] = 2; a[1] = 8;
+        chart.Bins = a;
+        Render(chart);
+        Assert.NotSame(first, field.GetValue(chart));
+    });
+
     private static void SetValues(FrameworkElement chart, IReadOnlyList<float> values) =>
         chart.GetType().GetProperty("Values")!.SetValue(chart, values);
 

@@ -74,5 +74,39 @@
   { "Scenario": "dense", "View": "dashboard", "Substate": "layout-grid", "Theme": "Dark Amber", "Width": 1180, "Height": 720, "Method": "rtb", "Output": "artifacts/ui-polish/layout/v13-layout-grid-dark-amber.png" },
   { "Scenario": "dense", "View": "dashboard", "Substate": "layout-grid", "Theme": "Light", "Width": 1180, "Height": 720, "Method": "rtb", "Output": "artifacts/ui-polish/layout/v13-layout-grid-light.png" },
   { "Scenario": "dense", "View": "dashboard", "Substate": "layout-free-placed", "Theme": "Dark Amber", "Width": 1180, "Height": 720, "Method": "rtb", "Output": "artifacts/ui-polish/layout/v13-layout-free-placed-dark-amber.png" },
-  { "Scenario": "dense", "View": "dashboard", "Substate": "layout-free-placed", "Theme": "Light", "Width": 1180, "Height": 720, "Method": "rtb", "Output": "artifacts/ui-polish/layout/v13-layout-free-placed-light.png" }
+  { "Scenario": "dense", "View": "dashboard", "Substate": "layout-free-placed", "Theme": "Light", "Width": 1180, "Height": 720, "Method": "rtb", "Output": "artifacts/ui-polish/layout/v13-layout-free-placed-light.png" },
+
+  { "Method": "rtb", "Scenario": "normal", "View": "settings", "Substate": "category-alerts", "Theme": "Dark Amber", "Width": 1180, "Height": 720, "Output": "artifacts/toast-alerts/v14-settings-alerts-default-dark-amber.png" },
+  { "Method": "rtb", "Scenario": "normal", "View": "settings", "Substate": "category-alerts", "Theme": "Light", "Width": 1180, "Height": 720, "Output": "artifacts/toast-alerts/v14-settings-alerts-default-light.png" },
+  { "Method": "rtb", "Scenario": "normal", "View": "settings", "Substate": "alerts-notify-off+category-alerts", "Theme": "Dark Amber", "Width": 1180, "Height": 720, "Output": "artifacts/toast-alerts/v14-settings-alerts-notify-off-dark-amber.png" },
+  { "Method": "rtb", "Scenario": "normal", "View": "alerts", "Substate": "ongoing", "Theme": "Dark Amber", "Width": 640, "Height": 480, "Output": "artifacts/toast-alerts/v14-alerts-ongoing-unchanged.png" },
+
+  { "Scenario": "dense", "View": "dashboard", "Substate": "layout-resized", "Theme": "Dark Amber", "Width": 1180, "Height": 720, "Method": "rtb", "Output": "artifacts/ui-polish/layout/v14-layout-resized-dark-amber.png" },
+  { "Scenario": "dense", "View": "dashboard", "Substate": "layout-resized", "Theme": "Light", "Width": 1180, "Height": 720, "Method": "rtb", "Output": "artifacts/ui-polish/layout/v14-layout-resized-light.png" },
+  { "Scenario": "dense", "View": "dashboard", "Substate": "layout-free+layout-resize-grip", "Theme": "Dark Amber", "Width": 1180, "Height": 720, "Method": "rtb", "Output": "artifacts/ui-polish/layout/v14-layout-resize-grip-dark-amber.png" },
+
+  { "Method": "rtb", "Scenario": "game", "View": "dashboard", "Theme": "Dark Amber", "Width": 1180, "Height": 720, "Output": "artifacts/game-tiles/v14-dashboard-game-tiles-dark-amber.png" },
+  { "Method": "rtb", "Scenario": "game", "View": "dashboard", "Theme": "Light", "Width": 1180, "Height": 720, "Output": "artifacts/game-tiles/v14-dashboard-game-tiles-light.png" },
+  { "Method": "rtb", "Scenario": "game", "View": "dashboard", "Substate": "game-tiles-large", "Theme": "Dark Amber", "Width": 1180, "Height": 1000, "Output": "artifacts/game-tiles/v14-dashboard-game-tiles-large-dark-amber.png" },
+  { "Method": "rtb", "Scenario": "game", "View": "dashboard", "Substate": "game-histogram-fps", "Theme": "Dark Amber", "Width": 1180, "Height": 720, "Output": "artifacts/game-tiles/v14-dashboard-game-histogram-fps-dark-amber.png" },
+  { "Method": "rtb", "Scenario": "game", "View": "dashboard", "Substate": "game-tiles-small", "Theme": "Dark Amber", "Width": 1180, "Height": 720, "Output": "artifacts/game-tiles/v14-dashboard-game-tiles-small-dark-amber.png" },
+  { "Method": "rtb", "Scenario": "game", "View": "dashboard", "Substate": "graphs-plain", "Theme": "Dark Amber", "Width": 1180, "Height": 720, "Output": "artifacts/game-tiles/v14-dashboard-game-tiles-plain-dark-amber.png" },
+  { "Method": "rtb", "Scenario": "game", "View": "dashboard", "Substate": "graphs-warmup", "Theme": "Dark Amber", "Width": 1180, "Height": 720, "Output": "artifacts/game-tiles/v14-dashboard-game-tiles-warmup-dark-amber.png" },
+  { "Method": "rtb", "Scenario": "gallery", "View": "dashboard", "Substate": "game-summary-orphan", "Theme": "Dark Amber", "Width": 1180, "Height": 1660, "Output": "artifacts/game-tiles/v14-dashboard-game-summary-orphan-dark-amber.png" },
+  { "Method": "rtb", "Scenario": "missing", "View": "dashboard", "Substate": "game-tiles", "Theme": "Dark Amber", "Width": 1180, "Height": 1100, "Output": "artifacts/game-tiles/v14-dashboard-game-tiles-gap-dark-amber.png" },
+  { "Method": "rtb", "Scenario": "game", "View": "dashboard", "Substate": "layout-free", "Theme": "Dark Amber", "Width": 1180, "Height": 720, "Output": "artifacts/game-tiles/v14-dashboard-game-tiles-layout-free-dark-amber.png" },
+  { "Method": "rtb", "Scenario": "game", "View": "dashboard", "Substate": "theme-cycle", "Theme": "Dark Amber", "Width": 1180, "Height": 720, "Output": "artifacts/game-tiles/v14-dashboard-game-tiles-theme-cycle.png" },
+
+  { "Method": "rtb", "Scenario": "normal", "View": "overlay", "Substate": "sparklines", "Theme": "Dark Amber", "Width": 400, "Height": 200, "Output": "artifacts/overlay-sparklines/v13-overlay-sparklines-dark-amber.png" },
+  { "Method": "rtb", "Scenario": "normal", "View": "overlay", "Substate": "sparklines", "Theme": "Light", "Width": 400, "Height": 200, "Output": "artifacts/overlay-sparklines/v13-overlay-sparklines-light.png" },
+  { "Method": "rtb", "Scenario": "normal", "View": "overlay", "Substate": "sparklines-off", "Theme": "Dark Amber", "Width": 400, "Height": 200, "Output": "artifacts/overlay-sparklines/v13-overlay-sparklines-off-dark-amber.png" },
+  { "Method": "rtb", "Scenario": "normal", "View": "overlay", "Substate": "vertical+sparklines-off", "Theme": "Dark Amber", "Width": 200, "Height": 400, "Output": "artifacts/overlay-sparklines/v13-overlay-vertical-sparklines-off-dark-amber.png" },
+  { "Method": "rtb", "Scenario": "normal", "View": "overlay", "Substate": "vertical+sparklines", "Theme": "Dark Amber", "Width": 200, "Height": 400, "Output": "artifacts/overlay-sparklines/v13-overlay-vertical-sparklines-dark-amber.png" },
+  { "Method": "rtb", "Scenario": "thresholds", "View": "overlay", "Substate": "sparklines", "Theme": "Dark Amber", "Width": 400, "Height": 200, "Output": "artifacts/overlay-sparklines/v13-overlay-sparklines-severity-dark-amber.png" },
+  { "Method": "rtb", "Scenario": "normal", "View": "overlay", "Substate": "sparklines-warmup", "Theme": "Dark Amber", "Width": 400, "Height": 200, "Output": "artifacts/overlay-sparklines/v13-overlay-sparklines-warmup-dark-amber.png" },
+  { "Method": "rtb", "Scenario": "normal", "View": "overlay", "Substate": "status-line", "Theme": "Dark Amber", "Width": 400, "Height": 200, "Output": "artifacts/overlay-sparklines/v13-overlay-status-line-dark-amber.png" },
+  { "Method": "rtb", "Scenario": "normal", "View": "overlay", "Substate": "status-line-warn", "Theme": "Dark Amber", "Width": 400, "Height": 200, "Output": "artifacts/overlay-sparklines/v13-overlay-status-line-warn-dark-amber.png" },
+  { "Method": "rtb", "Scenario": "normal", "View": "overlay", "Substate": "status-line-warn", "Theme": "Light", "Width": 400, "Height": 200, "Output": "artifacts/overlay-sparklines/v13-overlay-status-line-warn-light.png" },
+  { "Method": "rtb", "Scenario": "normal", "View": "overlay", "Substate": "vertical+status-line-warn", "Theme": "Dark Amber", "Width": 200, "Height": 400, "Output": "artifacts/overlay-sparklines/v13-overlay-vertical-status-line-warn-dark-amber.png" },
+  { "Method": "rtb", "Scenario": "settings", "View": "settings", "Substate": "category-overlay", "Theme": "Dark Amber", "Width": 1180, "Height": 900, "Output": "artifacts/overlay-sparklines/v13-settings-overlay-dark-amber.png" }
 ]

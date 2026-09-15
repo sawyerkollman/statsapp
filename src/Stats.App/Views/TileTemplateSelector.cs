@@ -13,6 +13,8 @@ public sealed class TileTemplateSelector : DataTemplateSelector
     public DataTemplate? Gauge { get; set; }
     public DataTemplate? Bar { get; set; }
     public DataTemplate? Value { get; set; }
+    public DataTemplate? Histogram { get; set; }
+    public DataTemplate? FpsSummary { get; set; }
 
     public override DataTemplate? SelectTemplate(object item, DependencyObject container)
     {
@@ -23,6 +25,8 @@ public sealed class TileTemplateSelector : DataTemplateSelector
             TileKind.Gauge => Gauge,
             TileKind.Bar => Bar,
             TileKind.Value => Value,
+            TileKind.Histogram => Histogram,
+            TileKind.FpsSummary => FpsSummary,
             _ => Sparkline,
         };
     }
