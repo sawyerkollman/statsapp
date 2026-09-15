@@ -74,5 +74,10 @@
   { "Scenario": "dense", "View": "dashboard", "Substate": "layout-grid", "Theme": "Dark Amber", "Width": 1180, "Height": 720, "Method": "rtb", "Output": "artifacts/ui-polish/layout/v13-layout-grid-dark-amber.png" },
   { "Scenario": "dense", "View": "dashboard", "Substate": "layout-grid", "Theme": "Light", "Width": 1180, "Height": 720, "Method": "rtb", "Output": "artifacts/ui-polish/layout/v13-layout-grid-light.png" },
   { "Scenario": "dense", "View": "dashboard", "Substate": "layout-free-placed", "Theme": "Dark Amber", "Width": 1180, "Height": 720, "Method": "rtb", "Output": "artifacts/ui-polish/layout/v13-layout-free-placed-dark-amber.png" },
-  { "Scenario": "dense", "View": "dashboard", "Substate": "layout-free-placed", "Theme": "Light", "Width": 1180, "Height": 720, "Method": "rtb", "Output": "artifacts/ui-polish/layout/v13-layout-free-placed-light.png" }
+  { "Scenario": "dense", "View": "dashboard", "Substate": "layout-free-placed", "Theme": "Light", "Width": 1180, "Height": 720, "Method": "rtb", "Output": "artifacts/ui-polish/layout/v13-layout-free-placed-light.png" },
+
+  { "Method": "rtb", "Scenario": "normal", "View": "settings", "Substate": "category-alerts", "Theme": "Dark Amber", "Width": 1180, "Height": 720, "Output": "artifacts/toast-alerts/v14-settings-alerts-default-dark-amber.png" },
+  { "Method": "rtb", "Scenario": "normal", "View": "settings", "Substate": "category-alerts", "Theme": "Light", "Width": 1180, "Height": 720, "Output": "artifacts/toast-alerts/v14-settings-alerts-default-light.png" },
+  { "Method": "rtb", "Scenario": "normal", "View": "settings", "Substate": "alerts-notify-off+category-alerts", "Theme": "Dark Amber", "Width": 1180, "Height": 720, "Output": "artifacts/toast-alerts/v14-settings-alerts-notify-off-dark-amber.png" },
+  { "Method": "rtb", "Scenario": "normal", "View": "alerts", "Substate": "ongoing", "Theme": "Dark Amber", "Width": 640, "Height": 480, "Output": "artifacts/toast-alerts/v14-alerts-ongoing-unchanged.png" }
 ]
