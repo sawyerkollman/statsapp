@@ -207,7 +207,7 @@ public sealed class PreviewComposition
                 break;
             case "tile-menu": break; // visual-tree substate — applied in CaptureHost
 
-            // ---- graph effects (T3 of docs/superpowers/plans/2026-09-11-graph-effects.md) ----
+    // ---- graph effects (T3 of docs/superpowers/plans/2026-09-11-graph-effects.md) ----
             // Settings-level, applied here (before the window/controls exist) so GraphStyle.Apply — called by
             // CaptureHost right after Build() returns, still before window.Show() — has the right values in hand
             // before any control's Loaded/OnRender runs. "graphs-effects" is mostly documentary: both settings
@@ -221,8 +221,17 @@ public sealed class PreviewComposition
             case "detail-plain": c.Settings.SmoothLines = false; c.Settings.GraphEffects = false; break;
             // Also a no-op against defaults, same as "graphs-effects" above (review N4) — kept as its own named
             // substate because it targets the details view rather than the dashboard.
-            case "detail-smooth": c.Settings.SmoothLines = true; c.Settings.GraphEffects = true; break;
-            case "detail-warmup": break; // history already trimmed above, before the ViewModels were built
+    case "detail-smooth": c.Settings.SmoothLines = true; c.Settings.GraphEffects = true; break;
+    case "detail-warmup": break; // history already trimmed above, before the ViewModels were built
+
+    // ---- dashboard layout modes (docs/superpowers/specs/2026-09-11-dashboard-layout-modes-design.md) ----
+            // Setting LayoutMode (rather than poking AppSettings.DashboardLayoutMode directly) runs the VM's own
+            // OnLayoutModeChanged hook, which persists, calls RebuildSections(), and — since RebuildSections runs
+            // PlaceUnpositioned() whenever LayoutMode != Auto — seeds every still-null tile/core-matrix position
+            // deterministically. That is the easy, harness-friendly path the design calls out explicitly.
+    case "layout-free": c.Dashboard.LayoutMode = DashboardLayoutMode.Free; break;
+    case "layout-grid": c.Dashboard.LayoutMode = DashboardLayoutMode.Grid; break;
+    case "layout-free-placed": ApplyLayoutFreePlaced(c); break;
 
             // ---- picker ----
             case "no-results":
@@ -323,6 +332,27 @@ public sealed class PreviewComposition
             default:
                 throw new ArgumentException($"Unknown substate '{substate}'.", nameof(substate));
         }
+    }
+
+    /// <summary>Free layout, seeded, then a few tiles are explicitly moved — including one deliberately overlapping
+    /// pair (two tiles given the exact same X/Y) to show overlap is allowed in Free/Snap — and the core-matrix
+    /// block is dragged off its seeded (0,0) spot, all through the same <see cref="DashboardViewModel.SetTilePosition"/>/
+    /// <see cref="DashboardViewModel.SetCoreMatrixPosition"/> paths a real drag or nudge would use.</summary>
+    private static void ApplyLayoutFreePlaced(PreviewComposition c)
+    {
+        c.Dashboard.LayoutMode = DashboardLayoutMode.Free; // seeds every still-unplaced tile + the core-matrix block
+        var tiles = c.Dashboard.Tiles;
+        if (tiles.Count >= 2)
+        {
+            // Deliberately overlapping pair — offset by less than a tile so both stay visible, in the empty
+            // top-middle area the moved core-matrix block leaves behind; proves Free/Snap allows overlap.
+            c.Dashboard.SetTilePosition(tiles[0].Definition.Id, 600, 40);
+            c.Dashboard.SetTilePosition(tiles[1].Definition.Id, 680, 110);
+        }
+        if (tiles.Count >= 3)
+            c.Dashboard.SetTilePosition(tiles[2].Definition.Id, 980, 60);
+        if (c.Dashboard.CoreMatrix is not null)
+            c.Dashboard.SetCoreMatrixPosition(760, 540); // moved off its seeded (0,0) spot
     }
 
     private static void ApplyFanManual(PreviewComposition c)

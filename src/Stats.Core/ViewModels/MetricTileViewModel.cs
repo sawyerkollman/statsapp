@@ -30,6 +30,11 @@ public sealed partial class MetricTileViewModel : ObservableObject
 
     public MetricDefinition Definition { get; }
     public string GroupName => Definition.Group.ToString();
+    /// <summary>Pixel size for the Free/Snap canvas, derived from <see cref="Size"/> via <see cref="TileDimensions"/>
+    /// (dashboard layout modes) — the same numbers <c>TileBorder</c>'s Width/Height bindings already draw with in
+    /// every layout mode.</summary>
+    public double Width => TileDimensions.Of(Size).Width;
+    public double Height => TileDimensions.Of(Size).Height;
 
     [ObservableProperty] private string _displayName;
     [ObservableProperty] private string _unit;
@@ -51,6 +56,12 @@ public sealed partial class MetricTileViewModel : ObservableObject
     [ObservableProperty] private TileKind _kind = TileKind.Sparkline;
     [ObservableProperty] private TileSize _size = TileSize.M;
     [ObservableProperty] private float? _max;
+    /// <summary>Canvas position for Free/Grid dashboard layout (dashboard layout modes); set from
+    /// <see cref="TilePref.X"/>/<see cref="TilePref.Y"/> in <see cref="Refresh"/> (default 0 when unset — Auto
+    /// layout never reads these, and Free/Snap always has a seeded position by the time it renders). Never written
+    /// here directly — <c>DashboardViewModel.SetTilePosition</c> and the seed pack own writes.</summary>
+    [ObservableProperty] private double _x;
+    [ObservableProperty] private double _y;
     [ObservableProperty] private float _fraction01;
     /// <summary>Non-colour severity indicator shown next to the value: "" at Normal, "▲" at Warn, "‼" at Crit —
     /// see the design's accessibility floor (§11). Colour alone (Severity's brush) must never be the only cue.</summary>
@@ -70,6 +81,8 @@ public sealed partial class MetricTileViewModel : ObservableObject
 
         DisplayName = string.IsNullOrWhiteSpace(pref?.Name) ? Definition.DisplayName : pref!.Name!;
         Size = pref?.Size ?? TileSize.M;
+        X = pref?.X ?? 0;
+        Y = pref?.Y ?? 0;
 
         float? limit = _settings.MetricLimits.TryGetValue(Definition.Id, out var l) && l > 0 ? l : null;
         float? explicitMax = pref?.Max is float pm && pm > 0 ? pm : limit;
@@ -106,6 +119,15 @@ public sealed partial class MetricTileViewModel : ObservableObject
     /// Fill Bindings that route through SeverityToBrushConverter re-evaluate and pick up the new brush instance.
     /// Called from the composition root (App), never from Core itself, which stays WPF-free.</summary>
     public void RaiseSeverityRefresh() => OnPropertyChanged(nameof(Severity));
+
+    /// <summary>Width/Height are derived from Size, not independently observable properties — re-raise them
+    /// whenever Size changes (tile-menu resize, or Refresh above) so the Free/Snap canvas item's bound
+    /// Width/Height pick up the new size immediately.</summary>
+    partial void OnSizeChanged(TileSize value)
+    {
+        OnPropertyChanged(nameof(Width));
+        OnPropertyChanged(nameof(Height));
+    }
 
     /// <summary>Copies the current history into whichever of the two buffers is next in rotation, reusing it when
     /// its length still matches (steady state, buffer full) and allocating otherwise (warm-up, or a Resize). Never

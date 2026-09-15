@@ -1,6 +1,8 @@
 <UserControl x:Class="Stats.App.Views.CoreMatrixView"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <!-- Margin="6" means this Border — and therefore the size SetCoreMatrixSize reports — renders 6 px right/below
+         its Canvas.Left/Top, so "drop the block at x=0" in Free/Snap is not flush with a tile dropped at x=0. -->
     <Border Background="{DynamicResource TileBg}" CornerRadius="{StaticResource RadiusPanel}" Margin="6" Padding="12" HorizontalAlignment="Left">
         <DockPanel>
             <TextBlock DockPanel.Dock="Top" Text="Cores — load · clock · temp"

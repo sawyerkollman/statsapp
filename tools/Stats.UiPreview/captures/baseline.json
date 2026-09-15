@@ -67,5 +67,12 @@
   { "Method": "rtb", "Scenario": "normal", "View": "dashboard", "Substate": "graphs-warmup", "Theme": "Dark Amber", "Width": 1180, "Height": 720, "Output": "artifacts/graph-effects/v13-dashboard-graphs-warmup-dark-amber.png" },
   { "Method": "rtb", "Scenario": "normal", "View": "details", "Substate": "detail-plain", "Theme": "Dark Amber", "Width": 640, "Height": 420, "Output": "artifacts/graph-effects/v13-details-detail-plain-dark-amber.png" },
   { "Method": "rtb", "Scenario": "normal", "View": "details", "Substate": "detail-smooth", "Theme": "Dark Amber", "Width": 640, "Height": 420, "Output": "artifacts/graph-effects/v13-details-detail-smooth-dark-amber.png" },
-  { "Method": "rtb", "Scenario": "normal", "View": "details", "Substate": "detail-warmup", "Theme": "Dark Amber", "Width": 640, "Height": 420, "Output": "artifacts/graph-effects/v13-details-detail-warmup-dark-amber.png" }
+  { "Method": "rtb", "Scenario": "normal", "View": "details", "Substate": "detail-warmup", "Theme": "Dark Amber", "Width": 640, "Height": 420, "Output": "artifacts/graph-effects/v13-details-detail-warmup-dark-amber.png" },
+
+  { "Scenario": "dense", "View": "dashboard", "Substate": "layout-free", "Theme": "Dark Amber", "Width": 1180, "Height": 720, "Method": "rtb", "Output": "artifacts/ui-polish/layout/v13-layout-free-dark-amber.png" },
+  { "Scenario": "dense", "View": "dashboard", "Substate": "layout-free", "Theme": "Light", "Width": 1180, "Height": 720, "Method": "rtb", "Output": "artifacts/ui-polish/layout/v13-layout-free-light.png" },
+  { "Scenario": "dense", "View": "dashboard", "Substate": "layout-grid", "Theme": "Dark Amber", "Width": 1180, "Height": 720, "Method": "rtb", "Output": "artifacts/ui-polish/layout/v13-layout-grid-dark-amber.png" },
+  { "Scenario": "dense", "View": "dashboard", "Substate": "layout-grid", "Theme": "Light", "Width": 1180, "Height": 720, "Method": "rtb", "Output": "artifacts/ui-polish/layout/v13-layout-grid-light.png" },
+  { "Scenario": "dense", "View": "dashboard", "Substate": "layout-free-placed", "Theme": "Dark Amber", "Width": 1180, "Height": 720, "Method": "rtb", "Output": "artifacts/ui-polish/layout/v13-layout-free-placed-dark-amber.png" },
+  { "Scenario": "dense", "View": "dashboard", "Substate": "layout-free-placed", "Theme": "Light", "Width": 1180, "Height": 720, "Method": "rtb", "Output": "artifacts/ui-polish/layout/v13-layout-free-placed-light.png" }
 ]
