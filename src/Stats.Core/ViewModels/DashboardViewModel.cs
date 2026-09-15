@@ -442,7 +442,7 @@ public sealed partial class DashboardViewModel : ObservableObject
             };
             foreach (var id in ids)
             {
-                var tile = new MetricTileViewModel(defsById[id], _store[id], _settings);
+                var tile = new MetricTileViewModel(defsById[id], _store[id], _settings, _store);
                 tile.Refresh(thresholds);
                 // Tile-resize-by-drag: the grip (and Ctrl+Plus/Minus) only apply outside Auto — every tile gets
                 // this re-set on every rebuild, including the ones OnLayoutModeChanged triggers, since Tiles is

@@ -671,6 +671,52 @@ public class SettingsServiceTests : IDisposable
         Assert.True(l.AlertNotificationsEnabled);
         Assert.True(l.AlertNotificationsSkipWhenForeground);
     }
+    // ---- tile kind (Histogram / FpsSummary + lenient converter) ----
+
+    [Fact]
+    public void SaveThenLoad_TileKind_HistogramAndFpsSummary_RoundTrip_AsString()
+    {
+        var svc = new SettingsService(_dir);
+        var s = new AppSettings();
+        s.PrefFor("fps.frametime").Kind = TileKind.Histogram;
+        s.PrefFor("fps.avg").Kind = TileKind.FpsSummary;
+        svc.Save(s);
+
+        var json = File.ReadAllText(Path.Combine(_dir, "settings.json"));
+        Assert.Contains("\"Kind\": \"Histogram\"", json);
+        Assert.Contains("\"Kind\": \"FpsSummary\"", json);
+
+        var loaded = new SettingsService(_dir).Load();
+        Assert.Equal(TileKind.Histogram, loaded.TilePrefs["fps.frametime"].Kind);
+        Assert.Equal(TileKind.FpsSummary, loaded.TilePrefs["fps.avg"].Kind);
+    }
+
+    [Theory]
+    [InlineData("Donut")]
+    [InlineData("7")]
+    [InlineData("-1")]
+    public void Load_UnknownTileKind_FallsBackToAuto_WithoutWipingOtherSettings(string kind)
+    {
+        Write($$"""{ "PollIntervalSeconds": 2.5, "TilePrefs": { "a": { "Kind": "{{kind}}" } } }""");
+        var loaded = new SettingsService(_dir).Load();
+        Assert.Equal(TileKind.Auto, loaded.TilePrefs["a"].Kind);
+        // A bad enum string on one tile pref must not fall through to SettingsService.Load's whole-object
+        // catch-all default — everything else in the same file must still have loaded.
+        Assert.Equal(2.5, loaded.PollIntervalSeconds);
+    }
+
+    [Fact]
+    public void Load_NullOrNonStringTileKind_FallsBackToAuto()
+    {
+        Write("""{ "TilePrefs": { "a": { "Kind": null } } }""");
+        Assert.Equal(TileKind.Auto, new SettingsService(_dir).Load().TilePrefs["a"].Kind);
+
+        Write("""{ "TilePrefs": { "a": { "Kind": 7 } } }""");
+        Assert.Equal(TileKind.Auto, new SettingsService(_dir).Load().TilePrefs["a"].Kind);
+
+        Write("""{ "TilePrefs": { "a": { "Kind": {} } } }""");
+        Assert.Equal(TileKind.Auto, new SettingsService(_dir).Load().TilePrefs["a"].Kind);
+    }
     private void Write(string json)
     {
         Directory.CreateDirectory(_dir);

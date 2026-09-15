@@ -10,6 +10,7 @@ using System.Windows.Media;
 using System.Windows.Threading;
 using Stats.App.Controls;
 using Stats.App.Helpers;
+using Stats.Core.Frames;
 using Stats.Core.Settings;
 using Stats.Core.ViewModels;
 
@@ -606,6 +607,18 @@ public partial class DashboardWindow : Window
         return true;
     }
 
+    /// <summary>Every kind offered in the "Tile kind" submenu, in menu order. "Histogram" is offered on every
+    /// tile; "FPS summary" is gated to <see cref="GameMetricRole.Fps"/> tiles below (owner decision B).</summary>
+    private static readonly TileKind[] MenuKinds =
+    {
+        TileKind.Auto, TileKind.Sparkline, TileKind.Gauge, TileKind.Bar, TileKind.Value, TileKind.Histogram, TileKind.FpsSummary,
+    };
+
+    /// <summary>Menu label for a kind — every existing kind keeps its identical ToString() header ("Auto",
+    /// "Sparkline", "Gauge", "Bar", "Value"; "Histogram" also reads fine as-is); only FpsSummary gets a friendlier
+    /// two-word label.</summary>
+    private static string KindHeader(TileKind k) => k switch { TileKind.FpsSummary => "FPS summary", _ => k.ToString() };
+
     /// <summary>Single builder for the tile context menu — used by right-click, the hover "⋯" button, and
     /// Shift+F10/Apps so all three entry points stay in lockstep (see v1.8 §7b).</summary>
     private void OpenTileMenu(FrameworkElement target, MetricTileViewModel tile)
@@ -616,9 +629,10 @@ public partial class DashboardWindow : Window
         var menu = new ContextMenu { PlacementTarget = target };
 
         var kind = new MenuItem { Header = "Tile kind" };
-        foreach (var k in new[] { TileKind.Auto, TileKind.Sparkline, TileKind.Gauge, TileKind.Bar, TileKind.Value })
+        foreach (var k in MenuKinds)
         {
-            var mi = new MenuItem { Header = k.ToString(), IsCheckable = true, IsChecked = CurrentPrefKind(id) == k };
+            if (k == TileKind.FpsSummary && tile.GameRole != GameMetricRole.Fps) continue;
+            var mi = new MenuItem { Header = KindHeader(k), IsCheckable = true, IsChecked = CurrentPrefKind(id) == k };
             mi.Click += (_, _) => vm.SetTileKindEditCommand.Execute(new TileKindEdit(id, k));
             kind.Items.Add(mi);
         }

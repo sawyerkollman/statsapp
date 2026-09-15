@@ -217,6 +217,35 @@ public sealed class PreviewComposition
             case "graphs-effects": c.Settings.SmoothLines = true; c.Settings.GraphEffects = true; break;
             case "graphs-warmup": break; // history already trimmed above, before the ViewModels were built
 
+            // ---- game tiles (2026-09-11-game-tiles-design.md) ----
+            case "game-tiles": ApplyGameTiles(c); break;
+            // Histogram on the FPS metric: its rule is LowerIsWorse, so the marker is p1 at the low end (owner
+            // decision assumed D) — the left-edge marker branch the other captures never exercise.
+            case "game-histogram-fps":
+                c.Settings.PrefFor("fps.avg").Kind = TileKind.Histogram;
+                c.Dashboard.RebuildSections();
+                break;
+            case "game-tiles-large":
+                ApplyGameTiles(c);
+                c.Settings.PrefFor(FrameMetrics.FpsId).Size = TileSize.L;
+                c.Settings.PrefFor(FrameMetrics.FrameTimeId).Size = TileSize.L;
+                c.Dashboard.RebuildSections();
+                break;
+            case "game-tiles-small":
+                ApplyGameTiles(c);
+                c.Settings.PrefFor(FrameMetrics.FpsId).Size = TileSize.S;
+                c.Settings.PrefFor(FrameMetrics.FrameTimeId).Size = TileSize.S;
+                c.Dashboard.RebuildSections();
+                break;
+            case "game-summary-orphan":
+                foreach (var def in c.Definitions)
+                {
+                    if (c.Settings.DashboardMetrics.Contains(def.Id) && GameMetricRoles.RoleOf(def) == GameMetricRole.Fps)
+                        c.Settings.PrefFor(def.Id).Kind = TileKind.FpsSummary;
+                }
+                c.Dashboard.RebuildSections();
+                break;
+
             // ---- details (graph effects) ----
             case "detail-plain": c.Settings.SmoothLines = false; c.Settings.GraphEffects = false; break;
             // Also a no-op against defaults, same as "graphs-effects" above (review N4) — kept as its own named
@@ -342,6 +371,23 @@ public sealed class PreviewComposition
             default:
                 throw new ArgumentException($"Unknown substate '{substate}'.", nameof(substate));
         }
+    }
+
+    /// <summary>"game-tiles" substate (docs/superpowers/specs/2026-09-11-game-tiles-design.md): sets the FPS
+    /// tile's kind to <see cref="TileKind.FpsSummary"/> and the frame-time tile's kind to
+    /// <see cref="TileKind.Histogram"/> through the public pref API, adding <see cref="FrameMetrics.FrameTimeId"/>
+    /// to the dashboard selection first when it is not already there (the "missing" scenario defines the id but
+    /// never selects it for the dashboard, so applying this substate there is what produces the all-gap
+    /// histogram tile). Documentary on "game" (both prefs are already set by the fixture itself). Shared by
+    /// "game-tiles-large"/"game-tiles-small", which layer a <see cref="TileSize"/> override and their own
+    /// <see cref="DashboardViewModel.RebuildSections"/> call on top.</summary>
+    private static void ApplyGameTiles(PreviewComposition c)
+    {
+        if (!c.Settings.DashboardMetrics.Contains(FrameMetrics.FrameTimeId))
+            c.Settings.DashboardMetrics.Add(FrameMetrics.FrameTimeId);
+        c.Settings.PrefFor(FrameMetrics.FpsId).Kind = TileKind.FpsSummary;
+        c.Settings.PrefFor(FrameMetrics.FrameTimeId).Kind = TileKind.Histogram;
+        c.Dashboard.RebuildSections();
     }
 
     /// <summary>Free layout, seeded, then a few tiles are explicitly moved — including one deliberately overlapping

@@ -23,6 +23,14 @@ Uninstall from Settings → Apps; PawnIO is left installed because other tools m
   Stats from the Start menu or desktop shortcut: processes started from the Microsoft Store build of
   PowerShell/Terminal inherit an MSIX identity that Windows blocks from ETW tracing, so FPS
   stays blank there.
+- **Game tiles** — two extra tile kinds for the *Game* group: **FPS summary** on the FPS tile shows the
+  average large, 1% low and frame time small, and a compact bar for 1% low ÷ average (e.g. "64% of avg"),
+  coloured by the 1% low's own severity so it turns amber/red on stutter even while the average looks
+  fine; a missing sibling reads "—". **Histogram** (offered on every tile; pick it from the tile menu — nothing is re-templated automatically) bins the
+  metric's history window into 12 bars with a p99 marker (p1 for lower-is-worse metrics like FPS) — the
+  bars are per-poll averages, not individual frames, so they show the shape of a session, not a per-frame
+  trace. A settings file with either kind opened by an older (1.9.x) Stats build resets all settings to
+  defaults on load; back up `%AppData%\Stats\settings.json` before downgrading.
 - **Fan control** — *Fans* window (toolbar / tray): the header states whether fan control is off
   or on. Every LibreHardwareMonitor-controllable fan (motherboard headers, GPU fans, supported USB
   coolers) has a segmented **Auto / Manual / Curve** control, driven by one or more temperatures
@@ -148,9 +156,10 @@ hash after downloading an update (older releases without a published hash retain
   `%AppData%\Stats\logs\stats-YYYYMMDD.log`; the newest seven daily files are kept, and Settings can
   open the folder.
 - **Tiles** — right-click, the hover **⋯** button, or Shift+F10/the Menu key on a focused tile:
-  kind (Sparkline/Gauge/Bar/Value), size (S/M/L — 160×80/224×144/460×192, with **Larger**/**Smaller**
-  items next to the size menu — **Ctrl+Plus** / **Ctrl+Minus** on a focused tile do the same), rename,
-  gauge max, thresholds, Details…, remove. The value and its unit are shown separately with stable digit
+  kind (Sparkline/Gauge/Bar/Value/Histogram, plus FPS summary on the FPS tile), size (S/M/L —
+  160×80/224×144/460×192, with **Larger**/**Smaller** items next to the size menu — **Ctrl+Plus** /
+  **Ctrl+Minus** on a focused tile do the same), rename, gauge max, thresholds, Details…, remove. The
+  value and its unit are shown separately with stable digit
   widths so readings don't jitter, and the options button sits in a reserved corner so it never
   covers the reading. Empty rows (no limit set, no history yet) are omitted rather than shown
   blank, and a long footer shows a tooltip with the full text. Gauge tiles show the reading beside
