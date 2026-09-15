@@ -158,7 +158,8 @@ public bool AlertNotificationsSkipWhenForeground { get; set; } = true;
 
   Internals: `DateTime? _lastAcceptedUtc` and `Dictionary<string, DateTime> _lastAcceptedByMetricUtc`. A clock
   that steps backwards (negative elapsed) counts as "inside the cool-down" — `DateTime.UtcNow` never does this in
-  practice and the worst case is one dropped toast.
+  practice; if it did, every toast would be refused until the clock passed the last accepted stamp + cool-down
+  (at most 60 s for that metric, 10 s for the rest), never permanently.
 
 - `src/Stats.Core/Alerts/AlertEvent.cs` gains, next to `Message`:
 
@@ -166,8 +167,9 @@ public bool AlertNotificationsSkipWhenForeground { get; set; } = true;
   /// <summary>Toast title, e.g. "CPU Package critical".</summary>
   public string NotificationTitle => $"{DisplayName} critical";
 
-  /// <summary>Toast body, e.g. "96 °C for 10 s (crit ≥ 92)" — peak via ValueFormatter exactly like Message and
-  /// the Peaks row (MetricDefinition built with the default "F0" format, so "96.4" reads "96" everywhere); the
+  /// <summary>Toast body, e.g. "96 °C for 10 s (crit ≥ 92)" — peak via ValueFormatter with the metric's own
+  /// Format (a defaulted trailing `string Format = "F0"` record member, stamped from MetricDefinition.Format by
+  /// AlertEngine.Tick and also used by AlertRowViewModel), so an F1 metric reads "15.7 GB" like its tile; the
   /// threshold is a bare "0.#" invariant number; "≤" for lower-is-worse rules.</summary>
   public string NotificationBody(int holdSeconds) =>
       $"{PeakText} for {holdSeconds} s (crit {Symbol} {ThresholdText})";

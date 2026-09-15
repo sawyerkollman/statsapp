@@ -697,6 +697,37 @@ public class SettingsViewModelTests
         Assert.Contains(SettingsChange.Alerts, changes);
     }
 
+    // ---- Windows notifications (toast alerts) ----
+
+    [Fact]
+    public void Ctor_LoadsAlertNotificationValuesFromSettings()
+    {
+        var s = new AppSettings { AlertNotificationsEnabled = false, AlertNotificationsSkipWhenForeground = false };
+        var vm = new SettingsViewModel(s, Defs, () => { });
+        Assert.False(vm.AlertNotificationsEnabled);
+        Assert.False(vm.AlertNotificationsSkipWhenForeground);
+    }
+
+    [Fact]
+    public void AlertNotificationsEnabled_WritesThroughAndRaisesAlerts()
+    {
+        var (vm, s, changes, saves) = Make();
+        vm.AlertNotificationsEnabled = false;
+        Assert.False(s.AlertNotificationsEnabled);
+        Assert.Equal(new[] { SettingsChange.Alerts }, changes);
+        Assert.Equal(1, saves());
+    }
+
+    [Fact]
+    public void AlertNotificationsSkipWhenForeground_WritesThroughAndRaisesAlerts()
+    {
+        var (vm, s, changes, saves) = Make();
+        vm.AlertNotificationsSkipWhenForeground = false;
+        Assert.False(s.AlertNotificationsSkipWhenForeground);
+        Assert.Equal(new[] { SettingsChange.Alerts }, changes);
+        Assert.Equal(1, saves());
+    }
+
     // ---- Tray metric picker (v1.8 §5) ----
 
     [Fact]

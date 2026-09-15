@@ -1,3 +1,4 @@
+using Stats.Core.Frames;
 using Stats.Core.Metrics;
 using Stats.Core.Sensors;
 using Stats.Core.Settings;
@@ -177,6 +178,23 @@ public class ViewModelTests
         Assert.Equal(TileSize.L, tile.Size);
         Assert.Equal(3000f, tile.Max);
         Assert.Equal(0.8f, tile.Fraction01, 3);
+    }
+
+    [Fact]
+    public void Tile_Kind_Auto_UnchangedForGameMetrics()
+    {
+        var store = new MetricStore(FrameMetrics.Definitions);
+        var s = new AppSettings();
+        var frameTimeDef = FrameMetrics.Definitions.First(d => d.Id == FrameMetrics.FrameTimeId);
+        var avgDef = FrameMetrics.Definitions.First(d => d.Id == FrameMetrics.FpsId);
+        var frameTimeTile = new MetricTileViewModel(frameTimeDef, store[FrameMetrics.FrameTimeId], s);
+        var avgTile = new MetricTileViewModel(avgDef, store[FrameMetrics.FpsId], s);
+
+        frameTimeTile.Refresh();
+        avgTile.Refresh();
+
+        Assert.Equal(TileKind.Sparkline, frameTimeTile.Kind);
+        Assert.Equal(TileKind.Sparkline, avgTile.Kind);
     }
 
     // ---- dashboard (v1 behaviors still hold) ----

@@ -1,3 +1,4 @@
+using Stats.Core.Frames;
 using Stats.Core.Metrics;
 using Stats.Core.Sensors;
 using Stats.Core.Settings;
@@ -483,6 +484,61 @@ public class DashboardViewModelTests
     }
 
     [Fact]
+    public void SetTileSize_SameSize_NoRebuildNoSave()
+    {
+        var (vm, s, _, saves) = Make("gpu.clock");
+        vm.SetTileSize("gpu.clock", TileSize.L);
+        Assert.Equal(1, saves());
+        var tileInstance = vm.Tiles.Single();
+
+        vm.SetTileSize("gpu.clock", TileSize.L); // already L — must not rebuild or save
+
+        Assert.Equal(1, saves()); // no extra save
+        Assert.Same(tileInstance, vm.Tiles.Single()); // no rebuild — RebuildSections would swap in a new instance
+        Assert.Equal(TileSize.L, s.TilePrefs["gpu.clock"].Size);
+    }
+
+    [Fact]
+    public void StepTileSize_UpAndDown_WritesThroughAndSavesOnce()
+    {
+        var (vm, s, _, saves) = Make("gpu.clock"); // default TilePref.Size is M
+
+        vm.StepTileSize("gpu.clock", 1); // M -> L
+        Assert.Equal(TileSize.L, s.TilePrefs["gpu.clock"].Size);
+        Assert.Equal(TileSize.L, vm.Tiles.Single().Size);
+        Assert.Equal(1, saves());
+
+        vm.StepTileSize("gpu.clock", -1); // L -> M
+        Assert.Equal(TileSize.M, s.TilePrefs["gpu.clock"].Size);
+        Assert.Equal(TileSize.M, vm.Tiles.Single().Size);
+        Assert.Equal(2, saves());
+    }
+
+    [Fact]
+    public void StepTileSize_AtL_Up_IsNoOp()
+    {
+        var (vm, s, _, saves) = Make("gpu.clock");
+        vm.SetTileSize("gpu.clock", TileSize.L);
+        int before = saves();
+
+        vm.StepTileSize("gpu.clock", 1); // Step saturates at L; SetTileSize then sees the same size and no-ops
+
+        Assert.Equal(TileSize.L, s.TilePrefs["gpu.clock"].Size);
+        Assert.Equal(before, saves());
+    }
+
+    [Fact]
+    public void StepTileSizeEditCommand_Delegates()
+    {
+        var (vm, s, _, saves) = Make("gpu.clock");
+        vm.StepTileSizeEditCommand.Execute(new TileSizeStep("gpu.clock", 1)); // default M -> L
+
+        Assert.Equal(TileSize.L, s.TilePrefs["gpu.clock"].Size);
+        Assert.Equal(TileSize.L, vm.Tiles.Single().Size);
+        Assert.Equal(1, saves());
+    }
+
+    [Fact]
     public void SetTileMaxEditCommand_WritesThroughPrefs_SameAsSetTileMax()
     {
         var (vm, s, _, saves) = Make("gpu.clock");
@@ -562,5 +618,36 @@ public class DashboardViewModelTests
         Assert.False(vm.IsEmpty);
         vm.RemoveTileCommand.Execute("disk.c");
         Assert.True(vm.IsEmpty);
+    }
+
+    // ---- game tiles (Task 2: RebuildSections passes the store through) ----
+
+    [Fact]
+    public void SetTileKind_Histogram_RebuildsTileAsHistogram_AndSavesOnce()
+    {
+        var (vm, s, _, saves) = Make("gpu.clock");
+        vm.SetTileKind("gpu.clock", TileKind.Histogram);
+        Assert.Equal(TileKind.Histogram, s.TilePrefs["gpu.clock"].Kind);
+        Assert.Equal(TileKind.Histogram, vm.Tiles.Single().Kind);
+        Assert.Equal(1, saves());
+    }
+
+    [Fact]
+    public void RebuildSections_PassesStore_SoFpsSummaryResolvesSiblings()
+    {
+        var store = new MetricStore(FrameMetrics.Definitions);
+        store.Apply(new SensorSnapshot(new Dictionary<string, float?>
+        {
+            [FrameMetrics.FpsId] = 96f,
+            [FrameMetrics.LowId] = 61f,
+            [FrameMetrics.FrameTimeId] = 10.4f,
+        }, DateTime.UtcNow));
+        var s = new AppSettings { DashboardMetrics = new() { FrameMetrics.FpsId } };
+        s.PrefFor(FrameMetrics.FpsId).Kind = TileKind.FpsSummary;
+        var vm = new DashboardViewModel(store, s, () => { });
+
+        var tile = vm.Tiles.Single();
+        Assert.Equal(TileKind.FpsSummary, tile.Kind);
+        Assert.NotEqual("—", tile.FpsLowText);
     }
 }

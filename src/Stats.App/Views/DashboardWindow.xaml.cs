@@ -10,6 +10,7 @@ using System.Windows.Media;
 using System.Windows.Threading;
 using Stats.App.Controls;
 using Stats.App.Helpers;
+using Stats.Core.Frames;
 using Stats.Core.Settings;
 using Stats.Core.ViewModels;
 
@@ -35,6 +36,23 @@ public partial class DashboardWindow : Window
     private Point _coreDragMouseStart;
     private Point _coreDragOrigin;
     private bool _coreDragExceededThreshold;
+
+    // ---- Free/Snap canvas resize state (tile-resize-by-drag) — one "in-flight resize" slot, mirroring the
+    // move-drag fields above; mouse capture guarantees a resize and a move are never both in flight for the
+    // same container. _resizeCandidate is the live nearest-preset (TileDimensions.Nearest), recomputed on every
+    // PreviewMouseMove and applied only on commit.
+    private FrameworkElement? _resizeContainer;
+    private string? _resizeTileId;
+    private Point _resizeMouseStart;
+    private double _resizeOriginWidth;
+    private double _resizeOriginHeight;
+    private bool _resizeExceededThreshold;
+    private TileSize _resizeCandidate;
+    private ResizeOutlineAdorner? _resizeAdorner;
+    /// <summary>The layer <see cref="_resizeAdorner"/> was added to — removal goes through this rather than re-looking
+    /// it up from the adorned container, which may already be detached (a rebuild mid-drag) and would return null,
+    /// leaving the outline painted forever.</summary>
+    private AdornerLayer? _resizeAdornerLayer;
 
     /// <summary>Whichever header button (Metrics or Settings) most recently opened the flyout — Escape returns
     /// keyboard focus here (DESIGN.md §5); falls back to the Metrics button if the flyout was opened some other
@@ -195,15 +213,22 @@ public partial class DashboardWindow : Window
     {
         if (sender is not FrameworkElement container) return;
         if (FindAncestorButtonOrSelf(e.OriginalSource as DependencyObject, container) is not null) return; // never drag from "…" or another button
-        if (e.ClickCount == 2)
+        if (container.DataContext is not MetricTileViewModel tile) return;
+
+        if (FindAncestorNamedOrSelf(e.OriginalSource as DependencyObject, "TileResizeGrip", container) is not null)
         {
-            if (container.DataContext is MetricTileViewModel t) Vm?.OpenTileDetail(t.Definition.Id);
+            StartFreeResize(container, tile, e); // grip hit: always a resize, never a move, no double-click action
             return;
         }
-        if (container.DataContext is not MetricTileViewModel) return;
+
+        if (e.ClickCount == 2)
+        {
+            Vm?.OpenTileDetail(tile.Definition.Id);
+            return;
+        }
         container.Focus(); // makes arrow-key nudge reachable right after this drag/click, not just via Tab-cycling
         _freeDragContainer = container;
-        _freeDragMouseStart = e.GetPosition(this);
+        _freeDragMouseStart = e.GetPosition(ParentCanvas(container));
         _freeDragOrigin = new Point(Canvas.GetLeft(container), Canvas.GetTop(container));
         _freeDragExceededThreshold = false;
         container.CaptureMouse();
@@ -211,8 +236,13 @@ public partial class DashboardWindow : Window
 
     private void FreeTile_PreviewMouseMove(object sender, MouseEventArgs e)
     {
+        if (_resizeContainer is not null && ReferenceEquals(sender, _resizeContainer))
+        {
+            UpdateFreeResize(e);
+            return;
+        }
         if (_freeDragContainer is null || !ReferenceEquals(sender, _freeDragContainer) || e.LeftButton != MouseButtonState.Pressed) return;
-        var delta = e.GetPosition(this) - _freeDragMouseStart;
+        var delta = e.GetPosition(ParentCanvas(_freeDragContainer)) - _freeDragMouseStart;
         if (!_freeDragExceededThreshold)
         {
             if (Math.Abs(delta.X) < SystemParameters.MinimumHorizontalDragDistance &&
@@ -223,8 +253,17 @@ public partial class DashboardWindow : Window
         _freeDragContainer.SetCurrentValue(Canvas.TopProperty, _freeDragOrigin.Y + delta.Y);
     }
 
-    private void FreeTile_PreviewMouseLeftButtonUp(object sender, MouseButtonEventArgs e) => CommitFreeDrag();
-    private void FreeTile_LostMouseCapture(object sender, MouseEventArgs e) => CommitFreeDrag();
+    private void FreeTile_PreviewMouseLeftButtonUp(object sender, MouseButtonEventArgs e)
+    {
+        if (_resizeContainer is not null) CommitFreeResize();
+        else CommitFreeDrag();
+    }
+
+    private void FreeTile_LostMouseCapture(object sender, MouseEventArgs e)
+    {
+        if (_resizeContainer is not null) CommitFreeResize();
+        else CommitFreeDrag();
+    }
 
     private void CommitFreeDrag()
     {
@@ -239,6 +278,101 @@ public partial class DashboardWindow : Window
             PushFinalPosition(container, tile.X, tile.Y);
         }
     }
+
+    // ---- Free/Snap canvas: resize grip drag (tile-resize-by-drag) ----
+    //
+    // A grip drag never moves the tile (position is anchored top-left — owner decision §8) and never opens the
+    // detail window. While dragging, only a ResizeOutlineAdorner is updated (raw dragged rect + nearest S/M/L
+    // preset rect + letter) — the real tile's Width/Height (driven by TilePref.Size via TileSizeToLength) is left
+    // alone until CommitFreeResize calls DashboardViewModel.SetTileSize on release, exactly like the tile menu's
+    // existing Size items. A drag below the system drag threshold is a click (no change), and Esc cancels
+    // (CancelFreeResize) without applying anything.
+
+    private void StartFreeResize(FrameworkElement container, MetricTileViewModel tile, MouseButtonEventArgs e)
+    {
+        container.Focus();
+        _resizeContainer = container;
+        _resizeTileId = tile.Definition.Id;
+        _resizeMouseStart = e.GetPosition(ParentCanvas(container));
+        _resizeOriginWidth = tile.Width;
+        _resizeOriginHeight = tile.Height;
+        _resizeExceededThreshold = false;
+        _resizeCandidate = tile.Size;
+        container.CaptureMouse();
+        e.Handled = true;
+    }
+
+    private void UpdateFreeResize(MouseEventArgs e)
+    {
+        if (_resizeContainer is null || e.LeftButton != MouseButtonState.Pressed) return;
+        var delta = e.GetPosition(ParentCanvas(_resizeContainer)) - _resizeMouseStart;
+        if (!_resizeExceededThreshold)
+        {
+            if (Math.Abs(delta.X) < SystemParameters.MinimumHorizontalDragDistance &&
+                Math.Abs(delta.Y) < SystemParameters.MinimumVerticalDragDistance) return;
+            _resizeExceededThreshold = true;
+            if (AdornerLayer.GetAdornerLayer(_resizeContainer) is AdornerLayer layer)
+            {
+                _resizeAdorner = new ResizeOutlineAdorner(_resizeContainer);
+                _resizeAdornerLayer = layer;
+                layer.Add(_resizeAdorner);
+            }
+        }
+        double w = Math.Max(1, _resizeOriginWidth + delta.X);
+        double h = Math.Max(1, _resizeOriginHeight + delta.Y);
+        _resizeCandidate = TileDimensions.Nearest(w, h);
+        var (candidateW, candidateH) = TileDimensions.Of(_resizeCandidate);
+        _resizeAdorner?.Update(new Rect(0, 0, w, h), new Rect(0, 0, candidateW, candidateH), _resizeCandidate.ToString());
+    }
+
+    /// <summary>Esc while a resize is in flight (<see cref="FreeTile_PreviewKeyDown"/>): releases capture, removes
+    /// the adorner, applies nothing — the tile's size is left exactly as it was.</summary>
+    private void CancelFreeResize()
+    {
+        if (_resizeContainer is null) return;
+        var container = _resizeContainer;
+        _resizeContainer = null;
+        _resizeTileId = null;
+        RemoveResizeAdorner();
+        container.ReleaseMouseCapture();
+    }
+
+    /// <summary>From <see cref="FreeTile_PreviewMouseLeftButtonUp"/> and <see cref="FreeTile_LostMouseCapture"/>,
+    /// same nulling-before-release order as <see cref="CommitFreeDrag"/>: null the slot, remove the adorner,
+    /// release capture, then — only if the drag threshold was exceeded and the candidate differs from the tile's
+    /// current size — call <see cref="DashboardViewModel.SetTileSize"/> (after every field read off the container
+    /// is done; <c>RebuildSections</c> destroys it) and restore focus to the new container for the same id.</summary>
+    private void CommitFreeResize()
+    {
+        if (_resizeContainer is null) return;
+        var container = _resizeContainer;
+        var id = _resizeTileId!;
+        var candidate = _resizeCandidate;
+        var exceeded = _resizeExceededThreshold;
+        _resizeContainer = null;
+        _resizeTileId = null;
+        RemoveResizeAdorner();
+        container.ReleaseMouseCapture();
+        if (!exceeded) return; // a click, not a drag — size unchanged
+        if (container.DataContext is MetricTileViewModel tile && tile.Size != candidate && Vm is DashboardViewModel vm)
+        {
+            vm.SetTileSize(id, candidate);
+            FocusTileById(id);
+        }
+    }
+
+    private void RemoveResizeAdorner()
+    {
+        if (_resizeAdorner is null) return;
+        _resizeAdornerLayer?.Remove(_resizeAdorner);
+        _resizeAdorner = null;
+        _resizeAdornerLayer = null;
+    }
+
+    /// <summary>The Canvas panel hosting <paramref name="container"/> — Free/Snap move and resize drags measure
+    /// mouse positions against this (owner decision assumed §9), not the window, so deltas stay 1:1 under
+    /// ScaledRoot's UI-scale LayoutTransform at every DashboardUiScale.</summary>
+    private static Canvas ParentCanvas(FrameworkElement container) => (Canvas)VisualTreeHelper.GetParent(container);
 
     /// <summary>After a drag commits, deterministically re-paint Canvas.Left/Top with the VM's final (possibly
     /// clamped/snapped) value. <c>Canvas.Left</c>/<c>Top</c> come from a Style setter binding, not a local one — a
@@ -258,9 +392,15 @@ public partial class DashboardWindow : Window
     /// event in the Free canvas's ItemContainerStyle.</summary>
     private void FreeTile_PreviewKeyDown(object sender, KeyEventArgs e)
     {
+        if (e.Key == Key.Escape && _resizeContainer is not null && ReferenceEquals(sender, _resizeContainer))
+        {
+            CancelFreeResize();
+            e.Handled = true;
+            return;
+        }
         if (Vm is not DashboardViewModel vm) return;
         if ((sender as FrameworkElement)?.DataContext is not MetricTileViewModel tile) return;
-        if (!TryGetArrowDelta(e.Key, out var dx, out var dy)) return;
+        if (!TryGetArrowDelta(e.Key, Keyboard.Modifiers, out var dx, out var dy)) return;
         double step = DashboardLayout.GridSize * (Keyboard.Modifiers.HasFlag(ModifierKeys.Shift) ? 4 : 1);
         vm.SetTilePosition(tile.Definition.Id, tile.X + dx * step, tile.Y + dy * step);
         e.Handled = true;
@@ -273,7 +413,7 @@ public partial class DashboardWindow : Window
         if (e.ClickCount == 2) return; // mirrors FreeTile_*'s double-click branch; the block has no double-click action, so just don't start a drag
         container.Focus(); // makes arrow-key nudge reachable right after this drag/click, not just via Tab-cycling
         _coreDragContainer = container;
-        _coreDragMouseStart = e.GetPosition(this);
+        _coreDragMouseStart = e.GetPosition(ParentCanvas(container));
         _coreDragOrigin = new Point(Canvas.GetLeft(container), Canvas.GetTop(container));
         _coreDragExceededThreshold = false;
         container.CaptureMouse();
@@ -282,7 +422,7 @@ public partial class DashboardWindow : Window
     private void CoreMatrixBlock_PreviewMouseMove(object sender, MouseEventArgs e)
     {
         if (_coreDragContainer is null || !ReferenceEquals(sender, _coreDragContainer) || e.LeftButton != MouseButtonState.Pressed) return;
-        var delta = e.GetPosition(this) - _coreDragMouseStart;
+        var delta = e.GetPosition(ParentCanvas(_coreDragContainer)) - _coreDragMouseStart;
         if (!_coreDragExceededThreshold)
         {
             if (Math.Abs(delta.X) < SystemParameters.MinimumHorizontalDragDistance &&
@@ -313,7 +453,7 @@ public partial class DashboardWindow : Window
     private void CoreMatrixBlock_PreviewKeyDown(object sender, KeyEventArgs e)
     {
         if (Vm is not DashboardViewModel vm) return;
-        if (!TryGetArrowDelta(e.Key, out var dx, out var dy)) return;
+        if (!TryGetArrowDelta(e.Key, Keyboard.Modifiers, out var dx, out var dy)) return;
         double step = DashboardLayout.GridSize * (Keyboard.Modifiers.HasFlag(ModifierKeys.Shift) ? 4 : 1);
         vm.SetCoreMatrixPosition(vm.CoreMatrixX + dx * step, vm.CoreMatrixY + dy * step);
         e.Handled = true;
@@ -324,9 +464,10 @@ public partial class DashboardWindow : Window
     private void CoreMatrixBlock_SizeChanged(object sender, SizeChangedEventArgs e) =>
         Vm?.SetCoreMatrixSize(e.NewSize.Width, e.NewSize.Height);
 
-    private static bool TryGetArrowDelta(Key key, out double dx, out double dy)
+    private static bool TryGetArrowDelta(Key key, ModifierKeys modifiers, out double dx, out double dy)
     {
         dx = dy = 0;
+        if ((modifiers & (ModifierKeys.Control | ModifierKeys.Alt | ModifierKeys.Windows)) != 0) return false;
         switch (key)
         {
             case Key.Left: dx = -1; return true;
@@ -351,6 +492,55 @@ public partial class DashboardWindow : Window
             source = VisualTreeHelper.GetParent(source);
         }
         return null;
+    }
+
+    /// <summary>Sibling of <see cref="FindAncestorButtonOrSelf"/>: walks up from <paramref name="source"/>, no
+    /// further than <paramref name="boundary"/> (inclusive), looking for a <see cref="FrameworkElement"/> named
+    /// <paramref name="name"/> — used to detect a mouse-down starting on the resize grip (<c>"TileResizeGrip"</c>,
+    /// the container's ControlTemplate) so it starts a resize instead of a move-drag.</summary>
+    private static DependencyObject? FindAncestorNamedOrSelf(DependencyObject? source, string name, DependencyObject boundary)
+    {
+        while (source is not null)
+        {
+            if (source is FrameworkElement fe && fe.Name == name) return source;
+            if (ReferenceEquals(source, boundary)) break;
+            source = VisualTreeHelper.GetParent(source);
+        }
+        return null;
+    }
+
+    /// <summary>Restores keyboard focus to the container for tile <paramref name="id"/> after a size change
+    /// (grip drag or Ctrl+Plus/Minus) rebuilds every tile view model and container from scratch
+    /// (<see cref="DashboardViewModel.RebuildSections"/>) — deferred to <see cref="DispatcherPriority.Loaded"/>
+    /// (same idiom as <see cref="PickerFlyout_IsVisibleChanged"/>) so the new containers actually exist by the
+    /// time this runs. Searches the Free canvas directly, or, in Auto, each section's nested tiles
+    /// <see cref="ItemsControl"/> — found via the outer Sections <see cref="ItemsControl"/>'s generated
+    /// <see cref="ContentPresenter.ContentTemplate"/> (the default ItemsControl→ContentPresenter container
+    /// generation copies <c>ItemTemplate</c> to <c>ContentTemplate</c>), then <c>FindName</c> within it.</summary>
+    private void FocusTileById(string id)
+    {
+        Dispatcher.BeginInvoke(new Action(() =>
+        {
+            if (Vm is not DashboardViewModel vm) return;
+            if (vm.IsAutoLayout)
+            {
+                foreach (var section in vm.Sections)
+                {
+                    var tile = section.Tiles.FirstOrDefault(t => t.Definition.Id == id);
+                    if (tile is null) continue;
+                    if (SectionsList.ItemContainerGenerator.ContainerFromItem(section) is not ContentPresenter sectionContainer) return;
+                    if (sectionContainer.ContentTemplate?.FindName("SectionTilesList", sectionContainer) is not ItemsControl nested) return;
+                    if (nested.ItemContainerGenerator.ContainerFromItem(tile) is UIElement tileContainer) tileContainer.Focus();
+                    return;
+                }
+            }
+            else
+            {
+                var tile = vm.Tiles.FirstOrDefault(t => t.Definition.Id == id);
+                if (tile is null) return;
+                if (FreeTilesList.ItemContainerGenerator.ContainerFromItem(tile) is UIElement tileContainer) tileContainer.Focus();
+            }
+        }), DispatcherPriority.Loaded);
     }
 
     // ---- tile context menu ----
@@ -378,12 +568,56 @@ public partial class DashboardWindow : Window
     /// focus (see the ItemContainerStyle's Focusable/IsTabStop/FocusVisualStyle setters).</summary>
     private void Tile_PreviewKeyDown(object sender, KeyEventArgs e)
     {
+        if (TryStepTileSize(sender, e)) { e.Handled = true; return; }
+
         bool isMenuKey = e.Key == Key.Apps || (e.Key == Key.F10 && Keyboard.Modifiers == ModifierKeys.Shift);
         if (!isMenuKey) return;
         if ((sender as FrameworkElement)?.DataContext is not MetricTileViewModel tile) return;
         OpenTileMenu((FrameworkElement)sender, tile);
         e.Handled = true;
     }
+
+    /// <summary>Ctrl+Plus/Minus (owner decision assumed §7): steps the tile's size S↔M↔L, saturating silently at
+    /// either end. Wired through the shared <see cref="Tile_PreviewKeyDown"/> EventSetter — already present on
+    /// both the Auto and Free/Snap tile ItemContainerStyles for Shift+F10/Apps — so it works in either layout
+    /// without a second EventSetter. Reports "handled" for the whole key combination once it matches (even at
+    /// saturation, where <see cref="DashboardViewModel.StepTileSize"/> is a no-op) so the ScrollViewer never sees
+    /// Ctrl+Plus/Minus as a scroll gesture.</summary>
+    private bool TryStepTileSize(object sender, KeyEventArgs e)
+    {
+        // A grip drag is in flight: stepping now would rebuild the container under the captured mouse and make
+        // LostMouseCapture apply the drag candidate on top — ignore the key until the drag ends (Esc cancels it).
+        if (_resizeContainer is not null) return false;
+        // Ctrl is required; Shift is tolerated because "+" is Shift+OemPlus on a US layout (the browser/VS zoom
+        // convention, and what the menu's "Ctrl++" gesture text promises); Alt/Win never match.
+        var mods = Keyboard.Modifiers;
+        if ((mods & ModifierKeys.Control) == 0 || (mods & (ModifierKeys.Alt | ModifierKeys.Windows)) != 0) return false;
+        int delta = e.Key switch
+        {
+            Key.OemPlus or Key.Add => 1,
+            Key.OemMinus or Key.Subtract => -1,
+            _ => 0,
+        };
+        if (delta == 0) return false;
+        if (Vm is DashboardViewModel vm && (sender as FrameworkElement)?.DataContext is MetricTileViewModel tile)
+        {
+            vm.StepTileSize(tile.Definition.Id, delta);
+            FocusTileById(tile.Definition.Id);
+        }
+        return true;
+    }
+
+    /// <summary>Every kind offered in the "Tile kind" submenu, in menu order. "Histogram" is offered on every
+    /// tile; "FPS summary" is gated to <see cref="GameMetricRole.Fps"/> tiles below (owner decision B).</summary>
+    private static readonly TileKind[] MenuKinds =
+    {
+        TileKind.Auto, TileKind.Sparkline, TileKind.Gauge, TileKind.Bar, TileKind.Value, TileKind.Histogram, TileKind.FpsSummary,
+    };
+
+    /// <summary>Menu label for a kind — every existing kind keeps its identical ToString() header ("Auto",
+    /// "Sparkline", "Gauge", "Bar", "Value"; "Histogram" also reads fine as-is); only FpsSummary gets a friendlier
+    /// two-word label.</summary>
+    private static string KindHeader(TileKind k) => k switch { TileKind.FpsSummary => "FPS summary", _ => k.ToString() };
 
     /// <summary>Single builder for the tile context menu — used by right-click, the hover "⋯" button, and
     /// Shift+F10/Apps so all three entry points stay in lockstep (see v1.8 §7b).</summary>
@@ -395,9 +629,10 @@ public partial class DashboardWindow : Window
         var menu = new ContextMenu { PlacementTarget = target };
 
         var kind = new MenuItem { Header = "Tile kind" };
-        foreach (var k in new[] { TileKind.Auto, TileKind.Sparkline, TileKind.Gauge, TileKind.Bar, TileKind.Value })
+        foreach (var k in MenuKinds)
         {
-            var mi = new MenuItem { Header = k.ToString(), IsCheckable = true, IsChecked = CurrentPrefKind(id) == k };
+            if (k == TileKind.FpsSummary && tile.GameRole != GameMetricRole.Fps) continue;
+            var mi = new MenuItem { Header = KindHeader(k), IsCheckable = true, IsChecked = CurrentPrefKind(id) == k };
             mi.Click += (_, _) => vm.SetTileKindEditCommand.Execute(new TileKindEdit(id, k));
             kind.Items.Add(mi);
         }
@@ -405,9 +640,28 @@ public partial class DashboardWindow : Window
         foreach (var s in new[] { TileSize.S, TileSize.M, TileSize.L })
         {
             var mi = new MenuItem { Header = s switch { TileSize.S => "Small", TileSize.L => "Large", _ => "Medium" }, IsCheckable = true, IsChecked = tile.Size == s };
-            mi.Click += (_, _) => vm.SetTileSizeEditCommand.Execute(new TileSizeEdit(id, s));
+            mi.Click += (_, _) =>
+            {
+                vm.SetTileSizeEditCommand.Execute(new TileSizeEdit(id, s));
+                FocusTileById(id);
+            };
             size.Items.Add(mi);
         }
+        size.Items.Add(new Separator());
+        var larger = new MenuItem { Header = "Larger", InputGestureText = "Ctrl++", IsEnabled = tile.Size != TileSize.L };
+        larger.Click += (_, _) =>
+        {
+            vm.StepTileSizeEditCommand.Execute(new TileSizeStep(id, 1));
+            FocusTileById(id);
+        };
+        var smaller = new MenuItem { Header = "Smaller", InputGestureText = "Ctrl+-", IsEnabled = tile.Size != TileSize.S };
+        smaller.Click += (_, _) =>
+        {
+            vm.StepTileSizeEditCommand.Execute(new TileSizeStep(id, -1));
+            FocusTileById(id);
+        };
+        size.Items.Add(larger);
+        size.Items.Add(smaller);
         var rename = new MenuItem { Header = "Rename…" };
         rename.Click += (_, _) => PromptRename(vm, tile);
         var setMax = new MenuItem { Header = "Set gauge/bar max…" };

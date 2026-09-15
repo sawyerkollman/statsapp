@@ -1,5 +1,6 @@
 using Stats.Core.Alerts;
 using Stats.Core.Metrics;
+using Stats.Core.ViewModels;
 using Stats.Core.Settings;
 
 namespace Stats.Core.Tests;
@@ -34,6 +35,22 @@ public class AlertEngineTests
         Assert.Equal(96f, evt.PeakValue);
         Assert.Equal(92f, evt.Threshold);
         Assert.False(evt.LowerIsWorse);
+        Assert.Equal("F0", evt.Format);
+    }
+
+    [Fact]
+    public void Raise_StampsTheDefinitionFormat_SoToastAndLogRoundLikeTheTile()
+    {
+        var memUsed = new MetricDefinition("mem.used", "Memory Used", MetricGroup.Memory, "", "GB", "F1");
+        var rule = new ThresholdRule { Group = MetricGroup.Memory, Unit = "GB", Warn = 14, Crit = 15.5f };
+        var engine = new AlertEngine { HoldSeconds = 1 };
+        engine.Tick(new[] { Crit(memUsed, 15.7f, rule) }, T0);
+
+        var evt = Assert.Single(engine.Tick(new[] { Crit(memUsed, 15.7f, rule) }, T0.AddSeconds(1)));
+
+        Assert.Equal("F1", evt.Format);
+        Assert.Equal("15.7 GB for 10 s (crit ≥ 15.5)", evt.NotificationBody(10));
+        Assert.Equal("15.7 GB", new AlertRowViewModel(evt).PeakText);
     }
 
     [Fact]

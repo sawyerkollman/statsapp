@@ -1,5 +1,6 @@
 using System.Globalization;
 using CommunityToolkit.Mvvm.ComponentModel;
+using Stats.Core.Frames;
 using Stats.Core.Metrics;
 using Stats.Core.Settings;
 
@@ -9,6 +10,16 @@ public sealed partial class MetricTileViewModel : ObservableObject
 {
     private readonly MetricHistory _history;
     private readonly AppSettings _settings;
+    private readonly MetricStore? _store;
+    // Game-tiles sibling plumbing (owner decision E): resolved once here, in the constructor, rather than on every
+    // Refresh — a Fps-role tile's siblings never change identity after the dashboard is built (RebuildSections
+    // constructs a fresh MetricTileViewModel whenever the metric selection changes). Left null for every non-Fps
+    // tile and for the overlay path (store == null), so RefreshFpsSummary's "missing sibling" branch covers both
+    // "this metric isn't Fps" and "no store was supplied" with the same checks.
+    private readonly MetricDefinition? _lowDef;
+    private readonly MetricHistory? _lowHistory;
+    private readonly MetricDefinition? _frameTimeDef;
+    private readonly MetricHistory? _frameTimeHistory;
     // Two alternating buffers for HistoryValues (v1.8 §10 "History arrays"): once the ring buffer is full every
     // CopyTo(reuse) call writes into the *other* slot's same-length array, so HistoryValues changes reference
     // every Refresh (WPF's binding sees a change) with zero steady-state allocation. Sparkline/HistoryChart never
@@ -18,18 +29,48 @@ public sealed partial class MetricTileViewModel : ObservableObject
     private float[]? _historyBufferA;
     private float[]? _historyBufferB;
     private bool _nextIsBufferA = true;
+    // Same alternating pattern as HistoryValues above, sized to HistogramBinning.DefaultBinCount instead of the
+    // history buffer's length — HistogramBins always changes reference on every Histogram-kind Refresh.
+    private int[]? _histogramBinsA;
+    private int[]? _histogramBinsB;
+    private bool _nextIsHistogramBinsA = true;
+    // Percentile scratch (HistogramBinning.Percentile) reused across refreshes; reallocated only when
+    // HistoryValues.Length changes (warm-up, or a history-window resize), never on every steady-state tick.
+    private float[]? _percentileScratch;
 
-    public MetricTileViewModel(MetricDefinition definition, MetricHistory history, AppSettings settings)
+    /// <summary>
+    /// <paramref name="store"/> is optional (null keeps every existing call site — and the overlay path, which
+    /// never passes one — source-compatible; see owner decision E). When it is supplied and this tile's
+    /// <see cref="GameMetricRoles.RoleOf"/> is <see cref="GameMetricRole.Fps"/>, the constructor resolves this
+    /// tile's 1%-low and frame-time Game-group siblings by role (never by a hard-coded id) so
+    /// <see cref="RefreshFpsSummary"/> can read them every tick without a lookup.
+    /// </summary>
+    public MetricTileViewModel(MetricDefinition definition, MetricHistory history, AppSettings settings, MetricStore? store = null)
     {
         Definition = definition;
         _history = history;
         _settings = settings;
+        _store = store;
         _displayName = definition.DisplayName;
         _unit = definition.Unit;
+        GameRole = GameMetricRoles.RoleOf(definition);
+
+        if (store is not null && GameRole == GameMetricRole.Fps)
+        {
+            _lowDef = GameMetricRoles.Find(store.Definitions, GameMetricRole.LowFps);
+            if (_lowDef is not null && store.TryGet(_lowDef.Id, out var lowHistory)) _lowHistory = lowHistory;
+
+            _frameTimeDef = GameMetricRoles.Find(store.Definitions, GameMetricRole.FrameTime);
+            if (_frameTimeDef is not null && store.TryGet(_frameTimeDef.Id, out var frameTimeHistory)) _frameTimeHistory = frameTimeHistory;
+        }
     }
 
     public MetricDefinition Definition { get; }
     public string GroupName => Definition.Group.ToString();
+    /// <summary>Which of the three Game-group readings this tile's own metric plays — <see cref="GameMetricRole.None"/>
+    /// for everything outside <see cref="MetricGroup.Game"/>. Computed once from <see cref="Definition"/>; the tile
+    /// menu (Stats.App) uses it to gate the "FPS summary" kind to <see cref="GameMetricRole.Fps"/> tiles only.</summary>
+    public GameMetricRole GameRole { get; }
     /// <summary>Pixel size for the Free/Snap canvas, derived from <see cref="Size"/> via <see cref="TileDimensions"/>
     /// (dashboard layout modes) — the same numbers <c>TileBorder</c>'s Width/Height bindings already draw with in
     /// every layout mode.</summary>
@@ -69,6 +110,44 @@ public sealed partial class MetricTileViewModel : ObservableObject
     /// <summary>Screen-reader label for the whole tile: "&lt;DisplayName&gt;, &lt;CurrentText&gt;, &lt;Severity&gt;"
     /// (e.g. "Tctl, 72.0 °C, Normal"), bound to AutomationProperties.Name in the tile templates.</summary>
     [ObservableProperty] private string _automationLabel = "";
+    /// <summary>Tile-resize-by-drag: whether this tile's resize grip should exist at all — true in Free/Snap, false
+    /// in Auto (the core-matrix block has no <see cref="MetricTileViewModel"/> and is never resizable — owner
+    /// decision §11). Set by <see cref="DashboardViewModel.RebuildSections"/> for every tile on every rebuild
+    /// (including layout-mode switches, which rebuild too), never computed here — this VM has no reference to
+    /// <see cref="DashboardViewModel.LayoutMode"/>.</summary>
+    [ObservableProperty] private bool _isResizable;
+
+    // ---- Histogram/FpsSummary outputs (game tiles) — all computed only when a store was supplied and Kind is
+    // the matching new kind (see RefreshHistogram/RefreshFpsSummary); every other tile keeps these at their
+    // defaults forever, at zero per-tick cost. ----
+
+    /// <summary>12 counts, lowest-value bin first; bound as <c>IReadOnlyList&lt;int&gt;</c> by <c>HistogramBars</c>.</summary>
+    [ObservableProperty] private int[] _histogramBins = Array.Empty<int>();
+    /// <summary><see cref="ValueFormatter.Format(MetricDefinition, float?)"/> of the finite min of <see cref="HistoryValues"/>;
+    /// "" when there is no finite sample.</summary>
+    [ObservableProperty] private string _histogramMinText = "";
+    /// <summary>Same as <see cref="HistogramMinText"/> for the finite max.</summary>
+    [ObservableProperty] private string _histogramMaxText = "";
+    /// <summary><see cref="HistogramBinning.Fraction"/> of the marker percentile within [min, max]; NaN = no marker
+    /// (all-gap buffer).</summary>
+    [ObservableProperty] private double _histogramMarkerFraction = double.NaN;
+    /// <summary>"p99 17.6 ms" / "p1 58 fps" — the marker's rank and formatted value; "" when there is no data.</summary>
+    [ObservableProperty] private string _histogramMarkerText = "";
+    /// <summary>The 1%-low Game-group sibling's formatted current value (e.g. "92 fps"); "—" when the sibling
+    /// definition or history is missing, or its current value is null/NaN (<see cref="ValueFormatter.Format"/>
+    /// already returns "—" for that).</summary>
+    [ObservableProperty] private string _fpsLowText = "—";
+    /// <summary>Same as <see cref="FpsLowText"/> for the frame-time Game-group sibling (e.g. "6.9 ms").</summary>
+    [ObservableProperty] private string _fpsFrameTimeText = "—";
+    /// <summary>The 1% low's own governing threshold rule (never this tile's own rule) — so the ratio bar/text
+    /// colour goes amber/red on stutter even while the average is fine. <see cref="Severity.Normal"/> when there is
+    /// no 1%-low sibling.</summary>
+    [ObservableProperty] private Severity _fpsLowSeverity;
+    [ObservableProperty] private string _fpsLowSeverityGlyph = "";
+    /// <summary>1%-low ÷ average, clamped to [0, 1]; 0 when either is unavailable.</summary>
+    [ObservableProperty] private float _fpsLowRatio;
+    /// <summary>"64% of avg"; "" under the same condition as <see cref="FpsLowRatio"/> staying 0.</summary>
+    [ObservableProperty] private string _fpsRatioText = "";
 
     /// <summary>Recomputes every displayed field from the current <see cref="MetricHistory"/>/settings.
     /// <paramref name="thresholds"/>, when supplied, is a pre-built (Group, Unit) index the caller (typically
@@ -105,20 +184,42 @@ public sealed partial class MetricTileViewModel : ObservableObject
             ? string.Create(CultureInfo.InvariantCulture, $"{cur / lim * 100:F0}% of {ValueFormatter.Format(Definition, lim)}")
             : "";
         HistoryValues = NextHistoryBuffer();
+        if (_store is not null)
+        {
+            if (Kind == TileKind.Histogram) RefreshHistogram(thresholds);
+            else if (Kind == TileKind.FpsSummary) RefreshFpsSummary(thresholds);
+        }
         HistorySampleCapacity = _history.Capacity;
         // The requested window can be clamped (HistoryCapacity.Compute) to fit the [30, 3600]-sample buffer, so
         // the tag reports what the buffer actually covers — capacity × current poll interval — not the request.
         HistoryWindowTag = HistoryCapacity.FormatWindow(_history.Capacity * _settings.PollIntervalSeconds);
 
         SeverityGlyph = Severity switch { Severity.Crit => "‼", Severity.Warn => "▲", _ => "" };
-        AutomationLabel = $"{DisplayName}, {CurrentText}, {Severity}";
+        var automationLabel = $"{DisplayName}, {CurrentText}, {Severity}";
+        if (Kind == TileKind.Histogram && HistogramMarkerText.Length > 0)
+        {
+            automationLabel = $"{automationLabel}, {HistogramMarkerText}";
+        }
+        else if (Kind == TileKind.FpsSummary)
+        {
+            automationLabel = FpsLowText == "—"
+                ? $"{automationLabel}, 1% low unavailable, frame time {FpsFrameTimeText}"
+                : $"{automationLabel}, 1% low {FpsLowText}, {FpsLowSeverity}, frame time {FpsFrameTimeText}";
+            if (FpsRatioText.Length > 0) automationLabel = $"{automationLabel}, {FpsRatioText}";
+        }
+        AutomationLabel = automationLabel;
     }
 
-    /// <summary>Re-raises PropertyChanged(Severity) without changing the value — used after a live theme switch
-    /// (Stats.App's ThemeManager.Apply replaces brush entries rather than mutating them) so the Foreground/Stroke/
-    /// Fill Bindings that route through SeverityToBrushConverter re-evaluate and pick up the new brush instance.
-    /// Called from the composition root (App), never from Core itself, which stays WPF-free.</summary>
-    public void RaiseSeverityRefresh() => OnPropertyChanged(nameof(Severity));
+    /// <summary>Re-raises PropertyChanged(Severity) (and, for the FpsSummary ratio bar, FpsLowSeverity) without
+    /// changing either value — used after a live theme switch (Stats.App's ThemeManager.Apply replaces brush
+    /// entries rather than mutating them) so the Foreground/Stroke/Fill Bindings that route through
+    /// SeverityToBrushConverter re-evaluate and pick up the new brush instance. Called from the composition root
+    /// (App), never from Core itself, which stays WPF-free.</summary>
+    public void RaiseSeverityRefresh()
+    {
+        OnPropertyChanged(nameof(Severity));
+        OnPropertyChanged(nameof(FpsLowSeverity));
+    }
 
     /// <summary>Width/Height are derived from Size, not independently observable properties — re-raise them
     /// whenever Size changes (tile-menu resize, or Refresh above) so the Free/Snap canvas item's bound
@@ -142,10 +243,91 @@ public sealed partial class MetricTileViewModel : ObservableObject
         return buffer;
     }
 
+    /// <summary>Same alternating-buffer pattern as <see cref="NextHistoryBuffer"/>, sized to
+    /// <see cref="HistogramBinning.DefaultBinCount"/> instead of the history length (that count never changes),
+    /// so it always reuses one of the same two arrays once warm.</summary>
+    private int[] NextHistogramBinsBuffer()
+    {
+        var reuse = _nextIsHistogramBinsA ? _histogramBinsA : _histogramBinsB;
+        var buffer = reuse is not null && reuse.Length == HistogramBinning.DefaultBinCount
+            ? reuse
+            : new int[HistogramBinning.DefaultBinCount];
+        if (_nextIsHistogramBinsA) _histogramBinsA = buffer; else _histogramBinsB = buffer;
+        _nextIsHistogramBinsA = !_nextIsHistogramBinsA;
+        return buffer;
+    }
+
     private TileKind ResolveKind(TileKind preferred, float? explicitMax)
     {
+        if (preferred == TileKind.FpsSummary) return GameRole == GameMetricRole.Fps ? TileKind.FpsSummary : TileKind.Sparkline;
         if (preferred != TileKind.Auto) return preferred;
         bool loadPercent = Definition.Unit == "%" && Definition.Group is MetricGroup.Cpu or MetricGroup.Gpu;
         return loadPercent || explicitMax is not null ? TileKind.Gauge : TileKind.Sparkline;
+    }
+
+    /// <summary>Bins <see cref="HistoryValues"/> into <see cref="HistogramBins"/> and computes the marker (owner
+    /// decision D: p99 for a metric whose governing rule is not <see cref="ThresholdRule.LowerIsWorse"/>, p1 —
+    /// labelled "p1" — when it is). All-gap buffer → bins stay zero, both range texts and the marker text go to
+    /// "", the marker fraction goes to NaN (<see cref="HistogramBinning.Bin"/>/<see cref="HistogramBinning.Fraction"/>
+    /// already produce those values; this only skips the marker/text formatting that would otherwise format NaN).</summary>
+    private void RefreshHistogram(ThresholdIndex? thresholds)
+    {
+        var samples = HistoryValues;
+        var bins = NextHistogramBinsBuffer();
+        int finite = HistogramBinning.Bin(samples, bins, out var min, out var max);
+        HistogramBins = bins;
+
+        if (finite == 0)
+        {
+            HistogramMinText = "";
+            HistogramMaxText = "";
+            HistogramMarkerFraction = double.NaN;
+            HistogramMarkerText = "";
+            return;
+        }
+
+        HistogramMinText = ValueFormatter.Format(Definition, min);
+        HistogramMaxText = ValueFormatter.Format(Definition, max);
+
+        var rule = thresholds is not null ? thresholds.RuleFor(Definition) : ThresholdEvaluator.RuleFor(Definition, _settings);
+        bool lowerIsWorse = rule?.LowerIsWorse == true;
+        double p = lowerIsWorse ? 0.01 : 0.99;
+
+        if (_percentileScratch is null || _percentileScratch.Length != samples.Length)
+            _percentileScratch = new float[samples.Length];
+        float markerValue = HistogramBinning.Percentile(samples, p, _percentileScratch);
+
+        HistogramMarkerFraction = HistogramBinning.Fraction(markerValue, min, max);
+        HistogramMarkerText = $"p{(lowerIsWorse ? 1 : 99)} {ValueFormatter.Format(Definition, markerValue)}";
+    }
+
+    /// <summary>Formats the 1%-low/frame-time siblings resolved in the constructor (owner decision C: by
+    /// <see cref="GameMetricRole"/>, never a hard-coded id) and the low/average ratio bar. A missing sibling
+    /// definition (no store, or no matching Game-group definition) leaves its text at "—" and the ratio at 0 — the
+    /// same result <see cref="ValueFormatter.Format"/> already gives for a present-but-gapped sibling, so both
+    /// cases render identically.</summary>
+    private void RefreshFpsSummary(ThresholdIndex? thresholds)
+    {
+        float? low = _lowHistory?.Current;
+        FpsLowText = _lowDef is null || _lowHistory is null ? "—" : ValueFormatter.Format(_lowDef, low);
+        FpsFrameTimeText = _frameTimeDef is null || _frameTimeHistory is null
+            ? "—"
+            : ValueFormatter.Format(_frameTimeDef, _frameTimeHistory.Current);
+        FpsLowSeverity = _lowDef is null
+            ? Severity.Normal
+            : thresholds is not null ? thresholds.Evaluate(_lowDef, low) : ThresholdEvaluator.Evaluate(_lowDef, low, _settings);
+        FpsLowSeverityGlyph = FpsLowSeverity switch { Severity.Crit => "‼", Severity.Warn => "▲", _ => "" };
+
+        var avg = _history.Current;
+        if (avg is float a && a > 0 && low is float l)
+        {
+            FpsLowRatio = Math.Clamp(l / a, 0f, 1f);
+            FpsRatioText = string.Create(CultureInfo.InvariantCulture, $"{FpsLowRatio * 100:F0}% of avg");
+        }
+        else
+        {
+            FpsLowRatio = 0f;
+            FpsRatioText = "";
+        }
     }
 }
