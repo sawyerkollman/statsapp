@@ -137,6 +137,16 @@ public sealed class AppSettings
     /// <summary>Skip the notification while the dashboard window is visible and active (the user is already looking
     /// at it). Hidden to tray, minimized, or behind another app still notifies.</summary>
     public bool AlertNotificationsSkipWhenForeground { get; set; } = true;
+
+    // ---- overlay sparklines ----
+    /// <summary>Whether overlay tiles draw a sparkline beside/below their value. See
+    /// <see cref="OverlayGraphsConverter"/> for why an unrecognized stored value falls back to
+    /// <see cref="Settings.OverlayGraphs.Sparkline"/> instead of throwing.</summary>
+    [JsonConverter(typeof(OverlayGraphsConverter))]
+    public OverlayGraphs OverlayGraphs { get; set; } = OverlayGraphs.Sparkline;
+    /// <summary>Optional one-line status strip (fan control state / game mode / PresentMon reason) at the
+    /// overlay's bottom edge; collapses when no source has anything to say. See <see cref="ViewModels.OverlayStatusComposer"/>.</summary>
+    public bool OverlayStatusLine { get; set; }
     /// <summary>Get-or-create the TilePref for a metric id.</summary>
     public TilePref PrefFor(string metricId)
     {

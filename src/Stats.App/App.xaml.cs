@@ -263,7 +263,7 @@ public partial class App : Application
         // immediately whenever the window *becomes* visible — including a --minimized launch's first ShowDashboard()
         // and every subsequent hide/show — so a freshly shown window is never stale for a whole poll interval.
         _dashboard.IsVisibleChanged += (_, e) => { if (e.NewValue is true) { _dashboardVm.RefreshAll(); _dashboardVm.SetGroupStatus(MetricGroup.Game, FrameStatus()); } };
-        _overlay.IsVisibleChanged += (_, e) => { if (e.NewValue is true) _overlayVm?.RefreshAll(); };
+        _overlay.IsVisibleChanged += (_, e) => { if (e.NewValue is true) { _overlayVm?.RefreshAll(); PushOverlayStatus(); } };
         _overlay.IsVisibleChanged += (_, e) => _dashboardVm.IsOverlayVisible = e.NewValue is true;
         SessionEnding += (_, _) => ExitApp();
         if (!startMinimized) _dashboard.Show(); // --minimized: dashboard/tray/services/poller are still fully constructed above, just not shown
@@ -426,6 +426,21 @@ public partial class App : Application
         return cut > 0 ? msg[..(cut + 1)] : msg;
     }
 
+    /// <summary>Composes the overlay status strip from already-published state and pushes it (no-op when
+    /// unchanged). UI thread only; reads published state only (rule 1) and never calls a FanController setter,
+    /// SetMode, ApplyProfile or Enabled's setter (rule 6).</summary>
+    private void PushOverlayStatus()
+    {
+        if (_overlayVm is null || _settings is null || !_settings.OverlayStatusLine) return;
+        bool fanEnabled = _fanController is { } fc && fc.Enabled;                 // getter only: brief lock on AppSettings.SyncRoot
+        string? profile = fanEnabled ? _fanController!.ActiveProfile : null;
+        IReadOnlyList<FanChannelStatus> statuses = fanEnabled
+            ? _fanController!.Statuses()                                           // status-only read: no per-channel view allocation each tick
+            : Array.Empty<FanChannelStatus>();
+        string? game = _settings.GameModeEnabled ? _gameMode?.StatusText : null;   // volatile string composed on the poll thread
+        _overlayVm.SetStatus(OverlayStatusComposer.Compose(fanEnabled, profile, statuses, game, FrameStatus()));
+    }
+
     private void RestoreWindowBounds()
     {
         if (_dashboard is null || _settings is null) return;
@@ -548,7 +563,7 @@ public partial class App : Application
             _dashboardVm.RefreshAll();
             _dashboardVm.SetGroupStatus(MetricGroup.Game, FrameStatus());
         }
-        if (_overlay is { IsVisible: true }) _overlayVm?.RefreshAll();
+        if (_overlay is { IsVisible: true }) { _overlayVm?.RefreshAll(); PushOverlayStatus(); }
         UpdateTrayTooltip();
         if (_settings?.AlertsEnabled == true) EvaluateAlerts();
         if (_peaks is { IsVisible: true }) _peaksVm?.Refresh();
@@ -801,6 +816,7 @@ public partial class App : Application
                     if (_overlayVm?.IsMoveMode != true) ClickThrough.Set(_overlay, _settings.OverlayClickThrough);
                 }
                 _overlayVm?.ApplyLayout();
+                PushOverlayStatus();
                 break;
             case SettingsChange.Hotkey:
                 ApplyHotkey();

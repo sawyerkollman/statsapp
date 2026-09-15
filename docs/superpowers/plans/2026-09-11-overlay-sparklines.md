@@ -10,7 +10,7 @@ published state only), 2 (`MetricGroup` untouched), 3 (settings defaults/compat)
 packages), 6 (fan safety — read-only use of `FanController`), 7/8 (no app launch/PresentMon from the shell; build +
 tests + `tools/Stats.UiPreview --method rtb` are the only automated evidence).
 
-- [ ] **Task 1 — Core + settings** (`feat(core):`). `OverlayGraphs` enum + `OverlayGraphsConverter` (lenient,
+- [x] **Task 1 — Core + settings** (`feat(core):`). `OverlayGraphs` enum + `OverlayGraphsConverter` (lenient,
       fallback `Sparkline`), `AppSettings.OverlayGraphs`/`OverlayStatusLine` in a `// ---- overlay sparklines ----`
       block, `SettingsViewModel.OverlaySparklines`/`OverlayStatusLine` (write-through, `Raise(SettingsChange.Overlay)`,
       seeded before `_loaded`), `OverlayStatus` record + `OverlayStatusComposer.Compose(...)`,
@@ -24,7 +24,7 @@ tests + `tools/Stats.UiPreview --method rtb` are the only automated evidence).
       (new), `tests/Stats.Core.Tests/ViewModelTests.cs`, `tests/Stats.Core.Tests/SettingsViewModelTests.cs`,
       `tests/Stats.Core.Tests/SettingsServiceTests.cs`.
       Gate: build 0 warnings; tests green 0 warnings; `Stats.Core` still references no WPF type.
-- [ ] **Task 2 — Overlay view + composition root** (`feat(app):`). `OverlayWindow.xaml`: `xmlns:controls`, tiles
+- [x] **Task 2 — Overlay view + composition root** (`feat(app):`). `OverlayWindow.xaml`: `xmlns:controls`, tiles
       host named `TilesHost`, value row `StackPanel` bound through the existing `OverlayOrientation` converter,
       `controls:Sparkline` (`Width=56`, `Height` bound to `ValueText.ActualHeight`, `Values`/`Capacity`/`Stroke`
       bindings, `ShowGuides=False`, `IsHitTestVisible=False`, `Visibility` from `ShowSparklines`, orientation
@@ -43,7 +43,7 @@ tests + `tools/Stats.UiPreview --method rtb` are the only automated evidence).
       `dotnet run --project tools/Stats.UiPreview -- --scenario normal --view overlay --method rtb --output artifacts/overlay-sparklines/smoke.png`
       (default settings → sparklines on) succeeds with an empty sidecar `Warnings` array and a visible sparkline
       beside each value; the same with `--substate vertical` shows it below each value.
-- [ ] **Task 3 — Harness + docs** (`feat(tools):` for the harness commit, then `docs:` for README/evidence).
+- [x] **Task 3 — Harness + docs** (`feat(tools):` for the harness commit, then `docs:` for README/evidence).
       `SubstateCatalog.ByView["overlay"]` += `sparklines`, `sparklines-off`, `sparklines-warmup`, `status-line`,
       `status-line-warn`; `PreviewComposition`: the `Build()` warm-up trim condition extended with
       `sparklines-warmup`, and a `// ---- overlay sparklines ----` block in `ApplySubstate` per the spec's table
@@ -58,7 +58,7 @@ tests + `tools/Stats.UiPreview --method rtb` are the only automated evidence).
       (new), `docs/overlay-sparklines/EVIDENCE.md` (new), `README.md`. (`artifacts/` is git-ignored; captures stay
       local.)
       Gate: build 0 warnings; tests green 0 warnings; all eleven captures rendered with no sidecar warnings.
-- [ ] **Task 4 — Review**: Opus whole-branch review against the spec (rule 1/6 read-only fan use, rule 3 compat,
+- [x] **Task 4 — Review**: Opus whole-branch review against the spec (rule 1/6 read-only fan use, rule 3 compat,
       off-path identity, no theme-replaced brush on the panel, no continuous animation, XAML binding paths) + fix
       wave (`fix(core):`/`fix(app):`/`fix(tools):`), findings in `docs/overlay-sparklines/REVIEW.md`; the reviewer
       captures the plain `--view overlay` (400×200, rtb, Dark Amber) from a `feature/v1.10` worktree and confirms

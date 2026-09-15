@@ -99,7 +99,10 @@ public sealed class PreviewComposition
         int warmupTickCount = Math.Max(1, fixture.Ticks.Count / 4); // 25% of the store's capacity (== fixture.Ticks.Count)
         // "detail-warmup" is the details-view counterpart of "graphs-warmup" — same store-level trim, so the
         // detail window's HistoryChart (fed from the same MetricStore) shows the same 25%-full buffer.
-        var ticksToApply = substates.Contains("graphs-warmup") || substates.Contains("detail-warmup")
+        // "sparklines-warmup" (T3 of docs/superpowers/plans/2026-09-11-overlay-sparklines.md) is the overlay
+        // counterpart of "graphs-warmup"/"detail-warmup" — same store-level trim, so the overlay's Sparkline
+        // (fed from the same MetricStore) shows the same 25%-full buffer with its fixed, right-anchored SampleAxis.
+        var ticksToApply = substates.Contains("graphs-warmup") || substates.Contains("detail-warmup") || substates.Contains("sparklines-warmup")
             ? fixture.Ticks.Skip(Math.Max(0, fixture.Ticks.Count - warmupTickCount)).ToList()
             : fixture.Ticks;
         foreach (var tick in ticksToApply) store.Apply(tick);
@@ -363,6 +366,33 @@ public sealed class PreviewComposition
                 if (c.Settings.OverlayMetrics.Count > 0)
                     c.Settings.PrefFor(c.Settings.OverlayMetrics[0]).Name = "Very Long Overlay Metric Label For Width";
                 c.Overlay.Rebuild();
+                break;
+
+            // ---- overlay sparklines (docs/superpowers/specs/2026-09-11-overlay-sparklines-design.md) ----
+            // "sparklines"/"sparklines-off" flip AppSettings.OverlayGraphs then re-run ApplyLayout() so
+            // OverlayViewModel.ShowSparklines picks it up before the window/controls exist — "sparklines" is
+            // documentary (Sparkline is already the default), like "graphs-effects". "sparklines-warmup" needs no
+            // work here; the store-level trim above already applied only the most recent quarter of the fixture's
+            // ticks. "status-line"/"status-line-warn" inject a status through the real OverlayStatusComposer with
+            // fixture inputs in the real producers' formats (game-mode text as GameModeSwitcher.UpdateStatus emits
+            // it, PresentMon text as App.FrameStatus() would hand over) — no real hardware, no GameModeSwitcher
+            // exposure, no timezone-dependent HH:mm.
+            case "sparklines": c.Settings.OverlayGraphs = OverlayGraphs.Sparkline; c.Overlay.ApplyLayout(); break;
+            case "sparklines-off": c.Settings.OverlayGraphs = OverlayGraphs.None; c.Overlay.ApplyLayout(); break;
+            case "sparklines-warmup": break; // history already trimmed above, before the ViewModels were built
+            case "status-line":
+                c.Settings.OverlayStatusLine = true;
+                c.Overlay.ApplyLayout();
+                c.Overlay.SetStatus(OverlayStatusComposer.Compose(
+                    true, "Balanced", new[] { FanChannelStatus.Active, FanChannelStatus.Idle },
+                    "Game mode: gaming (Balanced since 14:30)", null));
+                break;
+            case "status-line-warn":
+                c.Settings.OverlayStatusLine = true;
+                c.Overlay.ApplyLayout();
+                c.Overlay.SetStatus(OverlayStatusComposer.Compose(
+                    true, null, new[] { FanChannelStatus.WriteFailed, FanChannelStatus.Active },
+                    "Game mode: desktop", "PresentMon: access denied (simulated)."));
                 break;
 
             // ---- threshold-dialog ----

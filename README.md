@@ -206,7 +206,12 @@ hash after downloading an update (older releases without a published hash retain
   mode lets mouse pass through (turn off in Settings to drag it); "Reset overlay position" if it gets lost;
   the tray's **Move overlay** item enters a move mode (click-through off, dashed outline, drag it into
   place) without changing your saved click-through setting — exit via the same menu item (now "Done
-  moving overlay"), **Esc**, or toggling the overlay.
+  moving overlay"), **Esc**, or toggling the overlay. Settings → Overlay → **Sparklines beside each value**
+  (on by default) draws a compact per-metric sparkline beside the value horizontally or below it vertically,
+  from the same history window and Smooth lines / Glow and motion effects as the dashboard. **Status line**
+  (off by default) adds a strip at the overlay's bottom edge showing the active fan profile (with
+  write-failed / source-unavailable faults), game mode, and why FPS is unavailable — it only appears when
+  one of those has something to say.
 - **Tray** — icon shows CPU temp by default (or the metric you pick in Settings), tinted by severity;
   close button hides to tray; left-click reopens; right-click: dashboard / overlay / peaks / settings /
   move overlay / exit; alert notifications click through to the dashboard the same way.

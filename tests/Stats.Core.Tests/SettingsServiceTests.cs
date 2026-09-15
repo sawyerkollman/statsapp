@@ -140,6 +140,8 @@ public class SettingsServiceTests : IDisposable
         Assert.True(l.ShowCoreMatrix);
         Assert.Equal("Ctrl+Shift+O", l.OverlayHotkey);
         Assert.Equal(Stats.Core.Metrics.ThresholdDefaults.Rules().Count, l.ThresholdRules.Count);
+        Assert.Equal(OverlayGraphs.Sparkline, l.OverlayGraphs);
+        Assert.False(l.OverlayStatusLine);
     }
 
     [Theory]
@@ -716,6 +718,37 @@ public class SettingsServiceTests : IDisposable
 
         Write("""{ "TilePrefs": { "a": { "Kind": {} } } }""");
         Assert.Equal(TileKind.Auto, new SettingsService(_dir).Load().TilePrefs["a"].Kind);
+    }
+
+    // ---- overlay sparklines ----
+
+    [Theory]
+    [InlineData("\"Bars\"")]
+    [InlineData("\"99\"")]
+    [InlineData("\"-1\"")]
+    [InlineData("7")]
+    [InlineData("null")]
+    [InlineData("{}")]
+    [InlineData("[]")]
+    public void Load_BadOverlayGraphs_FallsBackToSparkline_KeepingOtherFields(string badValue)
+    {
+        Write($$"""{ "PollIntervalSeconds": 2.0, "OverlayStatusLine": true, "OverlayGraphs": {{badValue}} }""");
+        var loaded = new SettingsService(_dir).Load();
+        Assert.Equal(OverlayGraphs.Sparkline, loaded.OverlayGraphs);
+        Assert.Equal(2.0, loaded.PollIntervalSeconds);
+        Assert.True(loaded.OverlayStatusLine);
+    }
+
+    [Fact]
+    public void SaveThenLoad_RoundTripsOverlayGraphs_AsMemberName()
+    {
+        var svc = new SettingsService(_dir);
+        svc.Save(new AppSettings { OverlayGraphs = OverlayGraphs.None, OverlayStatusLine = true });
+        var json = File.ReadAllText(Path.Combine(_dir, "settings.json"));
+        Assert.Contains("\"OverlayGraphs\": \"None\"", json);
+        var loaded = new SettingsService(_dir).Load();
+        Assert.Equal(OverlayGraphs.None, loaded.OverlayGraphs);
+        Assert.True(loaded.OverlayStatusLine);
     }
     private void Write(string json)
     {
