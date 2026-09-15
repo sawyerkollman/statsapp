@@ -203,7 +203,7 @@ public partial class DashboardWindow : Window
         if (container.DataContext is not MetricTileViewModel) return;
         container.Focus(); // makes arrow-key nudge reachable right after this drag/click, not just via Tab-cycling
         _freeDragContainer = container;
-        _freeDragMouseStart = e.GetPosition(this);
+        _freeDragMouseStart = e.GetPosition(ParentCanvas(container));
         _freeDragOrigin = new Point(Canvas.GetLeft(container), Canvas.GetTop(container));
         _freeDragExceededThreshold = false;
         container.CaptureMouse();
@@ -212,7 +212,7 @@ public partial class DashboardWindow : Window
     private void FreeTile_PreviewMouseMove(object sender, MouseEventArgs e)
     {
         if (_freeDragContainer is null || !ReferenceEquals(sender, _freeDragContainer) || e.LeftButton != MouseButtonState.Pressed) return;
-        var delta = e.GetPosition(this) - _freeDragMouseStart;
+        var delta = e.GetPosition(ParentCanvas(_freeDragContainer)) - _freeDragMouseStart;
         if (!_freeDragExceededThreshold)
         {
             if (Math.Abs(delta.X) < SystemParameters.MinimumHorizontalDragDistance &&
@@ -260,7 +260,7 @@ public partial class DashboardWindow : Window
     {
         if (Vm is not DashboardViewModel vm) return;
         if ((sender as FrameworkElement)?.DataContext is not MetricTileViewModel tile) return;
-        if (!TryGetArrowDelta(e.Key, out var dx, out var dy)) return;
+        if (!TryGetArrowDelta(e.Key, Keyboard.Modifiers, out var dx, out var dy)) return;
         double step = DashboardLayout.GridSize * (Keyboard.Modifiers.HasFlag(ModifierKeys.Shift) ? 4 : 1);
         vm.SetTilePosition(tile.Definition.Id, tile.X + dx * step, tile.Y + dy * step);
         e.Handled = true;
@@ -273,7 +273,7 @@ public partial class DashboardWindow : Window
         if (e.ClickCount == 2) return; // mirrors FreeTile_*'s double-click branch; the block has no double-click action, so just don't start a drag
         container.Focus(); // makes arrow-key nudge reachable right after this drag/click, not just via Tab-cycling
         _coreDragContainer = container;
-        _coreDragMouseStart = e.GetPosition(this);
+        _coreDragMouseStart = e.GetPosition(ParentCanvas(container));
         _coreDragOrigin = new Point(Canvas.GetLeft(container), Canvas.GetTop(container));
         _coreDragExceededThreshold = false;
         container.CaptureMouse();
@@ -282,7 +282,7 @@ public partial class DashboardWindow : Window
     private void CoreMatrixBlock_PreviewMouseMove(object sender, MouseEventArgs e)
     {
         if (_coreDragContainer is null || !ReferenceEquals(sender, _coreDragContainer) || e.LeftButton != MouseButtonState.Pressed) return;
-        var delta = e.GetPosition(this) - _coreDragMouseStart;
+        var delta = e.GetPosition(ParentCanvas(_coreDragContainer)) - _coreDragMouseStart;
         if (!_coreDragExceededThreshold)
         {
             if (Math.Abs(delta.X) < SystemParameters.MinimumHorizontalDragDistance &&
@@ -313,7 +313,7 @@ public partial class DashboardWindow : Window
     private void CoreMatrixBlock_PreviewKeyDown(object sender, KeyEventArgs e)
     {
         if (Vm is not DashboardViewModel vm) return;
-        if (!TryGetArrowDelta(e.Key, out var dx, out var dy)) return;
+        if (!TryGetArrowDelta(e.Key, Keyboard.Modifiers, out var dx, out var dy)) return;
         double step = DashboardLayout.GridSize * (Keyboard.Modifiers.HasFlag(ModifierKeys.Shift) ? 4 : 1);
         vm.SetCoreMatrixPosition(vm.CoreMatrixX + dx * step, vm.CoreMatrixY + dy * step);
         e.Handled = true;
@@ -324,9 +324,10 @@ public partial class DashboardWindow : Window
     private void CoreMatrixBlock_SizeChanged(object sender, SizeChangedEventArgs e) =>
         Vm?.SetCoreMatrixSize(e.NewSize.Width, e.NewSize.Height);
 
-    private static bool TryGetArrowDelta(Key key, out double dx, out double dy)
+    private static bool TryGetArrowDelta(Key key, ModifierKeys modifiers, out double dx, out double dy)
     {
         dx = dy = 0;
+        if ((modifiers & (ModifierKeys.Control | ModifierKeys.Alt | ModifierKeys.Windows)) != 0) return false;
         switch (key)
         {
             case Key.Left: dx = -1; return true;
@@ -336,6 +337,8 @@ public partial class DashboardWindow : Window
             default: return false;
         }
     }
+
+    private static Canvas ParentCanvas(FrameworkElement container) => (Canvas)VisualTreeHelper.GetParent(container);
 
     /// <summary>Walks up from <paramref name="source"/>, no further than <paramref name="boundary"/> (inclusive),
     /// looking for a Button — used to keep a click on the tile's hover "…" menu button (or any other interactive

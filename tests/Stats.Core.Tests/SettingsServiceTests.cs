@@ -516,6 +516,36 @@ public class SettingsServiceTests : IDisposable
         Assert.True(loaded.FanSafetyBannerCollapsed);
     }
 
+    // ---- graph effects ----
+
+    [Fact]
+    public void Load_MissingFile_SmoothLinesAndGraphEffects_DefaultTrue()
+    {
+        var s = new SettingsService(_dir).Load();
+        Assert.True(s.SmoothLines);
+        Assert.True(s.GraphEffects);
+    }
+
+    [Fact]
+    public void SaveThenLoad_SmoothLinesAndGraphEffects_RoundTrip()
+    {
+        var svc = new SettingsService(_dir);
+        svc.Save(new AppSettings { SmoothLines = false, GraphEffects = false });
+        var loaded = new SettingsService(_dir).Load();
+        Assert.False(loaded.SmoothLines);
+        Assert.False(loaded.GraphEffects);
+    }
+
+    [Fact]
+    public void Load_PreGraphEffectsFile_DefaultsBothToTrue()
+    {
+        // A file saved before v1.10 has neither field — missing bools must still load as true, not false.
+        Write("""{ "PollIntervalSeconds": 1.0, "DashboardMetrics": [ "a" ] }""");
+        var l = new SettingsService(_dir).Load();
+        Assert.True(l.SmoothLines);
+        Assert.True(l.GraphEffects);
+    }
+
     // ---- dashboard layout modes ----
 
     [Fact]
@@ -612,36 +642,6 @@ public class SettingsServiceTests : IDisposable
         Assert.Null(pref.Y);
     }
 
-    // ---- graph effects ----
-
-    [Fact]
-    public void Load_MissingFile_SmoothLinesAndGraphEffects_DefaultTrue()
-    {
-        var s = new SettingsService(_dir).Load();
-        Assert.True(s.SmoothLines);
-        Assert.True(s.GraphEffects);
-    }
-
-    [Fact]
-    public void SaveThenLoad_SmoothLinesAndGraphEffects_RoundTrip()
-    {
-        var svc = new SettingsService(_dir);
-        svc.Save(new AppSettings { SmoothLines = false, GraphEffects = false });
-        var loaded = new SettingsService(_dir).Load();
-        Assert.False(loaded.SmoothLines);
-        Assert.False(loaded.GraphEffects);
-    }
-
-    [Fact]
-    public void Load_PreGraphEffectsFile_DefaultsBothToTrue()
-    {
-        // A file saved before v1.10 has neither field — missing bools must still load as true, not false.
-        Write("""{ "PollIntervalSeconds": 1.0, "DashboardMetrics": [ "a" ] }""");
-        var l = new SettingsService(_dir).Load();
-        Assert.True(l.SmoothLines);
-        Assert.True(l.GraphEffects);
-    }
-
     // ---- toast alerts ----
 
     [Fact]
@@ -671,7 +671,6 @@ public class SettingsServiceTests : IDisposable
         Assert.True(l.AlertNotificationsEnabled);
         Assert.True(l.AlertNotificationsSkipWhenForeground);
     }
-
     private void Write(string json)
     {
         Directory.CreateDirectory(_dir);
