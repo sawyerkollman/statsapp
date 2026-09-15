@@ -2,6 +2,7 @@
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:views="clr-namespace:Stats.App.Views"
+        xmlns:controls="clr-namespace:Stats.App.Controls"
         xmlns:vm="clr-namespace:Stats.Core.ViewModels;assembly=Stats.Core"
         Title="Stats" Width="1180" Height="720" MinWidth="860" MinHeight="600"
         Background="{DynamicResource WindowBg}">
@@ -171,7 +172,7 @@
                         <Binding Path="IsEmpty" Converter="{StaticResource InverseBool}"/>
                     </MultiBinding>
                 </ScrollViewer.Visibility>
-                <ItemsControl Margin="16,16,16,16" ItemsSource="{Binding Sections}">
+                <ItemsControl x:Name="SectionsList" Margin="16,16,16,16" ItemsSource="{Binding Sections}">
                     <ItemsControl.ItemTemplate>
                         <DataTemplate>
                             <Expander IsExpanded="{Binding IsExpanded, Mode=TwoWay}" Margin="0,24,0,0">
@@ -205,7 +206,7 @@
                                             </DataTemplate>
                                         </ContentControl.Resources>
                                     </ContentControl>
-                                    <ItemsControl ItemsSource="{Binding Tiles}"
+                                    <ItemsControl x:Name="SectionTilesList" ItemsSource="{Binding Tiles}"
                                                   ItemTemplateSelector="{StaticResource TileSelector}">
                                         <ItemsControl.ItemsPanel>
                                             <ItemsPanelTemplate>
@@ -268,6 +269,9 @@
                         </ItemsControl.ItemTemplate>
                     </ItemsControl>
 
+                    <!-- AdornerDecorator: the resize outline adorner renders into this layer (clipped and scrolled with the
+                         canvas) instead of the window's, so it never paints over the header — layout-transparent. -->
+                    <AdornerDecorator>
                     <Grid Width="{Binding CanvasWidth}" Height="{Binding CanvasHeight}"
                           HorizontalAlignment="Left" VerticalAlignment="Top">
                         <!-- Core-matrix block layer: a single-item Canvas so Canvas.Left/Top (bound to the window's
@@ -299,14 +303,19 @@
                              ItemContainerStyle verbatim — see DashboardWindow.xaml.cs. Drag uses new FreeTile_* handlers
                              (direct Canvas.Left/Top manipulation) instead of Auto's DragDrop.DoDragDrop reorder path;
                              a second PreviewKeyDown EventSetter adds arrow-key nudge alongside the reused menu-key one. -->
-                        <ItemsControl ItemsSource="{Binding Tiles}" ItemTemplateSelector="{StaticResource TileSelector}">
+                        <controls:TileCanvasItemsControl x:Name="FreeTilesList" ItemsSource="{Binding Tiles}" ItemTemplateSelector="{StaticResource TileSelector}">
                             <ItemsControl.ItemsPanel>
                                 <ItemsPanelTemplate>
                                     <Canvas/>
                                 </ItemsPanelTemplate>
                             </ItemsControl.ItemsPanel>
                             <ItemsControl.ItemContainerStyle>
-                                <Style TargetType="ContentPresenter">
+                                <!-- Containers are ContentControls (TileCanvasItemsControl), not the default
+                                     ContentPresenter, so a Template can add the resize grip alongside the tile's
+                                     own content without touching any of the five tile DataTemplates (owner
+                                     decision assumed §2). Every setter/EventSetter below is unchanged from the
+                                     ContentPresenter style it replaces. -->
+                                <Style TargetType="ContentControl">
                                     <Setter Property="Canvas.Left" Value="{Binding X}"/>
                                     <Setter Property="Canvas.Top" Value="{Binding Y}"/>
                                     <Setter Property="Focusable" Value="True"/>
@@ -320,10 +329,49 @@
                                     <EventSetter Event="Button.Click" Handler="TileMenuButton_Click"/>
                                     <EventSetter Event="PreviewKeyDown" Handler="Tile_PreviewKeyDown"/>
                                     <EventSetter Event="PreviewKeyDown" Handler="FreeTile_PreviewKeyDown"/>
+                                    <Setter Property="Template">
+                                        <Setter.Value>
+                                            <ControlTemplate TargetType="ContentControl">
+                                                <Grid>
+                                                    <!-- Named so the focus trigger below can stamp Tag="FocusWithin" on it: TileMenuButtonStyle's
+                                                         keyboard-focus reveal binds AncestorType=ContentPresenter, which inside this template
+                                                         resolves to THIS presenter (a descendant of the focused ContentControl, whose own
+                                                         IsKeyboardFocusWithin is always false) — the Tag relays the container's focus state. -->
+                                                    <ContentPresenter x:Name="TileContent"/>
+                                                    <!-- Icon glyph declared here (not in TileResizeGripStyle): a
+                                                         Style Setter can't hold a shared Path instance reused
+                                                         across every tile container's grip — this ControlTemplate
+                                                         is re-instantiated fresh per container, so it's safe here. -->
+                                                    <Border x:Name="TileResizeGrip" Style="{StaticResource TileResizeGripStyle}">
+                                                        <Path Style="{StaticResource IconGlyph}" Data="{StaticResource Icon.ResizeGrip}"
+                                                              Fill="{DynamicResource TextSecondary}" Width="12" Height="12" Focusable="False"/>
+                                                    </Border>
+                                                </Grid>
+                                                <ControlTemplate.Triggers>
+                                                    <!-- Shown on hover or keyboard-focus-within (same recipe as
+                                                         TileMenuButtonStyle); the IsResizable DataTrigger is last
+                                                         so it wins over both when the tile isn't resizable
+                                                         (MetricTileViewModel.IsResizable is false only in Auto,
+                                                         which never uses this template — defense in depth). -->
+                                                    <Trigger Property="IsMouseOver" Value="True">
+                                                        <Setter TargetName="TileResizeGrip" Property="Visibility" Value="Visible"/>
+                                                    </Trigger>
+                                                    <Trigger Property="IsKeyboardFocusWithin" Value="True">
+                                                        <Setter TargetName="TileResizeGrip" Property="Visibility" Value="Visible"/>
+                                                        <Setter TargetName="TileContent" Property="Tag" Value="FocusWithin"/>
+                                                    </Trigger>
+                                                    <DataTrigger Binding="{Binding IsResizable}" Value="False">
+                                                        <Setter TargetName="TileResizeGrip" Property="Visibility" Value="Collapsed"/>
+                                                    </DataTrigger>
+                                                </ControlTemplate.Triggers>
+                                            </ControlTemplate>
+                                        </Setter.Value>
+                                    </Setter>
                                 </Style>
                             </ItemsControl.ItemContainerStyle>
-                        </ItemsControl>
+                        </controls:TileCanvasItemsControl>
                     </Grid>
+                    </AdornerDecorator>
                 </DockPanel>
             </ScrollViewer>
 

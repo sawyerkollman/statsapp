@@ -9,7 +9,8 @@ internal static class SubstateCatalog
     {
         ["dashboard"] = new[] { "collapsed-all", "tile-menu", "degraded", "sensor-failure", "update-offered", "update-progress", "update-error", "fps-hint", "theme-cycle",
             "graphs-plain", "graphs-effects", "graphs-warmup",
-            "layout-free", "layout-grid", "layout-free-placed" },
+            "layout-free", "layout-grid", "layout-free-placed",
+            "layout-resized", "layout-resize-grip" },
         ["picker"] = new[] { "no-results", "filtered" },
         ["settings"] = new[] { "theme-dropdown", "invalid-threshold", "invalid-limit", "invalid-hotkey", "restart-required", "startup-checking", "startup-error", "update-checking", "update-error",
             "category-appearance", "category-monitoring", "category-alerts", "category-overlay", "category-system", "alerts-notify-off" },

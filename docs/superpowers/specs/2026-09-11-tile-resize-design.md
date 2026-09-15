@@ -165,8 +165,8 @@ setting to hide the grip; changing the three preset dimensions; changing the see
 - **Tests (Core)** in `tests/Stats.Core.Tests/DashboardLayoutTests.cs` (`TileDimensionsTests`):
   `Nearest_ExactPreset_ReturnsIt` (theory over S/M/L); `Nearest_Midpoints_TieGoesLarger` (the exact midpoint between
   S and M → M, between M and L → L); `Nearest_TinyOrNegative_ReturnsS` ((0,0), (-5,-5), (NaN,NaN));
-  `Nearest_Huge_ReturnsL` ((2000, 900)); `Nearest_WideButShort_PicksByDistance` ((400, 80) → M, since
-  M (224,144) is nearer than L (460,192)); `Step_SaturatesAtEnds` (S,-1 → S; L,+1 → L; M,+1 → L; M,-1 → S).
+  `Nearest_Huge_ReturnsL` ((2000, 900)); `Nearest_WideButShort_PicksByDistance` ((350, 80) → M: dist² to M (224,144) is 126²+64² = 19 972, to L
+  (460,192) it is 110²+112² = 24 644 — a width-only rule would have said L); `Step_SaturatesAtEnds` (S,-1 → S; L,+1 → L; M,+1 → L; M,-1 → S).
 - **Tests (Core)** in `DashboardViewModelTests.cs` / `DashboardLayoutModeTests.cs`: `SetTileSize_SameSize_NoRebuildNoSave`;
   `StepTileSize_UpAndDown_WritesThroughAndSavesOnce`; `StepTileSize_AtL_Up_IsNoOp`; `StepTileSizeEditCommand_Delegates`;
   `IsResizable_TrueInFreeAndGrid_FalseInAuto_AndAfterModeSwitch`; the existing

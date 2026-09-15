@@ -12,6 +12,11 @@ public sealed record TileKindEdit(string Id, TileKind Kind);
 /// <summary>Parameter for <see cref="DashboardViewModel.SetTileSizeEditCommand"/>.</summary>
 public sealed record TileSizeEdit(string Id, TileSize Size);
 
+/// <summary>Parameter for <see cref="DashboardViewModel.StepTileSizeEditCommand"/> (Ctrl+Plus/Minus and the tile
+/// menu's Size submenu's Larger/Smaller items) — <paramref name="Delta"/> is +1/-1, stepped through
+/// <see cref="Settings.TileDimensions.Step"/>.</summary>
+public sealed record TileSizeStep(string Id, int Delta);
+
 /// <summary>Parameter for <see cref="DashboardViewModel.SetTileMaxEditCommand"/>.</summary>
 public sealed record TileMaxEdit(string Id, float? Max);
 

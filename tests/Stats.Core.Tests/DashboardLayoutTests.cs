@@ -15,6 +15,62 @@ public class TileDimensionsTests
         Assert.Equal(width, w);
         Assert.Equal(height, h);
     }
+
+    [Theory]
+    [InlineData(TileSize.S)]
+    [InlineData(TileSize.M)]
+    [InlineData(TileSize.L)]
+    public void Nearest_ExactPreset_ReturnsIt(TileSize size)
+    {
+        var (w, h) = TileDimensions.Of(size);
+        Assert.Equal(size, TileDimensions.Nearest(w, h));
+    }
+
+    [Fact]
+    public void Nearest_Midpoints_TieGoesLarger()
+    {
+        // Exact midpoint between S (160,80) and M (224,144) is (192,112): dist²(S) = 32²+32² = dist²(M) — tie → M.
+        Assert.Equal(TileSize.M, TileDimensions.Nearest(192.0, 112.0));
+        // Exact midpoint between M (224,144) and L (460,192) is (342,168): dist²(M) = 118²+24² = dist²(L) — tie → L.
+        Assert.Equal(TileSize.L, TileDimensions.Nearest(342.0, 168.0));
+    }
+
+    [Theory]
+    [InlineData(0.0, 0.0)]
+    [InlineData(-5.0, -5.0)]
+    [InlineData(double.NaN, double.NaN)]
+    public void Nearest_TinyOrNegative_ReturnsS(double width, double height)
+    {
+        Assert.Equal(TileSize.S, TileDimensions.Nearest(width, height));
+    }
+
+    [Fact]
+    public void Nearest_Huge_ReturnsL()
+    {
+        Assert.Equal(TileSize.L, TileDimensions.Nearest(2000.0, 900.0));
+    }
+
+    [Fact]
+    public void Nearest_WideButShort_PicksByDistance()
+    {
+        // The design doc's own example — (400, 80) → M "since M (224,144) is nearer than L (460,192)" — doesn't
+        // hold up: dist²(M) = 176²+64² = 35072 but dist²(L) = 60²+112² = 16144, so (400, 80) is actually nearer to
+        // L. (350, 80) is the corrected point that keeps the intended lesson (a wide-but-short drag must be judged
+        // by real 2D distance, not by width alone — nearest-by-width-alone would say L, since |350-460| = 110 is
+        // less than |350-224| = 126) while landing on M once height is folded in: dist²(M) = 126²+64² = 19972 is
+        // less than dist²(L) = 110²+112² = 24644.
+        Assert.Equal(TileSize.M, TileDimensions.Nearest(350.0, 80.0));
+    }
+
+    [Theory]
+    [InlineData(TileSize.S, -1, TileSize.S)]
+    [InlineData(TileSize.L, 1, TileSize.L)]
+    [InlineData(TileSize.M, 1, TileSize.L)]
+    [InlineData(TileSize.M, -1, TileSize.S)]
+    public void Step_SaturatesAtEnds(TileSize size, int delta, TileSize expected)
+    {
+        Assert.Equal(expected, TileDimensions.Step(size, delta));
+    }
 }
 
 public class DashboardLayoutTests
