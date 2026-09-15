@@ -8,6 +8,7 @@ internal static class SubstateCatalog
     private static readonly Dictionary<string, string[]> ByView = new()
     {
         ["dashboard"] = new[] { "collapsed-all", "tile-menu", "degraded", "sensor-failure", "update-offered", "update-progress", "update-error", "fps-hint", "theme-cycle",
+            "graphs-plain", "graphs-effects", "graphs-warmup",
             "layout-free", "layout-grid", "layout-free-placed" },
         ["picker"] = new[] { "no-results", "filtered" },
         ["settings"] = new[] { "theme-dropdown", "invalid-threshold", "invalid-limit", "invalid-hotkey", "restart-required", "startup-checking", "startup-error", "update-checking", "update-error",
@@ -15,7 +16,7 @@ internal static class SubstateCatalog
         ["fans"] = new[] { "off", "on", "manual", "curve", "pump", "modified", "no-channels", "conflict", "recovery", "write-failed" },
         ["peaks"] = new[] { "empty", "populated", "long-names" },
         ["alerts"] = new[] { "empty", "ongoing" },
-        ["details"] = new[] { "gap", "long-unit", "thresholds" },
+        ["details"] = new[] { "gap", "long-unit", "thresholds", "detail-plain", "detail-smooth", "detail-warmup" },
         ["overlay"] = new[] { "move-mode", "vertical", "light-parent", "opacity-min", "opacity-max", "long-value" },
         ["threshold-dialog"] = new[] { "valid", "invalid", "lower-is-worse" },
         ["input-dialog"] = Array.Empty<string>(),

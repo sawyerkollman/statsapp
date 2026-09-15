@@ -114,6 +114,7 @@ public partial class App : Application
         _settingsService = new SettingsService(settingsDir);
         _settings = _settingsService.Load();
         ThemeManager.Apply(_settings.ThemePreset, _settings.ThemeAccent); // before any window is created
+        GraphStyle.Apply(_settings);
 
         IReadOnlyList<MetricDefinition> definitions;
         try
@@ -789,6 +790,9 @@ public partial class App : Application
                 break;
             case SettingsChange.UiScale:
                 if (_dashboardVm is not null) _dashboardVm.UiScale = _settings.DashboardUiScale;
+                break;
+            case SettingsChange.Graphs:
+                GraphStyle.Apply(_settings);
                 break;
         }
     }

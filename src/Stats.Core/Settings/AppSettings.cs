@@ -109,6 +109,14 @@ public sealed class AppSettings
     /// to be warned about again — e.g. MSI Afterburner left on its Auto fan setting. Persisted; "Don't warn again" adds to it.</summary>
     public List<string> IgnoredFanConflicts { get; set; } = new();
 
+    // ---- graph effects ----
+    /// <summary>Draw sparklines/the history chart as a smooth monotone-cubic curve instead of a jagged polyline.
+    /// The smoothing amount is fixed; this only turns it on/off.</summary>
+    public bool SmoothLines { get; set; } = true;
+    /// <summary>Master switch for the line glow, gradient fills, last-value pulse, and eased bar/gauge fills — off
+    /// restores the plain pre-effects look.</summary>
+    public bool GraphEffects { get; set; } = true;
+
     // ---- dashboard layout modes ----
     /// <summary>Auto (grouped WrapPanel, default/unchanged) vs Free/Grid (one whole-dashboard canvas with
     /// persisted per-tile positions — see <see cref="TilePref.X"/>/<see cref="TilePref.Y"/>). See

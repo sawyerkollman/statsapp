@@ -129,6 +129,13 @@ hash after downloading an update (older releases without a published hash retain
   controls and their popups, including scrollbars, sliders, combo boxes, menus, progress bars,
   check/radio glyphs, and expanders. Light's accent and crit colours are slightly darker than
   before for contrast (no new presets).
+- **Graphs** — Settings → Appearance → **Smooth lines** draws sparklines and the detail chart as a
+  monotone curve through the samples instead of a jagged polyline (never overshoots past a spike or
+  flat run); **Glow and motion effects** adds a line/gauge glow, a stronger fill gradient, a brief
+  pulse ring on a new sample, and eased bar/gauge fills — off restores the plain, static look. Both
+  default on. Sparklines and the detail chart also lay samples out on a fixed time axis (constant
+  spacing anchored to the right edge), so during warm-up the line grows in from the right at a
+  steady scale instead of stretching to fill the width every tick.
 - **Diagnostics** — Trace output and crash details are written to
   `%AppData%\Stats\logs\stats-YYYYMMDD.log`; the newest seven daily files are kept, and Settings can
   open the folder.
