@@ -50,6 +50,9 @@ public sealed partial class DashboardViewModel : ObservableObject
     public ObservableCollection<GroupSectionViewModel> Sections { get; } = new();
     /// <summary>All dashboard tiles, flat (same instances as in Sections), group order then user order.</summary>
     public ObservableCollection<MetricTileViewModel> Tiles { get; } = new();
+    /// <summary>The synthwave overview's compact readings. These are references to the corresponding entries in
+    /// <see cref="Tiles"/>, never copies, so they refresh with the normal dashboard batch.</summary>
+    public ObservableCollection<MetricTileViewModel> OverviewTiles { get; } = new();
     public List<MetricPickerItem> PickerItems { get; } = new();
     public CoreMatrixViewModel? CoreMatrix { get; private set; }
 
@@ -488,6 +491,7 @@ public sealed partial class DashboardViewModel : ObservableObject
             }
             Sections.Add(section);
         }
+        RebuildOverviewTiles();
         RaiseFpsHintChanged();
         OnPropertyChanged(nameof(IsEmpty));
         RebuildStatusLines();
@@ -508,6 +512,16 @@ public sealed partial class DashboardViewModel : ObservableObject
             _seedPackSavedLastRebuild = false; // Auto never runs the seed pack, so nothing saved on its behalf
         }
         RecomputeCanvasExtent();
+    }
+
+    private void RebuildOverviewTiles()
+    {
+        OverviewTiles.Clear();
+        foreach (var group in new[] { MetricGroup.Cpu, MetricGroup.Gpu, MetricGroup.Memory, MetricGroup.Game })
+        {
+            var tile = Tiles.FirstOrDefault(t => t.Definition.Group == group);
+            if (tile is not null) OverviewTiles.Add(tile);
+        }
     }
 
     private void OnSectionExpandedChanged(string name, bool expanded)

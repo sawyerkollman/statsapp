@@ -176,7 +176,11 @@ hash after downloading an update (older releases without a published hash retain
 - **Themes and controls** — Dark Amber, Blue, Green, Purple, and Light presets apply live to native
   controls and their popups, including scrollbars, sliders, combo boxes, menus, progress bars,
   check/radio glyphs, and expanders. Light's accent and crit colours are slightly darker than
-  before for contrast (no new presets).
+  before for contrast. Beta adds **Synthwave**, **Outrun**, and **Midnight** under Settings → Appearance.
+  Their neon palettes include a compact **Neon overview** in Auto layout: a static horizon-grid backdrop,
+  live cards for the first selected CPU/GPU/Memory/Game metric, and Compare/Recordings shortcuts.
+  Readings reuse the existing tiles; absent groups are omitted and missing values stay missing.
+  Classic themes hide the overview; Free/Grid keep their user-positioned canvas with the new palette only.
 - **Graphs** — Settings → Appearance → **Smooth lines** draws sparklines and the detail chart as a
   monotone curve through the samples instead of a jagged polyline (never overshoots past a spike or
   flat run); **Glow and motion effects** adds a line/gauge glow, a stronger fill gradient, a brief

@@ -33,6 +33,10 @@
     <Color x:Key="WarnColor">#FFE6A23C</Color>
     <Color x:Key="CritColor">#FFE05A4F</Color>
     <Color x:Key="GaugeTrackColor">#FF3A3A40</Color>
+    <!-- Overview chrome is opt-in per preset. ThemeManager replaces these top-level entries on every Apply,
+         just like the palette keys above; consumers must use DynamicResource. -->
+    <Color x:Key="NeonSecondaryColor">#FF3A3A40</Color>
+    <Visibility x:Key="NeonOverviewVisibility">Collapsed</Visibility>
 
     <!-- Fixed, not theme-tinted: the overlay panel is always a dark translucent surface (readable text on it
          regardless of the active preset), so these are pinned in every preset rather than routed through
@@ -53,6 +57,7 @@
     <SolidColorBrush x:Key="WarnBrush" Color="#FFE6A23C"/>
     <SolidColorBrush x:Key="CritBrush" Color="#FFE05A4F"/>
     <SolidColorBrush x:Key="GaugeTrack" Color="#FF3A3A40"/>
+    <SolidColorBrush x:Key="NeonSecondaryBrush" Color="#FF3A3A40"/>
     <SolidColorBrush x:Key="OverlayTextPrimary" Color="{StaticResource OverlayTextPrimaryColor}"/>
     <SolidColorBrush x:Key="OverlayTextSecondary" Color="{StaticResource OverlayTextSecondaryColor}"/>
     <!-- Pinned overlay warn/crit: the overlay's fixed dark panel needs the Dark palette's amber/red — Light

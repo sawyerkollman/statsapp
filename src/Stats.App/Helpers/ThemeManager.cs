@@ -35,6 +35,9 @@ public static class ThemeManager
         "TextPrimary", "TextSecondary", "AccentBrush", "WarnBrush", "CritBrush", "GaugeTrack",
     };
 
+    private const string NeonSecondaryBrush = "NeonSecondaryBrush";
+    private const string NeonOverviewVisibility = "NeonOverviewVisibility";
+
     /// <summary>"AccentBrush" → "AccentColor", "WindowBg" → "WindowBgColor", etc. — the naming convention used
     /// throughout Theme.xaml for a brush's backing Color resource.</summary>
     private static string ColorKeyFor(string brushKey) =>
@@ -71,6 +74,15 @@ public static class ThemeManager
                 ["CritBrush"] = "#FFB23A2F",
                 ["GaugeTrack"] = "#FFD8D8DE",
             },
+            ["Synthwave"] = NeonPalette(
+                "#FF16111F", "#FF241631", "#FF2B1B3D", "#FF342246", "#FF563970",
+                "#FFF5EEFF", "#FFC5B8D8", "#FFEA4AAA", "#FF52E5FF"),
+            ["Outrun"] = NeonPalette(
+                "#FF21121B", "#FF321721", "#FF421C29", "#FF512333", "#FF78364F",
+                "#FFFFF0F4", "#FFFFC1CB", "#FFFF71B8", "#FFFFB347"),
+            ["Midnight"] = NeonPalette(
+                "#FF0D1726", "#FF122238", "#FF172B46", "#FF1D3453", "#FF2D527B",
+                "#FFEAF6FF", "#FFB8D2E8", "#FF77C9FF", "#FFA6E3FF"),
         };
 
     private static IReadOnlyDictionary<string, string> DarkPalette(string accent) => new Dictionary<string, string>
@@ -86,6 +98,24 @@ public static class ThemeManager
         ["WarnBrush"] = DarkWarn,
         ["CritBrush"] = DarkCrit,
         ["GaugeTrack"] = "#FF3A3A40",
+    };
+
+    private static IReadOnlyDictionary<string, string> NeonPalette(
+        string window, string tile, string flyout, string control, string border,
+        string primary, string secondary, string accent, string neonSecondary) => new Dictionary<string, string>
+    {
+        ["WindowBg"] = window,
+        ["TileBg"] = tile,
+        ["FlyoutBg"] = flyout,
+        ["ControlBg"] = control,
+        ["BorderDim"] = border,
+        ["TextPrimary"] = primary,
+        ["TextSecondary"] = secondary,
+        ["AccentBrush"] = accent,
+        ["WarnBrush"] = DarkWarn,
+        ["CritBrush"] = DarkCrit,
+        ["GaugeTrack"] = border,
+        [NeonSecondaryBrush] = neonSecondary,
     };
 
     /// <summary>Replaces the 11 palette brush entries (and their backing Color resources) on
@@ -118,6 +148,16 @@ public static class ThemeManager
             brush.Freeze();
             resources[key] = brush;
         }
+        var neonSecondary = (Color)ColorConverter.ConvertFromString(palette.TryGetValue(NeonSecondaryBrush, out var secondaryHex)
+            ? secondaryHex
+            : palette["BorderDim"]);
+        resources[ColorKeyFor(NeonSecondaryBrush)] = neonSecondary;
+        var neonBrush = new SolidColorBrush(neonSecondary);
+        neonBrush.Freeze();
+        resources[NeonSecondaryBrush] = neonBrush;
+        resources[NeonOverviewVisibility] = preset is "Synthwave" or "Outrun" or "Midnight"
+            ? Visibility.Visible
+            : Visibility.Collapsed;
         Changed?.Invoke();
     }
 

@@ -23,6 +23,7 @@ public static class CaptureHost
     {
         ("Dark Amber", null), ("Dark Blue", null), ("Dark Green", null),
         ("Dark Purple", null), ("Light", null), ("Dark Amber", "#3FBFBF"),
+        ("Synthwave", null), ("Outrun", null), ("Midnight", null), ("Light", null),
     };
 
     public static List<Outcome> Run(CaptureSpec spec, string tempRoot, BindingErrorListener listener)
@@ -293,7 +294,7 @@ public static class CaptureHost
     {
         var combo = VisualTreeUtil.FirstDescendant<ComboBox>(window,
             b => ReferenceEquals(b.ItemsSource, c.SettingsVm.ThemePresetNames));
-        if (combo is null) return;
+        if (combo is null) throw new InvalidOperationException("Theme preset picker was not found in the preview visual tree.");
         combo.BringIntoView(); // the Settings tab is a ScrollViewer — the preset picker sits below the fold
         DispatcherUtil.WaitFrames(5);
         // BringIntoView scrolls the minimum distance, landing the combo flush with the viewport's bottom edge —
@@ -305,8 +306,13 @@ public static class CaptureHost
         }
         combo.Focus();
         DispatcherUtil.WaitFrames(3);
+        var popup = combo.Template.FindName("PART_Popup", combo) as System.Windows.Controls.Primitives.Popup;
+        // Queue draining is not elapsed animation time; capture the popup's settled state, not its slide-in.
+        if (popup is not null) popup.PopupAnimation = System.Windows.Controls.Primitives.PopupAnimation.None;
         combo.IsDropDownOpen = true;
-        DispatcherUtil.WaitFrames();
+        DispatcherUtil.WaitFrames(10);
+        if (!combo.IsDropDownOpen || popup?.Child?.IsVisible != true)
+            throw new InvalidOperationException($"Theme dropdown did not open: visible={combo.IsVisible}, focused={combo.IsKeyboardFocusWithin}, open={combo.IsDropDownOpen}, popup={popup?.IsOpen}.");
     }
 
     /// <summary>"layout-resize-grip" (docs/superpowers/specs/2026-09-11-tile-resize-design.md "Preview harness"):
