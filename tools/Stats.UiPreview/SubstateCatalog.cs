@@ -14,7 +14,7 @@ internal static class SubstateCatalog
             "game-tiles", "game-tiles-large", "game-tiles-small", "game-summary-orphan", "game-histogram-fps" },
         ["picker"] = new[] { "no-results", "filtered" },
         ["settings"] = new[] { "theme-dropdown", "invalid-threshold", "invalid-limit", "invalid-hotkey", "restart-required", "startup-checking", "startup-error", "update-checking", "update-error",
-            "category-appearance", "category-monitoring", "category-alerts", "category-overlay", "category-system" },
+            "category-appearance", "category-monitoring", "category-alerts", "category-overlay", "category-system", "alerts-notify-off" },
         ["fans"] = new[] { "off", "on", "manual", "curve", "pump", "modified", "no-channels", "conflict", "recovery", "write-failed" },
         ["peaks"] = new[] { "empty", "populated", "long-names" },
         ["alerts"] = new[] { "empty", "ongoing", "alert-context", "theme-cycle" },

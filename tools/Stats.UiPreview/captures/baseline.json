@@ -80,6 +80,11 @@
   { "Method": "rtb", "Scenario": "normal", "View": "details", "Substate": "detail-smooth", "Theme": "Dark Amber", "Width": 640, "Height": 420, "Output": "artifacts/graph-effects/v13-details-detail-smooth-dark-amber.png" },
   { "Method": "rtb", "Scenario": "normal", "View": "details", "Substate": "detail-warmup", "Theme": "Dark Amber", "Width": 640, "Height": 420, "Output": "artifacts/graph-effects/v13-details-detail-warmup-dark-amber.png" },
 
+  { "Method": "rtb", "Scenario": "normal", "View": "settings", "Substate": "category-alerts", "Theme": "Dark Amber", "Width": 1180, "Height": 720, "Output": "artifacts/toast-alerts/v14-settings-alerts-default-dark-amber.png" },
+  { "Method": "rtb", "Scenario": "normal", "View": "settings", "Substate": "category-alerts", "Theme": "Light", "Width": 1180, "Height": 720, "Output": "artifacts/toast-alerts/v14-settings-alerts-default-light.png" },
+  { "Method": "rtb", "Scenario": "normal", "View": "settings", "Substate": "alerts-notify-off+category-alerts", "Theme": "Dark Amber", "Width": 1180, "Height": 720, "Output": "artifacts/toast-alerts/v14-settings-alerts-notify-off-dark-amber.png" },
+  { "Method": "rtb", "Scenario": "normal", "View": "alerts", "Substate": "ongoing", "Theme": "Dark Amber", "Width": 640, "Height": 480, "Output": "artifacts/toast-alerts/v14-alerts-ongoing-unchanged.png" },
+
   { "Method": "rtb", "Scenario": "game", "View": "dashboard", "Theme": "Dark Amber", "Width": 1180, "Height": 720, "Output": "artifacts/game-tiles/v14-dashboard-game-tiles-dark-amber.png" },
   { "Method": "rtb", "Scenario": "game", "View": "dashboard", "Theme": "Light", "Width": 1180, "Height": 720, "Output": "artifacts/game-tiles/v14-dashboard-game-tiles-light.png" },
   { "Method": "rtb", "Scenario": "game", "View": "dashboard", "Substate": "game-tiles-large", "Theme": "Dark Amber", "Width": 1180, "Height": 1000, "Output": "artifacts/game-tiles/v14-dashboard-game-tiles-large-dark-amber.png" },

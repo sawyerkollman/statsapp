@@ -47,7 +47,7 @@ public sealed partial class AlertRowViewModel : ObservableObject
         OnPropertyChanged(nameof(DurationText));
     }
 
-    private static string Format(AlertEvent evt, float value) => ValueFormatter.Format(new MetricDefinition(evt.MetricId, evt.DisplayName, default, "", evt.Unit), value);
+    private static string Format(AlertEvent evt, float value) => ValueFormatter.Format(new MetricDefinition(evt.MetricId, evt.DisplayName, default, "", evt.Unit, evt.Format), value);
     private static string FormatDuration(TimeSpan duration)
     {
         var seconds = Math.Max(0, (int)Math.Round(duration.TotalSeconds));

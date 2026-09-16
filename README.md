@@ -94,13 +94,20 @@ Uninstall from Settings → Apps; PawnIO is left installed because other tools m
   exposes GPU-engine counters. Sort by any available column or copy the list. Sampling pauses while Peaks
   is hidden and can be disabled in **Settings → Monitoring**; it never controls or terminates processes.
 - **Alerts** — when a monitored metric holds Crit for a hold time (default 10 s, Settings → Alerts,
-  1–120 s), Stats shows a tray balloon and can optionally play a chime (off by default). The *Peaks*
-  window's **Alerts** tab logs each alert's time, metric, peak value, threshold, and duration (live
-  "ongoing" until the metric recovers), newest first, capped at 200 persisted rows. **View context** opens
-  up to 120 samples before and 120 after the alert; unfinished events become **interrupted** after restart.
-  Alerts evaluate even while the dashboard and overlay are hidden. History stays local in
-  `%AppData%\Stats\alerts.json`; transitions save promptly, ongoing context at five-second intervals,
-  with a final flush on clean shutdown.
+  1–120 s), Stats raises a Windows notification titled `<metric> critical` with a body like `96 °C for
+  10 s (crit ≥ 92)`, and can optionally play a chime (off by default) — the chime is the only sound a
+  Stats alert ever makes. Clicking the notification opens the dashboard. Two checkboxes under Settings →
+  Alerts → Windows notifications control it: **Show Windows notifications** (default on) and **Only
+  when the dashboard is not in the foreground** (default on, so Stats stays quiet while you're already
+  looking at it); notifications are rate-limited to a global 10 s cool-down across all metrics plus at
+  most one per metric per 60 s. Windows Focus Assist / Do not disturb (e.g. behind a full-screen game)
+  may hold a notification back in Action Center instead of showing it on screen. The *Peaks* window's
+  **Alerts** tab logs each alert's time, metric, peak value, threshold, and duration (live "ongoing"
+  until the metric recovers), newest first, capped at 200 persisted rows, independent of notifications
+  and chime. **View context** opens up to 120 samples before and 120 after the alert; unfinished events
+  become **interrupted** after restart. Alerts evaluate even while the dashboard and overlay are hidden.
+  History stays local in `%AppData%\Stats\alerts.json`; transitions save promptly, ongoing context at
+  five-second intervals, with a final flush on clean shutdown.
 
 ## Beta updates
 
@@ -115,8 +122,8 @@ the latest stable release. After testing, merge `beta` into `master` and tag `v1
 Branch pushes alone do not publish installers. Existing stable installations need a stable release containing
 the opt-in control first; alternatively testers can install the first beta manually.
 
-Before the first beta release, reconcile the newer `master` notification changes with `beta` and rerun
-validation. This change configures the channel but does not publish a release or merge `master`.
+`v1.10.1` enables this option on stable. `v1.11.0-beta.1` combines the beta workflows with the
+latest stable notification changes. Beta remains opt-in and does not replace the latest stable release.
 
 ## Run from source
 
@@ -182,9 +189,9 @@ hash after downloading an update (older releases without a published hash retain
   open the folder.
 - **Tiles** — right-click, the hover **⋯** button, or Shift+F10/the Menu key on a focused tile:
   kind (Sparkline/Gauge/Bar/Value/Histogram, plus FPS summary on the FPS tile), size (S/M/L —
-  160×80/224×144/460×192, with **Larger**/**Smaller**
-  items next to the size menu — **Ctrl+Plus** / **Ctrl+Minus** on a focused tile do the same), rename,
-  gauge max, thresholds, Details…, remove. The value and its unit are shown separately with stable digit
+  160×80/224×144/460×192, with **Larger**/**Smaller** items next to the size menu — **Ctrl+Plus** /
+  **Ctrl+Minus** on a focused tile do the same), rename, gauge max, thresholds, Details…, remove. The
+  value and its unit are shown separately with stable digit
   widths so readings don't jitter, and the options button sits in a reserved corner so it never
   covers the reading. Empty rows (no limit set, no history yet) are omitted rather than shown
   blank, and a long footer shows a tooltip with the full text. Gauge tiles show the reading beside
@@ -239,7 +246,7 @@ hash after downloading an update (older releases without a published hash retain
   one of those has something to say.
 - **Tray** — icon shows CPU temp by default (or the metric you pick in Settings), tinted by severity;
   close button hides to tray; left-click reopens; right-click: dashboard / overlay / peaks / settings /
-  move overlay / exit.
+  move overlay / exit; alert notifications click through to the dashboard the same way.
 - **FPS hint** — when FPS metrics are available but none is on the dashboard or overlay, a dismissible
   "Gaming? Add FPS, 1% lows and frame time from ☰ Metrics" banner shows until you add one or click
   Got it (remembered across restarts); the *Game* group

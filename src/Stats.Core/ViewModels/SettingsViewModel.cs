@@ -82,6 +82,8 @@ public sealed partial class SettingsViewModel : ObservableObject
         _alertsEnabled = settings.AlertsEnabled;
         _alertHoldSeconds = settings.AlertHoldSeconds;
         _alertSoundEnabled = settings.AlertSoundEnabled;
+        _alertNotificationsEnabled = settings.AlertNotificationsEnabled;
+        _alertNotificationsSkipWhenForeground = settings.AlertNotificationsSkipWhenForeground;
         _dashboardUiScale = settings.DashboardUiScale;
         _smoothLines = settings.SmoothLines;
         _graphEffects = settings.GraphEffects;
@@ -170,6 +172,11 @@ public sealed partial class SettingsViewModel : ObservableObject
     [ObservableProperty] private bool _alertsEnabled;
     [ObservableProperty] private int _alertHoldSeconds;
     [ObservableProperty] private bool _alertSoundEnabled;
+    /// <summary>Show a Windows notification for a raised alert; see <see cref="AppSettings.AlertNotificationsEnabled"/>.</summary>
+    [ObservableProperty] private bool _alertNotificationsEnabled;
+    /// <summary>Skip the notification while the dashboard is in the foreground; see
+    /// <see cref="AppSettings.AlertNotificationsSkipWhenForeground"/>.</summary>
+    [ObservableProperty] private bool _alertNotificationsSkipWhenForeground;
     /// <summary>Dashboard-wide UI scale (see <see cref="AppSettings.DashboardUiScale"/>); clamped 0.9–1.3.</summary>
     [ObservableProperty] private double _dashboardUiScale;
     /// <summary>Selected entry of <see cref="TrayMetricOptions"/>; the first entry (Id null) is "Auto".</summary>
@@ -345,6 +352,20 @@ public sealed partial class SettingsViewModel : ObservableObject
     {
         if (!_loaded) return;
         _s.AlertSoundEnabled = value;
+        Raise(SettingsChange.Alerts);
+    }
+
+    partial void OnAlertNotificationsEnabledChanged(bool value)
+    {
+        if (!_loaded) return;
+        _s.AlertNotificationsEnabled = value;
+        Raise(SettingsChange.Alerts);
+    }
+
+    partial void OnAlertNotificationsSkipWhenForegroundChanged(bool value)
+    {
+        if (!_loaded) return;
+        _s.AlertNotificationsSkipWhenForeground = value;
         Raise(SettingsChange.Alerts);
     }
 

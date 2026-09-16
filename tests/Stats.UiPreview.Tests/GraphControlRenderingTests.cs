@@ -19,7 +19,7 @@ public class GraphControlRenderingTests
             float[] b = [5, 6, 5];
             SetValues(chart, a);
             Render(chart);
-            SetValues(chart, b); // no render before the next poll buffer arrives
+        SetValues(chart, b); // no render before the next poll buffer arrives
             a[0] = 10; a[1] = 12; a[2] = 10;
             SetValues(chart, a);
             Render(chart);

@@ -35,6 +35,9 @@ public sealed class AlertEngine
         public string Unit = "";
         public float Threshold;
         public bool LowerIsWorse;
+        /// <summary>The metric's display format (MetricDefinition.Format), carried onto the AlertEvent so toast and
+        /// log text round the peak exactly like the tile does.</summary>
+        public string Format = "F0";
     }
 
     private readonly Dictionary<string, Episode> _episodes = new();
@@ -67,6 +70,7 @@ public sealed class AlertEngine
                         Unit = sample.Definition.Unit,
                         Threshold = rule.Crit,
                         LowerIsWorse = rule.LowerIsWorse,
+                        Format = sample.Definition.Format,
                     };
                     _episodes[id] = episode;
                 }
@@ -82,7 +86,7 @@ public sealed class AlertEngine
 
                 if (!episode.Raised && (nowUtc - episode.CritSinceUtc).TotalSeconds >= HoldSeconds)
                 {
-                    var evt = new AlertEvent(_localClock(), id, episode.DisplayName, episode.Unit, episode.Peak, episode.Threshold, episode.LowerIsWorse);
+                    var evt = new AlertEvent(_localClock(), id, episode.DisplayName, episode.Unit, episode.Peak, episode.Threshold, episode.LowerIsWorse, episode.Format);
                     raised.Add(evt);
                     episode.Raised = true;
                     episode.RaisedAtLocal = evt.RaisedAtLocal;

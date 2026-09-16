@@ -376,6 +376,12 @@ public sealed class PreviewComposition
                 c.SettingsVm.ApplyManualCheckResult("Update check failed: could not reach github.com (simulated)", failed: true);
                 break;
 
+            // ---- toast alerts (docs/superpowers/specs/2026-09-11-toast-alerts-design.md) ----
+            case "alerts-notify-off":
+                c.Dashboard.IsPickerOpen = true; c.Dashboard.FlyoutTabIndex = 1;
+                c.SettingsVm.AlertNotificationsEnabled = false; // through the VM so the checkbox binding sees it; write-through records one "settings.save"
+                break;
+
             // ---- fans ----
             case "off": c.Fans.Enabled = false; break;
             case "on": c.Fans.Enabled = true; break;

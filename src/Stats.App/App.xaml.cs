@@ -8,6 +8,7 @@ using System.Windows.Controls;
 using System.Windows.Resources;
 using System.Windows.Threading;
 using H.NotifyIcon;
+using H.NotifyIcon.Core;
 using Stats.App.Helpers;
 using Stats.App.Tray;
 using Stats.App.Views;
@@ -50,6 +51,7 @@ public partial class App : Application
     private PeaksWindow? _peaks;
     private PeaksViewModel? _peaksVm;
     private AlertEngine? _alertEngine;
+    private readonly AlertNotificationPolicy _alertNotifications = new();
     private AlertLogViewModel? _alertLog;
     private MetricDetailWindow? _detail;
     private MetricDetailViewModel? _detailVm;
@@ -518,6 +520,8 @@ public partial class App : Application
         menu.Items.Add(exit);
         _tray.ContextMenu = menu;
         _tray.TrayLeftMouseUp += (_, _) => ShowDashboard();
+        _tray.TrayBalloonTipClicked += (_, _) => ShowDashboard();
+        _tray.TrayBalloonTipShown += (_, _) => Trace.WriteLine("[Stats] alert notification shown");
         // TaskbarIcon only materializes the shell icon on Loaded; created in code it must be forced.
         try { _tray.ForceCreate(enablesEfficiencyMode: false); }
         catch (Exception) { /* shell not ready (logon / explorer restart); dashboard still usable */ }
@@ -584,8 +588,8 @@ public partial class App : Application
 
     /// <summary>Builds one <see cref="AlertSample"/> per metric in the union of the dashboard and overlay
     /// selections (evaluated regardless of whether either window is visible), ticks <see cref="_alertEngine"/>,
-    /// and surfaces any raised alert as a tray balloon (optionally with a chime) plus a log row. A balloon failure
-    /// (e.g. the shell not being ready) must never take the refresh path down with it.</summary>
+    /// and surfaces any raised alert as a Windows notification (see <see cref="ShowAlertNotification"/>) plus a
+    /// log row and an optional chime.</summary>
     private void EvaluateAlerts(DateTime timestampUtc)
     {
         if (_store is null || _settings is null || _alertEngine is null || _alertLog is null) return;
@@ -607,12 +611,52 @@ public partial class App : Application
             var context = defsById.TryGetValue(evt.MetricId, out var definition) && _store.TryGet(evt.MetricId, out var history)
                 ? history.CopySeries(definition) : null;
             _alertLog.Add(evt, evt.RaisedAtLocal.ToUniversalTime(), context);
-            try { _tray?.ShowNotification("Stats alert", evt.Message); }
-            catch (Exception ex) { System.Diagnostics.Trace.WriteLine("[Stats] alert balloon failed: " + ex.Message); }
+            ShowAlertNotification(evt, timestampUtc);
             if (_settings.AlertSoundEnabled)
                 try { System.Media.SystemSounds.Exclamation.Play(); } catch { /* audio device unavailable */ }
         }
     }
+
+    /// <summary>Owner decisions 2–3 of the toast-alerts spec: gate (setting, foreground) → cool-down → one
+    /// H.NotifyIcon balloon (Windows renders it as a toast) with sound off — the Exclamation chime in EvaluateAlerts
+    /// is the only alert sound. Every outcome is traced; a shell failure must never take the refresh down.</summary>
+    private void ShowAlertNotification(AlertEvent evt, DateTime nowUtc)
+    {
+        if (_settings is null) return;
+        bool dashboardIsForeground = _dashboard is { IsVisible: true, IsActive: true };
+        if (!AlertNotificationPolicy.ShouldNotify(_settings.AlertNotificationsEnabled,
+                _settings.AlertNotificationsSkipWhenForeground, dashboardIsForeground))
+        {
+            Trace.WriteLine($"[Stats] alert notification skipped ({(_settings.AlertNotificationsEnabled ? "dashboard in foreground" : "notifications off")}): {evt.NotificationTitle}");
+            return;
+        }
+        if (_tray is null)
+        {
+            // The tray was never created (ForceCreate threw at logon / explorer restart) — say so instead of
+            // reporting "requested" and burning a cool-down on a toast nobody can see.
+            Trace.WriteLine("[Stats] alert notification failed: no tray icon: " + evt.NotificationTitle);
+            return;
+        }
+        if (!_alertNotifications.TryAccept(evt.MetricId, nowUtc))
+        {
+            Trace.WriteLine("[Stats] alert notification suppressed by cool-down: " + evt.NotificationTitle);
+            return;
+        }
+        try
+        {
+            _tray.ShowNotification(ClampForShell(evt.NotificationTitle, 63),
+                ClampForShell(evt.NotificationBody(_settings.AlertHoldSeconds), 255),
+                NotificationIcon.Warning, sound: false);
+            Trace.WriteLine("[Stats] alert notification requested: " + evt.NotificationTitle);
+        }
+        catch (Exception ex) { Trace.WriteLine("[Stats] alert notification failed: " + ex.Message); }
+    }
+
+    /// <summary>Shell_NotifyIcon caps a balloon title at 63 characters and its body at 255 (szInfoTitle/szInfo
+    /// minus the terminator); past that H.NotifyIcon truncates or throws, and a throw would silently lose the toast
+    /// for a verbose hardware name — so clamp with an ellipsis instead.</summary>
+    private static string ClampForShell(string text, int max) =>
+        text.Length <= max ? text : text[..(max - 1)] + "…";
 
     /// <summary>Tray icon left-click, "Open dashboard", and "Settings" all funnel through here. Show() alone
     /// covers the "not stale for a poll interval" refresh via the Dashboard window's IsVisibleChanged handler
@@ -860,8 +904,12 @@ public partial class App : Application
                 StartUpdateChecks();
                 break;
             case SettingsChange.Alerts:
-                if (_alertEngine is not null) _alertEngine.HoldSeconds = _settings.AlertHoldSeconds;
-                if (!_settings.AlertsEnabled) _alertEngine?.Reset(DateTime.UtcNow);
+                if (_alertEngine is not null)
+                {
+                    _alertEngine.HoldSeconds = _settings.AlertHoldSeconds;
+                    if (!_settings.AlertsEnabled) _alertEngine.Reset(DateTime.UtcNow); // ends in-flight episodes (finalizes "ongoing" rows) so a re-enable starts clean
+                }
+                if (!_settings.AlertsEnabled) _alertNotifications.Reset();
                 break;
             case SettingsChange.Tray:
                 _trayCpuTempDef = TrayMetricSelector.Resolve(_settings.TrayMetricId, _definitions)

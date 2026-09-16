@@ -1,6 +1,7 @@
 # Opt-in beta updates
 
-Extend the existing updater on `beta`; do not merge master or publish a release in this task.
+Extend the existing updater with a default-off beta channel. Initially implemented on `beta`, then
+backported independently onto `master` without merging the larger beta features or publishing a release.
 `ReceiveBetaUpdates` defaults false and persists independently of automatic checking. Both manual
 and background checks respect it. Stable uses `/releases/latest`; beta uses `/releases?per_page=100`
 and picks the highest eligible numeric version, not publication order. Drafts are never eligible.
@@ -22,7 +23,8 @@ GitHub endpoint reference: https://docs.github.com/en/rest/releases/releases#lis
 
 ## Validation and handoff
 
-Implemented on `beta` after `b0d93d9`. Used the existing updater and native WPF controls; no dependencies.
+Original validation on `beta` after `b0d93d9` (before the stable backport below):
+used the existing updater and native WPF controls; no dependencies.
 Terra worker owned the setting/VM/checkbox/tests; parent owned parser/HTTP/composition/workflow. Sol reviewed
 the whole diff and signed off after repairing a canceled-install continuation that could overwrite a newer
 offer. Existing configured routing was reused; effective model metadata remains unobservable.
@@ -38,3 +40,19 @@ offer. Existing configured routing was reused; effective model metadata remains 
 - `git diff --check` passed. Workflow metadata source-reviewed; no tag/release/installer executed.
   No master merge, user settings migration, hardware access or real install performed. Existing stable
   users cannot see the new checkbox until they install a build containing it.
+
+## Stable-only backport validation
+
+Backported only the updater commit `39aa3dd` onto master `fd022fb` in an isolated worktree.
+The larger beta features were not merged; master's notification settings were preserved.
+Luna resolved the enum-only conflict; independent Sol review found no material issues.
+
+- Build: zero warnings/errors. Full tests: 928 Core + 251 preview passed, no failures/skips.
+- Actual isolated WPF captures, visually inspected: `artifacts/beta-updates/master-settings-dark.png`
+  (1180x900) and `master-settings-light-narrow.png` (860x700), both zero binding warnings.
+  Artifacts are local to the original repository, not tracked; data/services are simulated.
+- Capture sidecars report a clean working diff because the candidate was staged. The reviewed/captured
+  staged tree before this documentation addition was `8ef148aaf56b91a7e395ca30be484a9ffefc38cd`.
+- Staged whitespace check passed. No hardware, real installer, tag or release executed.
+  Manual keyboard interaction and live theme switching on this exact backport remain untested.
+  Existing users need a subsequent stable installer release to receive the opt-in checkbox.
