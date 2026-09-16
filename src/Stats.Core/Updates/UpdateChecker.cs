@@ -4,14 +4,14 @@ using System.Text.RegularExpressions;
 namespace Stats.Core.Updates;
 
 /// <summary>A newer release, ready to offer. <see cref="Version"/> is the parsed numeric version (first three
-/// fields; the fourth is always 0); <see cref="TagName"/> is the raw GitHub tag (e.g. "v1.4.2") for display.
+/// fields); <see cref="TagName"/> retains the full GitHub tag, including any beta suffix, for display.
 /// <see cref="Sha256"/> is the lowercase hex SHA-256 of the installer asset when the release body carries a
 /// machine-readable "SHA256: &lt;64 hex chars&gt;" line (see <see cref="UpdateChecker.Parse"/>); null for older
 /// releases published before integrity verification, in which case <see cref="UpdateService.DownloadAsync"/>
 /// falls back to size-only verification.</summary>
 public sealed record UpdateInfo(Version Version, string TagName, string AssetUrl, long AssetSize, string ReleasePageUrl, string? Sha256 = null);
 
-/// <summary>Pure parsing of a GitHub "latest release" API response — no I/O, no WPF. Kept separate from
+/// <summary>Pure parsing of GitHub release objects/lists — no I/O, no WPF. Kept separate from
 /// <see cref="UpdateService"/> so the interesting logic is unit-testable without a network.</summary>
 public static class UpdateChecker
 {
@@ -26,12 +26,11 @@ public static class UpdateChecker
         @"^[ \t]*SHA256[ \t]*:[ \t]*([0-9a-fA-F]{64})[ \t]*\r?$",
         RegexOptions.IgnoreCase | RegexOptions.Multiline | RegexOptions.CultureInvariant);
 
-    /// <summary>Parses a GitHub /releases/latest JSON body and decides whether it describes an update over
-    /// <paramref name="current"/>. Returns null for: malformed/empty JSON, a missing/non-string tag_name, a
-    /// prerelease tag (contains "-"), a version that is not strictly newer than <paramref name="current"/> (only
-    /// the first three fields are compared), a dev build current version (0.0.0), or a release with no asset
-    /// named exactly "Stats-Setup-{tag-without-v}.exe".</summary>
-    public static UpdateInfo? Parse(string latestReleaseJson, Version current)
+    /// <summary>Selects the newest eligible stable or opted-in beta release. Drafts, malformed entries,
+    /// unsupported suffixes, older/equal versions, dev builds and missing exact-name installer assets
+    /// produce no offer. Informational version distinguishes installed beta builds with equal numeric cores.</summary>
+    public static UpdateInfo? Parse(string latestReleaseJson, Version current, bool includePrereleases = false,
+        string? currentInformationalVersion = null)
     {
         if (string.IsNullOrWhiteSpace(latestReleaseJson)) return null;
 
@@ -42,19 +41,34 @@ public static class UpdateChecker
         using (doc)
         {
             var root = doc.RootElement;
+            if (root.ValueKind == JsonValueKind.Array)
+            {
+                UpdateInfo? best = null;
+                foreach (var release in root.EnumerateArray())
+                {
+                    var candidate = Parse(release.GetRawText(), current, includePrereleases, currentInformationalVersion);
+                    if (candidate is not null && (best is null || CompareTags(candidate.TagName, best.TagName) > 0)) best = candidate;
+                }
+                return best;
+            }
             if (root.ValueKind != JsonValueKind.Object) return null;
+            if (root.TryGetProperty("draft", out var draft) && draft.ValueKind != JsonValueKind.False) return null;
             if (!root.TryGetProperty("tag_name", out var tagProp) || tagProp.ValueKind != JsonValueKind.String) return null;
             var tag = tagProp.GetString();
             if (string.IsNullOrWhiteSpace(tag)) return null;
 
             var versionPart = tag.StartsWith("v", StringComparison.OrdinalIgnoreCase) ? tag[1..] : tag;
-            if (versionPart.Contains('-')) return null; // prerelease suffix (e.g. "1.4.1-beta") — never offered
-            if (!Version.TryParse(versionPart, out var parsed)) return null;
-
-            var latest = NormalizeToThree(parsed);
+            if (!TryReleaseVersion(versionPart, out var latest, out var beta)) return null;
+            if (!includePrereleases && beta is not null) return null;
+            if (root.TryGetProperty("prerelease", out var prerelease) && prerelease.ValueKind != JsonValueKind.False
+                && (!includePrereleases || beta is null || prerelease.ValueKind != JsonValueKind.True)) return null;
             var currentNormalized = NormalizeToThree(current);
             if (currentNormalized == new Version(0, 0, 0)) return null; // dev build: never offer
-            if (latest <= currentNormalized) return null;
+            var currentTag = currentNormalized.ToString();
+            var informational = currentInformationalVersion?.Split('+')[0];
+            if (informational is not null && TryReleaseVersion(informational, out var installed, out _) && installed == currentNormalized)
+                currentTag = informational;
+            if (CompareTags(versionPart, currentTag) <= 0) return null;
 
             var releasePageUrl = root.TryGetProperty("html_url", out var htmlProp) && htmlProp.ValueKind == JsonValueKind.String
                 ? htmlProp.GetString() ?? "" : "";
@@ -75,10 +89,35 @@ public static class UpdateChecker
                 var assetUrl = urlProp.GetString();
                 if (string.IsNullOrEmpty(assetUrl) || !IsAllowedAssetHost(assetUrl)) continue;
 
-                return new UpdateInfo(latest, tag, assetUrl, sizeProp.GetInt64(), releasePageUrl, sha256);
+                if (!sizeProp.TryGetInt64(out var size) || size <= 0) continue;
+                return new UpdateInfo(latest, tag, assetUrl, size, releasePageUrl, sha256);
             }
             return null; // no asset with the expected exact name (and an allowed host)
         }
+    }
+
+    private static bool TryReleaseVersion(string tag, out Version version, out int? beta)
+    {
+        version = new Version(0, 0, 0);
+        beta = null;
+        var match = Regex.Match(tag, @"^v?([0-9]+\.[0-9]+\.[0-9]+)(-beta(?:\.(0|[1-9][0-9]*))?)?$", RegexOptions.CultureInvariant | RegexOptions.IgnoreCase);
+        if (!match.Success || !Version.TryParse(match.Groups[1].Value, out var parsed)) return false;
+        version = parsed;
+        if (!match.Groups[2].Success) return true;
+        if (!match.Groups[3].Success) { beta = 0; return true; }
+        if (!int.TryParse(match.Groups[3].Value, out var number)) return false;
+        beta = number;
+        return true;
+    }
+
+    private static int CompareTags(string left, string right)
+    {
+        TryReleaseVersion(left, out var a, out var ab);
+        TryReleaseVersion(right, out var b, out var bb);
+        var numeric = a.CompareTo(b);
+        if (numeric != 0) return numeric;
+        if (ab is null) return bb is null ? 0 : 1;
+        return bb is null ? -1 : ab.Value.CompareTo(bb.Value);
     }
 
     /// <summary>Reads the release "body" (markdown text), looking for a single machine-readable
@@ -107,8 +146,13 @@ public static class UpdateChecker
 
     /// <summary>About-section display text: "Development build" for <see cref="IsDevBuild"/>, otherwise
     /// "vMAJOR.MINOR.BUILD" (matching the three-field scheme <see cref="Parse"/> compares against).</summary>
-    public static string FormatVersionDisplay(Version v) =>
-        IsDevBuild(v) ? "Development build" : $"v{v.Major}.{v.Minor}.{v.Build}";
+    public static string FormatVersionDisplay(Version v, string? informationalVersion = null)
+    {
+        if (IsDevBuild(v)) return "Development build";
+        var tag = informationalVersion?.Split('+')[0];
+        return tag is not null && TryReleaseVersion(tag, out var parsed, out _) && parsed == NormalizeToThree(v)
+            ? "v" + tag.TrimStart('v', 'V') : $"v{v.Major}.{v.Minor}.{v.Build}";
+    }
 
     /// <summary>Guards against a compromised/malformed API response pointing the installer download at an
     /// attacker-controlled host: only github.com, a github.com subdomain, or a githubusercontent.com subdomain
@@ -116,6 +160,7 @@ public static class UpdateChecker
     private static bool IsAllowedAssetHost(string url)
     {
         if (!Uri.TryCreate(url, UriKind.Absolute, out var uri)) return false;
+        if (uri.Scheme != Uri.UriSchemeHttps) return false;
         var host = uri.Host;
         return string.Equals(host, "github.com", StringComparison.OrdinalIgnoreCase)
             || host.EndsWith(".github.com", StringComparison.OrdinalIgnoreCase)

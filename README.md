@@ -93,6 +93,23 @@ Uninstall from Settings → Apps; PawnIO is left installed because other tools m
   the notification settings and the chime. Alerts evaluate even while the dashboard and overlay are
   hidden.
 
+## Beta updates
+
+In **Settings → System → Updates**, enable **Receive beta updates** to include beta builds in automatic
+and manual update checks. It is off by default. Updates still require clicking **Update now**; beta builds
+may be unstable. Turning it off waits for a stable version at least as new as the installed beta's target
+version, rather than downgrading. About displays the full beta version.
+
+Maintain development on `beta`; publish test releases with tags such as `v1.11.0-beta.1`, incrementing the
+beta number for every build. The release workflow marks suffix tags as prereleases and never makes them
+the latest stable release. After testing, merge `beta` into `master` and tag `v1.11.0` for stable promotion.
+Branch pushes alone do not publish installers. Existing stable installations need a stable release containing
+the opt-in control first; alternatively testers can install the first beta manually.
+
+Before the first beta release, reconcile the newer `master` notification changes with `beta` and rerun
+validation. This stable backport only enables the update channel; it does not include beta's larger features
+or publish an installer.
+
 ## Run from source
 
     dotnet build -c Release
