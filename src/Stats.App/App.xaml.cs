@@ -79,6 +79,8 @@ public partial class App : Application
     /// <summary>Entry-assembly version, resolved once at startup and reused by the automatic update-check loop,
     /// the manual "Check for updates" button, and the About section's version display.</summary>
     private Version _currentVersion = new(0, 0, 0, 0);
+    private string? _currentInformationalVersion;
+    private int _updateChannelGeneration;
     /// <summary>Cancelled by OnExit() so an in-flight manual "Check for updates" doesn't try to touch a
     /// tearing-down SettingsViewModel.</summary>
     private CancellationTokenSource? _manualCheckCts;
@@ -114,6 +116,7 @@ public partial class App : Application
 
         bool startMinimized = StartupArgs.HasMinimizedFlag(e.Args); // case-insensitive: installer/shortcuts may pass any casing
         _currentVersion = Assembly.GetEntryAssembly()?.GetName().Version ?? new Version(0, 0, 0, 0);
+        _currentInformationalVersion = Assembly.GetEntryAssembly()?.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion;
 
         var settingsDir = Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Stats");
@@ -203,7 +206,7 @@ public partial class App : Application
         _settingsVm.StartupToggleRequested += OnStartupToggleRequested;
         _settingsVm.CheckForUpdatesRequested += OnManualCheckForUpdatesRequested;
         _settingsVm.RestartRequested += OnRestartNowRequested;
-        _settingsVm.SetVersionInfo(UpdateChecker.FormatVersionDisplay(_currentVersion), UpdateChecker.IsDevBuild(_currentVersion));
+        _settingsVm.SetVersionInfo(UpdateChecker.FormatVersionDisplay(_currentVersion, _currentInformationalVersion), UpdateChecker.IsDevBuild(_currentVersion));
         _dashboardVm.SettingsOpened += () => _ = RefreshStartupTaskStateAsync();
         _startupTaskService = new StartupTaskService();
 
@@ -847,6 +850,15 @@ public partial class App : Application
                 if (_settings.CheckForUpdatesAutomatically) StartUpdateChecks();
                 else { _updateCts?.Cancel(); _updateCts?.Dispose(); _updateCts = null; }
                 break;
+            case SettingsChange.UpdateChannel:
+                Interlocked.Increment(ref _updateChannelGeneration);
+                _updateCts?.Cancel(); _updateCts?.Dispose(); _updateCts = null;
+                _manualCheckCts?.Cancel();
+                _installCts?.Cancel();
+                _settingsVm?.ApplyManualCheckResult("");
+                _dashboardVm?.ClearUpdateOffer();
+                StartUpdateChecks();
+                break;
             case SettingsChange.Alerts:
                 if (_alertEngine is not null) _alertEngine.HoldSeconds = _settings.AlertHoldSeconds;
                 if (!_settings.AlertsEnabled) _alertEngine?.Reset(DateTime.UtcNow);
@@ -1097,11 +1109,17 @@ public partial class App : Application
     private async Task CheckForUpdateAsync(Version current, CancellationToken ct)
     {
         if (_updateService is null) return;
+        var generation = Volatile.Read(ref _updateChannelGeneration);
+        var includeBeta = _settings?.ReceiveBetaUpdates == true;
         try
         {
-            var info = await _updateService.CheckAsync(current, ct).ConfigureAwait(false);
+            var info = await _updateService.CheckAsync(current, ct, includePrereleases: includeBeta,
+                currentInformationalVersion: _currentInformationalVersion).ConfigureAwait(false);
             if (info is null) return;
-            _ = Dispatcher.BeginInvoke(() => _dashboardVm?.OfferUpdate(info));
+            _ = Dispatcher.BeginInvoke(() =>
+            {
+                if (!ct.IsCancellationRequested && generation == _updateChannelGeneration) _dashboardVm?.OfferUpdate(info);
+            });
         }
         catch (OperationCanceledException) { /* app exiting, or the setting was turned off */ }
         catch (Exception ex)
@@ -1131,9 +1149,12 @@ public partial class App : Application
         _manualCheckCts?.Cancel();
         _manualCheckCts?.Dispose();
         var cts = _manualCheckCts = new CancellationTokenSource();
+        var generation = _updateChannelGeneration;
         try
         {
-            var info = await _updateService.CheckAsync(_currentVersion, cts.Token, throwOnFailure: true).ConfigureAwait(true);
+            var info = await _updateService.CheckAsync(_currentVersion, cts.Token, throwOnFailure: true,
+                includePrereleases: _settings?.ReceiveBetaUpdates == true, currentInformationalVersion: _currentInformationalVersion).ConfigureAwait(true);
+            if (cts.IsCancellationRequested || generation != _updateChannelGeneration) return;
             if (info is null)
                 _settingsVm.ApplyManualCheckResult("Up to date");
             else
@@ -1149,6 +1170,7 @@ public partial class App : Application
         catch (Exception ex)
         {
             Trace.WriteLine("[Stats] manual update check failed: " + ex.Message);
+            if (cts.IsCancellationRequested || generation != _updateChannelGeneration) return;
             _settingsVm.ApplyManualCheckResult("Couldn't check for updates — try again later.", failed: true);
         }
     }
@@ -1195,15 +1217,17 @@ public partial class App : Application
             var stagingDir = await Task.Run(CreateSecureStagingDirectory).ConfigureAwait(true); // sweep + ACL work off the UI thread
             var versionPart = info.TagName.StartsWith("v", StringComparison.OrdinalIgnoreCase) ? info.TagName[1..] : info.TagName;
             destPath = Path.Combine(stagingDir, $"Stats-Setup-{versionPart}.exe");
-            var progress = new Progress<double>(p => _dashboardVm.SetUpdateProgress(p)); // Progress<T> marshals to the captured (UI) SynchronizationContext
+            var progress = new Progress<double>(p => { if (!cts.IsCancellationRequested) _dashboardVm.SetUpdateProgress(p); });
             await _updateService.DownloadAsync(info, destPath, progress, cts.Token).ConfigureAwait(true);
         }
         catch (Exception ex)
         {
             if (cts.IsCancellationRequested)
-                Trace.WriteLine("[Stats] update download cancelled (app exiting)");
-            else
-                Trace.WriteLine("[Stats] update download failed: " + ex.Message);
+            {
+                Trace.WriteLine("[Stats] update download cancelled (exit or channel change)");
+                return; // a newer channel/offer owns the UI now
+            }
+            Trace.WriteLine("[Stats] update download failed: " + ex.Message);
             _dashboardVm.SetUpdateError("Download failed — retry");
             return;
         }
@@ -1212,7 +1236,6 @@ public partial class App : Application
         {
             // Exiting mid-download (tray Exit, setting toggled off, etc.) raced the download to completion —
             // bail out rather than launching the helper against a shutdown already in progress.
-            _dashboardVm.SetUpdateError("Download failed — retry");
             return;
         }
 

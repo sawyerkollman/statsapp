@@ -174,6 +174,7 @@ public sealed partial class DashboardViewModel : ObservableObject
     /// Settings — finds a newer release.</summary>
     public void OfferUpdate(UpdateInfo info)
     {
+        if (UpdateBusy) return;
         _pendingUpdate = info;
         UpdateNotice = $"Stats {info.TagName} is available";
         UpdateBusy = false;
@@ -181,6 +182,17 @@ public sealed partial class DashboardViewModel : ObservableObject
         UpdateReleasePageUrl = info.ReleasePageUrl;
         ReleasePageError = "";
         UpdateAvailable = true;
+    }
+
+    public void ClearUpdateOffer()
+    {
+        _pendingUpdate = null;
+        UpdateAvailable = false;
+        UpdateBusy = false;
+        UpdateProgress = 0;
+        UpdateNotice = "";
+        UpdateReleasePageUrl = "";
+        ReleasePageError = "";
     }
 
     /// <summary>Called by the composition root after a failed attempt to open <see cref="UpdateReleasePageUrl"/>

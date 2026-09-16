@@ -10,7 +10,7 @@ namespace Stats.Core.ViewModels;
 
 // No GameMode member: the game-mode controls live in the Fans window, which re-applies frame tracing through
 // FansViewModel.GameModeChanged. A member nothing raises only invites the next feature onto a dead channel.
-public enum SettingsChange { PollInterval, HistoryWindow, Thresholds, Limits, Overlay, Hotkey, CoreMatrix, Hardware, Updates, Theme, Alerts, Tray, UiScale, Graphs, Processes }
+public enum SettingsChange { PollInterval, HistoryWindow, Thresholds, Limits, Overlay, Hotkey, CoreMatrix, Hardware, Updates, Theme, Alerts, Tray, UiScale, Graphs, Processes, UpdateChannel }
 
 /// <summary>One editable metric limit (PPT/TDC/EDC/GPU power). Empty text = no limit.</summary>
 public sealed partial class LimitItemViewModel : ObservableObject
@@ -76,6 +76,7 @@ public sealed partial class SettingsViewModel : ObservableObject
         _showCoreMatrix = settings.ShowCoreMatrix;
         _readMotherboardAndCoolers = settings.ReadMotherboardAndCoolers;
         _checkForUpdatesAutomatically = settings.CheckForUpdatesAutomatically;
+        _receiveBetaUpdates = settings.ReceiveBetaUpdates;
         _selectedThemePreset = settings.ThemePreset;
         _accentHex = settings.ThemeAccent ?? "";
         _alertsEnabled = settings.AlertsEnabled;
@@ -127,6 +128,7 @@ public sealed partial class SettingsViewModel : ObservableObject
     /// <summary>"" = ok; "Restart Stats to apply" after the setting above changes (set by App).</summary>
     [ObservableProperty] private string _hardwareStatus = "";
     [ObservableProperty] private bool _checkForUpdatesAutomatically;
+    [ObservableProperty] private bool _receiveBetaUpdates;
     [ObservableProperty] private string _selectedThemePreset;
     /// <summary>"" = use the preset's own accent; otherwise a "#RRGGBB" override, two-way bound to the hex TextBox.</summary>
     [ObservableProperty] private string _accentHex;
@@ -314,6 +316,13 @@ public sealed partial class SettingsViewModel : ObservableObject
         if (!_loaded) return;
         _s.CheckForUpdatesAutomatically = value;
         Raise(SettingsChange.Updates);
+    }
+
+    partial void OnReceiveBetaUpdatesChanged(bool value)
+    {
+        if (!_loaded) return;
+        _s.ReceiveBetaUpdates = value;
+        Raise(SettingsChange.UpdateChannel);
     }
 
     partial void OnAlertsEnabledChanged(bool value)

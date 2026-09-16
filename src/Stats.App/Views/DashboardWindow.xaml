@@ -797,6 +797,11 @@
 
                                             <TextBlock Text="Updates" Style="{StaticResource SettingsHeader}"/>
                                             <CheckBox Content="Check for updates automatically" IsChecked="{Binding CheckForUpdatesAutomatically}"/>
+                                            <CheckBox IsChecked="{Binding ReceiveBetaUpdates}" Margin="0,4,0,0">
+                                                <TextBlock Text="Receive beta updates" Foreground="{DynamicResource TextPrimary}" TextWrapping="Wrap"/>
+                                            </CheckBox>
+                                            <TextBlock Text="Prerelease builds may be unstable. Turning this off waits for the next stable release; it never automatically downgrades Stats."
+                                                       Foreground="{DynamicResource TextSecondary}" FontSize="11" TextWrapping="Wrap" Margin="0,0,0,4"/>
 
                                             <TextBlock Text="Diagnostics" Style="{StaticResource SettingsHeader}"/>
                                             <DockPanel Margin="0,0,0,4">

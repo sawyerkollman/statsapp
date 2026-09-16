@@ -28,20 +28,23 @@ public sealed class UpdateService : IDisposable
     /// updates" click passes <paramref name="throwOnFailure"/> true so it can tell a genuine failure apart from
     /// a legitimate "no update" null and show an explicit inline error instead of silently reporting "Up to
     /// date".</summary>
-    public async Task<UpdateInfo?> CheckAsync(Version current, CancellationToken cancellationToken = default, bool throwOnFailure = false)
+    public async Task<UpdateInfo?> CheckAsync(Version current, CancellationToken cancellationToken = default, bool throwOnFailure = false,
+        bool includePrereleases = false, string? currentInformationalVersion = null)
     {
         try
         {
             using var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
             cts.CancelAfter(CheckTimeout);
-            using var response = await _http.GetAsync(LatestReleaseUrl, cts.Token).ConfigureAwait(false);
+            // ponytail: inspect the newest 100 releases; paginate only if release volume makes that insufficient.
+            var url = includePrereleases ? LatestReleaseUrl.Replace("/latest", "?per_page=100", StringComparison.Ordinal) : LatestReleaseUrl;
+            using var response = await _http.GetAsync(url, cts.Token).ConfigureAwait(false);
             if (!response.IsSuccessStatusCode)
             {
                 if (throwOnFailure) throw new InvalidOperationException($"GitHub returned {(int)response.StatusCode}.");
                 return null;
             }
             var json = await response.Content.ReadAsStringAsync(cts.Token).ConfigureAwait(false);
-            return UpdateChecker.Parse(json, current);
+            return UpdateChecker.Parse(json, current, includePrereleases, currentInformationalVersion);
         }
         catch (Exception) when (!throwOnFailure)
         {
