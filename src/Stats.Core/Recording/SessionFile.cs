@@ -12,13 +12,13 @@ public static class SessionFile
     internal static void ValidateDefinitions(IReadOnlyList<MetricDefinition> definitions)
     {
         if (definitions.Count is 0 or > 1024 || definitions.Any(d => d is null ||
-            string.IsNullOrWhiteSpace(d.Id) || d.DisplayName is null || d.Unit is null ||
+            string.IsNullOrWhiteSpace(d.Id) || d.Id.Length > 1024 || d.DisplayName is null || d.DisplayName.Length > 1024 || d.Unit is null || d.Unit.Length > 100 ||
             d.Format is null || d.Format.Length != 2 || d.Format[0] != 'F' || !char.IsAsciiDigit(d.Format[1])) ||
             definitions.Select(d => d.Id).Distinct(StringComparer.Ordinal).Count() != definitions.Count)
             throw new InvalidDataException("A session needs between 1 and 1024 distinct valid metrics.");
     }
 
-    public static SessionData Load(string path)
+    public static SessionData Load(string path, CancellationToken cancellationToken = default)
     {
         var times = new Queue<DateTime>();
         Queue<float?>[] values = [];
@@ -49,7 +49,7 @@ public static class SessionFile
                 mins[i] = mins[i] is float min ? Math.Min(min, number) : number;
                 maxs[i] = maxs[i] is float max ? Math.Max(max, number) : number;
             }
-        });
+        }, cancellationToken);
         var timestamps = times.ToArray();
         var series = result.Definitions.Select((definition, i) =>
             new MetricSeries(definition, timestamps, values[i].ToArray())).ToArray();
@@ -57,6 +57,36 @@ public static class SessionFile
             definition.Id, mins[i], counts[i] == 0 ? null : (float)(sums[i] / counts[i]), maxs[i])).ToArray();
         return new(result.StartedUtc, result.EndedUtc, result.EndedUtc is not null,
             result.SampleCount, series, summaries);
+    }
+
+    /// <summary>Loads a bounded sample-index window without changing the legacy newest-window Load contract.</summary>
+    public static SessionData LoadWindow(string path, long firstSample, int maximumSamples, CancellationToken cancellationToken = default)
+    {
+        // ponytail: bounded memory, but each window streams the full file; add a sparse seek index if large-file latency warrants it.
+        if (firstSample < 0 || maximumSamples < 1) throw new ArgumentOutOfRangeException(firstSample < 0 ? nameof(firstSample) : nameof(maximumSamples));
+        maximumSamples = Math.Min(maximumSamples, ChartSampleLimit);
+        MetricDefinition[] definitions = [];
+        var times = new List<DateTime>(maximumSamples);
+        List<float?>[] values = [];
+        long index = 0;
+        var result = Read(path, header => { definitions = header; values = header.Select(_ => new List<float?>(maximumSamples)).ToArray(); }, (at, row) =>
+        {
+            if (index >= firstSample && times.Count < maximumSamples)
+            {
+                times.Add(at);
+                for (var i = 0; i < row.Length; i++) values[i].Add(row[i]);
+            }
+            index++;
+        }, cancellationToken);
+        var series = definitions.Select((definition, i) => new MetricSeries(definition, times.ToArray(), values[i].ToArray())).ToArray();
+        var summaries = series.Select(series => Summary(series)).ToArray();
+        return new(result.StartedUtc, result.EndedUtc, result.EndedUtc is not null, result.SampleCount, series, summaries);
+    }
+
+    private static SessionMetricSummary Summary(MetricSeries series)
+    {
+        var finite = series.Values.Where(v => v is float).Select(v => v!.Value).ToArray();
+        return new(series.Definition.Id, finite.Length == 0 ? null : finite.Min(), finite.Length == 0 ? null : finite.Average(), finite.Length == 0 ? null : finite.Max());
     }
 
     public static void ExportCsv(string source, string destination)
@@ -81,10 +111,10 @@ public static class SessionFile
 
     private sealed record ReadResult(MetricDefinition[] Definitions, DateTime StartedUtc, DateTime? EndedUtc, long SampleCount);
 
-    private static ReadResult Read(string path, Action<MetricDefinition[]> header, Action<DateTime, float?[]> sample)
+    private static ReadResult Read(string path, Action<MetricDefinition[]> header, Action<DateTime, float?[]> sample, CancellationToken cancellationToken = default)
     {
         using var reader = new StreamReader(new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite));
-        var first = reader.ReadLine() ?? throw new InvalidDataException("Missing session header.");
+        var first = ReadLine(reader, out _) ?? throw new InvalidDataException("Missing session header.");
         using var document = JsonDocument.Parse(first);
         var root = document.RootElement;
         if (root.GetProperty("type").GetString() != "header" || root.GetProperty("version").GetInt32() != 1)
@@ -97,12 +127,13 @@ public static class SessionFile
         DateTime previous = started;
         DateTime? end = null;
         long count = 0;
-        for (string? line; (line = reader.ReadLine()) is not null;)
+        for (string? line; (line = ReadLine(reader, out var terminated)) is not null;)
         {
+            cancellationToken.ThrowIfCancellationRequested();
             if (end is not null) throw new InvalidDataException("Unexpected data after the session ended.");
             JsonDocument rowDocument;
             try { rowDocument = JsonDocument.Parse(line); }
-            catch (JsonException) when (reader.Peek() < 0)
+            catch (JsonException) when (!terminated && reader.Peek() < 0)
             {
                 // Interrupted appends may leave one incomplete final object; preceding rows remain useful.
                 break;
@@ -136,6 +167,20 @@ public static class SessionFile
             }
         }
         return new(definitions, started, end, count);
+    }
+
+    private static string? ReadLine(StreamReader reader, out bool terminated)
+    {
+        const int limit = 2 * 1024 * 1024;
+        var text = new StringBuilder();
+        int value;
+        while ((value = reader.Read()) >= 0 && value != '\n')
+        {
+            if (text.Length >= limit) throw new InvalidDataException("Session row exceeds the 2 MB limit.");
+            text.Append((char)value);
+        }
+        terminated = value == '\n';
+        return value < 0 && text.Length == 0 ? null : text.ToString().TrimEnd('\r');
     }
 
     private static string Quote(string value)

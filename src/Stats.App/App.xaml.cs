@@ -124,7 +124,7 @@ public partial class App : Application
             Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Stats");
         _settingsService = new SettingsService(settingsDir);
         _settings = _settingsService.Load();
-        ThemeManager.Apply(_settings.ThemePreset, _settings.ThemeAccent); // before any window is created
+        ThemeManager.Apply(_settings.ThemePreset, _settings.ThemeAccent, _settings.ThemeSecondary, _settings.ThemeGradient); // before any window is created
         GraphStyle.Apply(_settings);
 
         IReadOnlyList<MetricDefinition> definitions;
@@ -164,6 +164,7 @@ public partial class App : Application
         _alertEngine.EpisodeEnded += (metricId, raisedAtLocal, duration) =>
         {
             if (raisedAtLocal is DateTime raised) _alertLog?.Complete(metricId, raised, duration);
+            if (raisedAtLocal is not null) _labVm?.AddThresholdEvent(metricId, false, DateTime.UtcNow);
         };
         _poller = new SensorPoller(_reader)
         {
@@ -223,6 +224,9 @@ public partial class App : Application
         _dashboardVm.OpenPeaksRequested += ShowPeaks;
         _dashboardVm.OpenComparisonRequested += ShowComparison;
         _dashboardVm.OpenSessionsRequested += ShowSessions;
+        _dashboardVm.OpenThemeStudioRequested += ShowThemeStudio;
+        _dashboardVm.OpenLabRequested += ShowBetaLab;
+        _dashboardVm.OpenScenesRequested += ShowScenes;
         _dashboardVm.OpenFansRequested += ShowFans;
         _dashboardVm.OpenTileDetailRequested += ShowMetricDetail;
         _dashboardVm.DashboardMetricsChanged += () => { _peaksVm?.RebuildRows(); ApplyFrameTracing(); };
@@ -467,6 +471,7 @@ public partial class App : Application
     private void SaveWindowBounds()
     {
         if (_dashboard is null || _settings is null) return;
+        if (_dashboard.IsCinemaMode) return;
         if (_dashboard.WindowState != WindowState.Normal) return;
         if (double.IsNaN(_dashboard.Left) || double.IsNaN(_dashboard.Top)) return;
         _settings.WindowLeft = _dashboard.Left;
@@ -611,6 +616,7 @@ public partial class App : Application
             var context = defsById.TryGetValue(evt.MetricId, out var definition) && _store.TryGet(evt.MetricId, out var history)
                 ? history.CopySeries(definition) : null;
             _alertLog.Add(evt, evt.RaisedAtLocal.ToUniversalTime(), context);
+            _labVm?.AddThresholdEvent(evt.MetricId, true, timestampUtc);
             ShowAlertNotification(evt, timestampUtc);
             if (_settings.AlertSoundEnabled)
                 try { System.Media.SystemSounds.Exclamation.Play(); } catch { /* audio device unavailable */ }
@@ -917,7 +923,7 @@ public partial class App : Application
                 UpdateTrayTooltip();
                 break;
             case SettingsChange.Theme:
-                ThemeManager.Apply(_settings.ThemePreset, _settings.ThemeAccent);
+                ThemeManager.Apply(_settings.ThemePreset, _settings.ThemeAccent, _settings.ThemeSecondary, _settings.ThemeGradient);
                 // ThemeManager.Apply replaces brush entries rather than mutating them, so already-bound
                 // SeverityToBrushConverter Foregrounds/Strokes/Fills won't repaint on their own — the Severity
                 // value they're bound to hasn't changed. Re-raise it on every live VM so those Bindings re-run.

@@ -7,7 +7,7 @@ public class ThemePresetsTests
     [Fact]
     public void Names_ContainsAllPresetsInOrder()
     {
-        Assert.Equal(new[] { "Dark Amber", "Dark Blue", "Dark Green", "Dark Purple", "Light", "Synthwave", "Outrun", "Midnight" }, ThemePresets.Names);
+        Assert.Equal(new[] { "Dark Amber", "Dark Blue", "Dark Green", "Dark Purple", "Light", "Synthwave", "Outrun", "Midnight", "CRT Terminal", "Arctic Glass", "Reactor", "Deep Space" }, ThemePresets.Names);
     }
 
     [Fact]

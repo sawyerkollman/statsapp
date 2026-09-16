@@ -78,6 +78,12 @@ public sealed class AppSettings
     public string ThemePreset { get; set; } = ThemePresets.Default;
     /// <summary>Custom accent override as "#RRGGBB", or null to use the preset's own accent colour.</summary>
     public string? ThemeAccent { get; set; }
+    public string? ThemeSecondary { get; set; }
+    public bool ThemeGradient { get; set; } = true;
+    public bool ReactiveDecorations { get; set; }
+    public List<ThemeDesign> ThemeDesigns { get; set; } = new();
+    public List<DashboardScene> Scenes { get; set; } = new();
+    public Dictionary<string, string> SceneSectionLabels { get; set; } = new();
 
     // ---- v1.8 alerts ----
     /// <summary>Master switch for the alert engine (tray balloon + log); evaluated regardless of dashboard/overlay

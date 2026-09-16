@@ -35,7 +35,7 @@ public static class CaptureHost
 
         bool themeCycle = spec.SubstateList.Contains("theme-cycle");
         var buildSubstates = spec.SubstateList
-            .Where(s => s != "theme-cycle" && !s.StartsWith("category-", StringComparison.Ordinal))
+            .Where(s => spec.View != "lab" && s != "theme-cycle" && !s.StartsWith("category-", StringComparison.Ordinal))
             .Select(s => spec.View == "settings" && s == "update-error" ? "settings-update-error" : s)
             .ToArray();
 
@@ -155,12 +155,39 @@ public static class CaptureHost
         "processes" => new PeaksWindow { DataContext = c.Peaks },
         "comparison" => new ComparisonWindow { DataContext = c.Comparison },
         "sessions" => new SessionWindow { DataContext = c.Sessions },
+        "theme-studio" => new ThemeStudioWindow { DataContext = new ThemeStudioViewModel(c.Settings, () => { }) },
+        "scenes" => BuildScenes(c),
+        "lab" => BuildLab(spec, c),
         "details" => BuildDetails(spec, c),
         "overlay" => new OverlayWindow { DataContext = c.Overlay, Opacity = c.Settings.OverlayOpacity },
         "threshold-dialog" => BuildThresholdDialog(spec, c),
         "input-dialog" => BuildInputDialog(),
         _ => throw new ArgumentException($"Unknown --view '{spec.View}'."),
     };
+
+    private static Window BuildScenes(PreviewComposition c)
+    {
+        var vm = new SceneComposerViewModel(c.Settings, c.Definitions, () => { });
+        vm.Name = "Gaming cockpit"; vm.SaveCurrentCommand.Execute(null);
+        return new SceneComposerWindow { DataContext = vm };
+    }
+
+    private static Window BuildLab(CaptureSpec spec, PreviewComposition c)
+    {
+        var vm = new LabViewModel(Path.Combine(c.TempRoot, "beta-lab"), c.Definitions);
+        vm.AddGameCommand.Execute(null); vm.SelectedGame!.ExecutableBaseName = "simulated-game";
+        vm.AddRuleCommand.Execute(null);
+        vm.SelectedRule!.FirstMetricId = c.Definitions.FirstOrDefault()?.Id ?? "";
+        vm.SelectedRule.SecondMetricId = c.Definitions.Skip(1).FirstOrDefault()?.Id ?? "";
+        vm.SelectedRule.FirstThreshold = 90; vm.SelectedRule.SecondThreshold = 80;
+        vm.AddTimeline("bookmark", "Simulated warm-up complete", TimeSeries.FixedTimeUtc);
+        vm.SetDiagnostics("preview", "simulated Windows", ".NET 8", true);
+        var window = new LabWindow { DataContext = vm };
+        window.Closed += (_, _) => vm.Dispose();
+        var index = Array.IndexOf(new[] { "gaming", "compound", "history", "timeline", "diagnostics" }, spec.Substate);
+        ((TabControl)window.FindName("LabTabs")).SelectedIndex = Math.Max(0, index);
+        return window;
+    }
 
     private static DashboardWindow BuildDashboard(CaptureSpec spec, PreviewComposition c, bool openFlyout = false, int tab = 0)
     {

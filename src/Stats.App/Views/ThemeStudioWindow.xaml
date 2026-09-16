@@ -1,0 +1,33 @@
+<Window x:Class="Stats.App.Views.ThemeStudioWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Stats — Theme studio" Width="600" Height="610" MinWidth="420" MinHeight="380"
+        Background="{DynamicResource WindowBg}">
+    <ScrollViewer VerticalScrollBarVisibility="Auto">
+        <StackPanel Margin="20">
+            <TextBlock Text="Theme studio" FontSize="20" FontWeight="SemiBold" Foreground="{DynamicResource TextPrimary}"/>
+            <TextBlock Text="Draft a design, then Apply live. Text and warning colors stay readable; overlay colors stay pinned." TextWrapping="Wrap" Foreground="{DynamicResource TextSecondary}" Margin="0,8,0,16"/>
+            <TextBlock Text="Saved designs" Foreground="{DynamicResource TextSecondary}"/>
+            <ComboBox ItemsSource="{Binding Designs}" SelectedItem="{Binding SelectedDesign}" DisplayMemberPath="Name" AutomationProperties.Name="Saved designs" Margin="0,4,0,12"/>
+            <TextBlock Text="Design name" Foreground="{DynamicResource TextSecondary}"/>
+            <TextBox Text="{Binding Name, UpdateSourceTrigger=PropertyChanged}" MaxLength="80" AutomationProperties.Name="Design name" Margin="0,4,0,12"/>
+            <TextBlock Text="Surface palette" Foreground="{DynamicResource TextSecondary}"/>
+            <ComboBox ItemsSource="{Binding Presets}" SelectedItem="{Binding Preset}" AutomationProperties.Name="Surface palette" Margin="0,4,0,12"/>
+            <TextBlock Text="Primary accent (#RRGGBB; blank uses palette)" Foreground="{DynamicResource TextSecondary}"/>
+            <TextBox Text="{Binding Accent, UpdateSourceTrigger=PropertyChanged}" MaxLength="7" AutomationProperties.Name="Primary accent" Margin="0,4,0,12"/>
+            <TextBlock Text="Secondary decoration accent (#RRGGBB)" Foreground="{DynamicResource TextSecondary}"/>
+            <TextBox Text="{Binding Secondary, UpdateSourceTrigger=PropertyChanged}" MaxLength="7" AutomationProperties.Name="Secondary accent" Margin="0,4,0,12"/>
+            <CheckBox Content="Gradient decoration" IsChecked="{Binding Gradient}" IsEnabled="{Binding HasDecoration}" Margin="0,4"/>
+            <CheckBox Content="Reactive decoration (follows readings; not a health indicator)" IsChecked="{Binding Reactive}" IsEnabled="{Binding HasDecoration}" Margin="0,4"/>
+            <TextBlock Text="Decoration is shown in Auto layout with a creative palette (Synthwave, Outrun, Midnight or the four new presets)." Foreground="{DynamicResource TextSecondary}" TextWrapping="Wrap" Margin="0,6"/>
+            <TextBlock Text="Reactive art follows existing refreshes and is disabled with Graph effects. No additional monitoring or animation loop." Foreground="{DynamicResource TextSecondary}" TextWrapping="Wrap" Margin="0,6,0,10"/>
+            <TextBlock Text="{Binding Error}" Foreground="{DynamicResource CritBrush}" TextWrapping="Wrap" Margin="0,4"/>
+            <WrapPanel Margin="0,12,0,0">
+                <Button Content="Apply live" Command="{Binding ApplyCommand}" Style="{StaticResource PrimaryButton}" Margin="0,0,6,6"/>
+                <Button Content="Save design" Command="{Binding SaveDesignCommand}" Style="{StaticResource HeaderButton}" Margin="0,0,6,6"/>
+                <Button Content="Import…" Click="Import_Click" Style="{StaticResource HeaderButton}" Margin="0,0,6,6"/>
+                <Button Content="Export…" Click="Export_Click" Style="{StaticResource HeaderButton}" Margin="0,0,6,6"/>
+            </WrapPanel>
+        </StackPanel>
+    </ScrollViewer>
+</Window>

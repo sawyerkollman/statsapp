@@ -27,6 +27,7 @@ public partial class App
     {
         _recordingDirectory = Path.Combine(directory, "recordings");
         _recorder = new SessionRecorder(_recordingDirectory); // constructor does not create files
+        InitializeBetaLab(Path.Combine(directory, "beta-lab"));
         _alertHistory = new AlertHistoryStore(directory);
         _alertLog = new AlertLogViewModel();
         _alertLog.Load(_alertHistory.Load());
@@ -36,7 +37,7 @@ public partial class App
         _alertLog.OpenContextRequested += series => ShowCapturedComparison(
             $"Alert context - {series.Definition.DisplayName}", new[] { series });
         _alertSaveTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(5) };
-        _alertSaveTimer.Tick += (_, _) => SaveAlertHistory();
+        _alertSaveTimer.Tick += (_, _) => { SaveAlertHistory(); _labVm?.SaveTimeline(); };
         _alertSaveTimer.Start();
     }
 
@@ -44,6 +45,7 @@ public partial class App
     {
         _recorder?.Record(snapshot);
         _sessionVm?.RefreshRecorderState();
+        RefreshBetaLab(snapshot);
         _alertLog?.UpdateOngoing(snapshot);
         if (_comparison is { IsVisible: true }) _comparisonVm?.RefreshLive();
     }
@@ -71,6 +73,7 @@ public partial class App
     {
         _alertSaveTimer?.Stop();
         _recorder?.Dispose(); // drain after the existing poller-stop/fan-restore sequence
+        _labVm?.Dispose();
         _alertSave?.GetAwaiter().GetResult(); // writer never awaits the Dispatcher
         if (_alertsDirty && _alertHistory is not null && _alertLog is not null)
             _alertHistory.Save(_alertLog.ExportRecords());
@@ -98,10 +101,10 @@ public partial class App
         ShowMonitoringWindow(_comparison);
     }
 
-    private void ShowSessions()
+    private void EnsureSessionViewModel()
     {
         if (_recorder is null || _settings is null) return;
-        if (_sessions is null)
+        if (_sessionVm is null)
         {
             _sessionVm = new SessionViewModel(_recorder, () =>
             {
@@ -111,8 +114,20 @@ public partial class App
             }, recordingDirectory: _recordingDirectory);
             _sessionVm.OpenComparisonRequested += series => ShowCapturedComparison(
                 $"Recorded comparison - {_sessionVm.StartedUtc?.ToLocalTime():g}", series);
-            _sessions = new SessionWindow { DataContext = _sessionVm };
+            _sessionVm.RecordingStarted += () =>
+            {
+                if (_startingAutoRecording) return;
+                _autoRecordingOwned = false;
+                _labVm?.AcknowledgeRecording(false, false);
+            };
         }
+    }
+
+    private void ShowSessions()
+    {
+        EnsureSessionViewModel();
+        if (_sessionVm is null) return;
+        _sessions ??= new SessionWindow { DataContext = _sessionVm };
         _sessionVm!.RefreshRecorderState();
         ShowMonitoringWindow(_sessions);
     }

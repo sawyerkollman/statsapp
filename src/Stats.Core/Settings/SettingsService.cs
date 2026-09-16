@@ -70,6 +70,8 @@ public sealed class SettingsService
         settings.ThresholdOverrides ??= new();
         settings.DashboardMetrics ??= new();
         settings.OverlayMetrics ??= new();
+        settings.DashboardMetrics.RemoveAll(string.IsNullOrWhiteSpace);
+        settings.OverlayMetrics.RemoveAll(string.IsNullOrWhiteSpace);
         settings.CollapsedGroups ??= new();
         settings.FanChannels ??= new();
         settings.FanProfiles ??= new();
@@ -78,6 +80,13 @@ public sealed class SettingsService
         settings.OverlayHotkey ??= "";
         settings.ThemePreset = ThemePresets.SanitizePresetName(settings.ThemePreset);
         settings.ThemeAccent = ThemePresets.SanitizeAccentHex(settings.ThemeAccent);
+        settings.ThemeSecondary = ThemePresets.SanitizeAccentHex(settings.ThemeSecondary);
+        if (!DashboardScene.ValidLabels(settings.SceneSectionLabels)) settings.SceneSectionLabels = new();
+        settings.Scenes = (settings.Scenes ?? new()).Where(s => s is not null).Take(50)
+            .Where(s => { try { s.Validate(); return true; } catch { return false; } }).DistinctBy(s => s.Name).ToList();
+        settings.ThemeDesigns = (settings.ThemeDesigns ?? new()).Where(d => d is not null).Take(50)
+            .Select(d => { try { return d.Validate(); } catch { return null; } })
+            .OfType<ThemeDesign>().DistinctBy(d => d.Name).ToList();
         // Null *elements* deserialize just as happily as null collections ({"FanChannels":{"a":null}}), and the
         // sanitation below dereferences every one of them.
         settings.FanChannels = settings.FanChannels.Where(kv => kv.Value is not null).ToDictionary(kv => kv.Key, kv => kv.Value);

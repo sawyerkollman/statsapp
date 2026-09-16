@@ -3,6 +3,8 @@
                     xmlns:conv="clr-namespace:Stats.App.Converters"
                     xmlns:sys="clr-namespace:System;assembly=mscorlib">
 
+    <SolidColorBrush x:Key="NeonDecorationBrush" Color="#EA4AAA"/>
+
     <!-- Shared primitives. Merged by BOTH App.xaml and TileTemplates.xaml — a StaticResource inside a merged
          dictionary cannot see the dictionary that merged it, so anything referenced from TileTemplates.xaml must
          live here rather than in App.xaml. This means Theme.xaml is instantiated as TWO DISTINCT

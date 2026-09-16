@@ -61,6 +61,12 @@ public sealed partial class DashboardViewModel : ObservableObject
     public event Action? OpenPeaksRequested;
     public event Action? OpenComparisonRequested;
     public event Action? OpenSessionsRequested;
+    public event Action? OpenThemeStudioRequested;
+    public event Action? OpenLabRequested;
+    public event Action? OpenScenesRequested;
+    [RelayCommand] private void OpenThemeStudio() => OpenThemeStudioRequested?.Invoke();
+    [RelayCommand] private void OpenLab() => OpenLabRequested?.Invoke();
+    [RelayCommand] private void OpenScenes() => OpenScenesRequested?.Invoke();
     [RelayCommand] private void OpenComparison() => OpenComparisonRequested?.Invoke();
     [RelayCommand] private void OpenSessions() => OpenSessionsRequested?.Invoke();
     public event Action? OpenFansRequested;
@@ -222,6 +228,8 @@ public sealed partial class DashboardViewModel : ObservableObject
 
     public void RefreshAll()
     {
+        OnPropertyChanged(nameof(DecorationOpacity));
+        OnPropertyChanged(nameof(DecorationCaption));
         // Built once per batch rather than once per tile (v1.8 §10 "Cheap extras") — every tile/matrix cell below
         // looks up its governing rule in O(1) instead of scanning ThresholdRules itself.
         var thresholds = ThresholdIndex.Build(_settings);
@@ -245,6 +253,15 @@ public sealed partial class DashboardViewModel : ObservableObject
         foreach (var tile in Tiles) tile.RaiseSeverityRefresh();
         CoreMatrix?.RaiseSeverityRefresh();
     }
+
+    private MetricDefinition? DecorationMetric => _settings.ReactiveDecorations && _settings.GraphEffects
+        ? Tiles.Select(t => t.Definition).FirstOrDefault(d => d.Unit == "%" && d.Group is MetricGroup.Cpu or MetricGroup.Gpu) : null;
+    public double DecorationOpacity => DecorationMetric is { } definition && _store[definition.Id].Current is float value && float.IsFinite(value)
+        ? 0.08 + Math.Clamp(value, 0, 100) / 100 * 0.18 : _settings.ReactiveDecorations && _settings.GraphEffects ? 0.04 : 0.18;
+    public string DecorationCaption => !_settings.ReactiveDecorations || !_settings.GraphEffects ? "Selected live readings"
+        : DecorationMetric is { } definition && _store[definition.Id].Current is float value && float.IsFinite(value)
+        ? $"Decorative response: {definition.DisplayName} · not a health indicator"
+        : "Decorative response unavailable · select a CPU/GPU % metric";
 
     // ---- picker ----
 
@@ -475,6 +492,7 @@ public sealed partial class DashboardViewModel : ObservableObject
 
             var section = new GroupSectionViewModel(group, !_settings.CollapsedGroups.Contains(group.ToString()), OnSectionExpandedChanged)
             {
+                DisplayLabel = _settings.SceneSectionLabels.TryGetValue(group.ToString(), out var label) && !string.IsNullOrWhiteSpace(label) ? label : group.ToString(),
                 CoreMatrix = matrix,
                 StatusText = _groupStatus.TryGetValue(group, out var st) ? st : "",
             };

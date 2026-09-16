@@ -27,11 +27,27 @@ public sealed partial class DashboardViewModel
     public bool ApplyLayoutProfile(string name)
     {
         if (!TryGetLayoutProfile(name, out var profile)) return false;
+        _settings.SceneSectionLabels.Clear();
+        return ApplyLayout(profile!, profile!.Name);
+    }
+
+    public void ApplySceneLayout(LayoutProfile layout) => ApplyLayout(layout, null);
+    public void SyncOverlaySelection()
+    {
+        ClearLayoutUndo();
+        _suppressPickerEvents = true;
+        try { foreach (var item in PickerItems) item.IsOnOverlay = _settings.OverlayMetrics.Contains(item.Definition.Id); }
+        finally { _suppressPickerEvents = false; }
+        MarkLayoutModified();
+    }
+
+    private bool ApplyLayout(LayoutProfile profile, string? activeName)
+    {
         _applyingLayoutProfile = true;
         try
         {
             profile!.Restore(_settings);
-            _settings.ActiveLayoutProfile = profile.Name;
+            _settings.ActiveLayoutProfile = activeName;
             _settings.LayoutProfileModified = false;
             LayoutMode = _settings.DashboardLayoutMode;
             OnPropertyChanged(nameof(IsAutoLayout));

@@ -247,21 +247,21 @@ public sealed partial class SettingsViewModel : ObservableObject
 
     partial void OnOverlayIsVerticalChanged(bool value)
     {
-        if (!_loaded) return;
+        if (!_loaded || _syncing) return;
         _s.OverlayOrientation = value ? OverlayOrientation.Vertical : OverlayOrientation.Horizontal;
         Raise(SettingsChange.Overlay);
     }
 
     partial void OnOverlayFontScaleChanged(double value)
     {
-        if (!_loaded) return;
+        if (!_loaded || _syncing) return;
         _s.OverlayFontScale = Math.Clamp(value, 0.8, 1.6);
         Raise(SettingsChange.Overlay);
     }
 
     partial void OnOverlayOpacityChanged(double value)
     {
-        if (!_loaded) return;
+        if (!_loaded || _syncing) return;
         _s.OverlayOpacity = Math.Clamp(value, 0.3, 1.0);
         Raise(SettingsChange.Overlay);
     }
@@ -401,7 +401,7 @@ public sealed partial class SettingsViewModel : ObservableObject
 
     partial void OnOverlaySparklinesChanged(bool value)
     {
-        if (!_loaded) return;
+        if (!_loaded || _syncing) return;
         _s.OverlayGraphs = value ? OverlayGraphs.Sparkline : OverlayGraphs.None;
         Raise(SettingsChange.Overlay);
     }
@@ -454,7 +454,7 @@ public sealed partial class SettingsViewModel : ObservableObject
 
     partial void OnSelectedThemePresetChanged(string value)
     {
-        if (!_loaded) return;
+        if (!_loaded || _syncing) return;
         var sanitized = ThemePresets.SanitizePresetName(value);
         if (sanitized != value) { SelectedThemePreset = sanitized; return; } // re-enters with the sanitized name
         _s.ThemePreset = sanitized;
@@ -463,7 +463,7 @@ public sealed partial class SettingsViewModel : ObservableObject
 
     partial void OnAccentHexChanged(string value)
     {
-        if (!_loaded) return;
+        if (!_loaded || _syncing) return;
         if (value.Length == 0)
         {
             IsAccentInvalid = false;
@@ -555,6 +555,25 @@ public sealed partial class SettingsViewModel : ObservableObject
         foreach (var (group, unit) in discovered) AddableRulePairs.Add(new ThresholdRulePairOption(group, unit));
         HasAddableRulePairs = AddableRulePairs.Count > 0;
         SelectedAddablePair = AddableRulePairs.FirstOrDefault();
+    }
+
+    public void SyncTheme()
+    {
+        _syncing = true;
+        try { SelectedThemePreset = _s.ThemePreset; AccentHex = _s.ThemeAccent ?? ""; IsAccentInvalid = false; }
+        finally { _syncing = false; }
+    }
+
+    public void SyncOverlay()
+    {
+        _syncing = true;
+        try
+        {
+            OverlayIsVertical = _s.OverlayOrientation == OverlayOrientation.Vertical;
+            OverlayFontScale = _s.OverlayFontScale; OverlayOpacity = _s.OverlayOpacity;
+            OverlaySparklines = _s.OverlayGraphs == OverlayGraphs.Sparkline;
+        }
+        finally { _syncing = false; }
     }
 
     private void Raise(SettingsChange change)

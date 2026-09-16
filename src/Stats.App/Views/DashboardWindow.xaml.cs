@@ -75,6 +75,7 @@ public partial class DashboardWindow : Window
     public DashboardWindow()
     {
         InitializeComponent();
+        InitializeCinema();
         DarkTitleBar.Apply(this);
         DataContextChanged += (_, _) =>
         {
@@ -779,6 +780,12 @@ public partial class DashboardWindow : Window
         var menu = new ContextMenu { PlacementTarget = target, Placement = PlacementMode.Bottom };
 
         menu.Items.Add(new MenuItem { Header = "Compare metrics…", Command = vm.OpenComparisonCommand });
+        menu.Items.Add(new MenuItem { Header = "Beta lab…", Command = vm.OpenLabCommand });
+        menu.Items.Add(new MenuItem { Header = "Theme studio…", Command = vm.OpenThemeStudioCommand });
+        menu.Items.Add(new MenuItem { Header = "Scene builder / overlays…", Command = vm.OpenScenesCommand });
+        var cinema = new MenuItem { Header = "Cinema mode (F11, Esc to leave)", IsCheckable = true, IsChecked = IsCinemaMode };
+        cinema.Click += (_, _) => ToggleCinema();
+        menu.Items.Add(cinema);
         menu.Items.Add(new MenuItem { Header = "Recordings…", Command = vm.OpenSessionsCommand });
         menu.Items.Add(new Separator());
 

@@ -18,6 +18,7 @@ public sealed partial class GroupSectionViewModel : ObservableObject
 
     public MetricGroup Group { get; }
     public string Name => Group.ToString();
+    public string DisplayLabel { get; init; } = "";
     public ObservableCollection<MetricTileViewModel> Tiles { get; } = new();
 
     [ObservableProperty] private bool _isExpanded;
