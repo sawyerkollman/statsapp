@@ -40,6 +40,18 @@ public class GameModeSwitcherTests
     }
 
     [Fact]
+    public void GamingChanged_RaisesOncePerTransition_AfterStateLatches()
+    {
+        var (sw, _, _, _) = Make();
+        var transitions = new List<bool>();
+        sw.GamingChanged += gaming => { Assert.Equal(gaming, sw.IsGaming); transitions.Add(gaming); };
+        for (int t = 0; t <= 5; t++) sw.Tick(Snap(120), T0.AddSeconds(t));
+        for (int t = 6; t <= 26; t++) sw.Tick(Snap(null), T0.AddSeconds(t));
+
+        Assert.Equal(new[] { true, false }, transitions);
+    }
+
+    [Fact]
     public void GamingStatusText_ShowsLocalTime_NotUtc()
     {
         var (sw, _, s, _) = Make();

@@ -130,6 +130,19 @@ public sealed class AppSettings
     /// restores the plain pre-effects look.</summary>
     public bool GraphEffects { get; set; } = true;
 
+    // ---- v1.10 processes ----
+    /// <summary>Sample top processes while the Peaks window is open; off prevents process enumeration.</summary>
+    public bool ProcessSamplingEnabled { get; set; } = true;
+
+    // ---- layout profiles ----
+    public List<LayoutProfile> LayoutProfiles { get; set; } = new();
+    public string? ActiveLayoutProfile { get; set; }
+    public bool LayoutProfileModified { get; set; }
+    public string? GameModeGamingLayoutProfile { get; set; }
+    public string? GameModeDesktopLayoutProfile { get; set; }
+    /// <summary>Blocks user layout edits; explicit profile changes remain available.</summary>
+    public bool IsLayoutLocked { get; set; }
+
     // ---- overlay sparklines ----
     /// <summary>Whether overlay tiles draw a sparkline beside/below their value. See
     /// <see cref="OverlayGraphsConverter"/> for why an unrecognized stored value falls back to

@@ -34,4 +34,11 @@ public partial class PeaksWindow : Window
             vm.CopyError = $"Copy failed: {ex.Message}";
         }
     }
+
+    private void CopyProcesses_Click(object sender, RoutedEventArgs e)
+    {
+        if (DataContext is not PeaksViewModel vm) return;
+        try { Clipboard.SetText(vm.Processes.ToTsv()); vm.Processes.CopyError = ""; }
+        catch (Exception ex) { vm.Processes.CopyError = $"Copy failed: {ex.Message}"; }
+    }
 }

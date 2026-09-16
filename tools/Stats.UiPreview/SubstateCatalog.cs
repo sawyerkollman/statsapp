@@ -7,8 +7,9 @@ internal static class SubstateCatalog
 {
     private static readonly Dictionary<string, string[]> ByView = new()
     {
-        ["dashboard"] = new[] { "collapsed-all", "tile-menu", "degraded", "sensor-failure", "update-offered", "update-progress", "update-error", "fps-hint", "theme-cycle",
+        ["dashboard"] = new[] { "collapsed-all", "tile-menu", "view-menu", "degraded", "sensor-failure", "update-offered", "update-progress", "update-error", "fps-hint", "theme-cycle",
             "layout-free", "layout-grid", "layout-free-placed", "layout-resized", "layout-resize-grip",
+            "profiles-saved", "layout-locked",
             "graphs-plain", "graphs-effects", "graphs-warmup",
             "game-tiles", "game-tiles-large", "game-tiles-small", "game-summary-orphan", "game-histogram-fps" },
         ["picker"] = new[] { "no-results", "filtered" },
@@ -16,7 +17,10 @@ internal static class SubstateCatalog
             "category-appearance", "category-monitoring", "category-alerts", "category-overlay", "category-system" },
         ["fans"] = new[] { "off", "on", "manual", "curve", "pump", "modified", "no-channels", "conflict", "recovery", "write-failed" },
         ["peaks"] = new[] { "empty", "populated", "long-names" },
-        ["alerts"] = new[] { "empty", "ongoing" },
+        ["alerts"] = new[] { "empty", "ongoing", "alert-context", "theme-cycle" },
+        ["comparison"] = new[] { "live", "captured", "theme-cycle" },
+        ["sessions"] = new[] { "recorded", "theme-cycle" },
+        ["processes"] = new[] { "populated", "theme-cycle" },
         ["details"] = new[] { "gap", "long-unit", "thresholds", "detail-plain", "detail-smooth", "detail-warmup" },
         ["overlay"] = new[] { "move-mode", "vertical", "light-parent", "opacity-min", "opacity-max", "long-value",
             "sparklines", "sparklines-off", "sparklines-warmup", "status-line", "status-line-warn" },

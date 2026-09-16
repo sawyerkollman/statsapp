@@ -4,6 +4,7 @@ namespace Stats.Core.Metrics;
 public sealed class MetricHistory
 {
     private float[] _buffer;
+    private DateTime[] _times;
     private int _next;
     private int _count;
     private double _sum;
@@ -13,6 +14,7 @@ public sealed class MetricHistory
     {
         if (capacity < 1) throw new ArgumentOutOfRangeException(nameof(capacity));
         _buffer = new float[capacity];
+        _times = new DateTime[capacity];
     }
 
     public int Capacity => _buffer.Length;
@@ -35,6 +37,7 @@ public sealed class MetricHistory
         Current = value is float f && float.IsNaN(f) ? null : value;
 
         _buffer[_next] = Current ?? float.NaN;
+        _times[_next] = timestampUtc;
         _next = (_next + 1) % _buffer.Length;
         if (_count < _buffer.Length) _count++;
 
@@ -49,6 +52,20 @@ public sealed class MetricHistory
     /// <summary>Buffered samples, oldest first. Always allocates — callers that refresh every tick and want to
     /// avoid steady-state allocation should use <see cref="CopyTo"/> instead.</summary>
     public float[] ToArray() => CopyTo(null);
+
+    public Recording.MetricSeries CopySeries(MetricDefinition definition)
+    {
+        var values = new float?[_count];
+        var times = new DateTime[_count];
+        var start = (_next - _count + _buffer.Length) % _buffer.Length;
+        for (var i = 0; i < _count; i++)
+        {
+            var slot = (start + i) % _buffer.Length;
+            times[i] = _times[slot];
+            values[i] = float.IsFinite(_buffer[slot]) ? _buffer[slot] : null;
+        }
+        return new(definition, times, values);
+    }
 
     /// <summary>Buffered samples, oldest first, written into <paramref name="reuse"/> when its length already
     /// matches the current sample count (a fresh array is allocated otherwise — capacity not yet reached, just
@@ -70,7 +87,11 @@ public sealed class MetricHistory
         if (capacity == _buffer.Length) return;
         var keep = ToArray();
         int take = Math.Min(keep.Length, capacity);
+        var times = new DateTime[capacity];
+        var first = (_next - take + _buffer.Length) % _buffer.Length;
+        for (var i = 0; i < take; i++) times[i] = _times[(first + i) % _buffer.Length];
         _buffer = new float[capacity];
+        _times = times;
         Array.Copy(keep, keep.Length - take, _buffer, 0, take);
         _count = take;
         _next = take % capacity;
@@ -80,6 +101,7 @@ public sealed class MetricHistory
     public void ResetSession()
     {
         Array.Clear(_buffer);
+        Array.Clear(_times);
         _count = 0;
         _next = 0;
         _sum = 0;

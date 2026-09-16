@@ -47,6 +47,17 @@ public class FansViewModelTests
     }
 
     [Fact]
+    public void LayoutPicks_KeepDanglingStoredValue_WhenComboBoxCoercesNull()
+    {
+        var (vm, _, _, settings) = Make(seed: s => s.GameModeGamingLayoutProfile = "Missing");
+        Assert.Null(vm.SelectedGamingLayout);
+
+        vm.SelectedGamingLayout = null;
+
+        Assert.Equal("Missing", settings.GameModeGamingLayoutProfile);
+    }
+
+    [Fact]
     public void Devices_GroupedInBackendOrder_WithChannels()
     {
         var (vm, _, _, _) = Make();

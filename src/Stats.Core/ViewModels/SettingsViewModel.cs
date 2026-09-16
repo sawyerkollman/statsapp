@@ -10,7 +10,7 @@ namespace Stats.Core.ViewModels;
 
 // No GameMode member: the game-mode controls live in the Fans window, which re-applies frame tracing through
 // FansViewModel.GameModeChanged. A member nothing raises only invites the next feature onto a dead channel.
-public enum SettingsChange { PollInterval, HistoryWindow, Thresholds, Limits, Overlay, Hotkey, CoreMatrix, Hardware, Updates, Theme, Alerts, Tray, UiScale, Graphs }
+public enum SettingsChange { PollInterval, HistoryWindow, Thresholds, Limits, Overlay, Hotkey, CoreMatrix, Hardware, Updates, Theme, Alerts, Tray, UiScale, Graphs, Processes }
 
 /// <summary>One editable metric limit (PPT/TDC/EDC/GPU power). Empty text = no limit.</summary>
 public sealed partial class LimitItemViewModel : ObservableObject
@@ -36,6 +36,7 @@ public sealed partial class LimitItemViewModel : ObservableObject
 /// <summary>Observable mirror of the editable AppSettings. Every setter writes through, saves, and raises Changed(reason).</summary>
 public sealed partial class SettingsViewModel : ObservableObject
 {
+    private bool _syncing;
     private readonly AppSettings _s;
     private readonly Action _save;
     private readonly IReadOnlyList<MetricDefinition> _definitions;
@@ -66,6 +67,7 @@ public sealed partial class SettingsViewModel : ObservableObject
 
         _pollIntervalSeconds = settings.PollIntervalSeconds;
         _historyWindowMinutes = settings.HistoryWindowMinutes;
+        _processSamplingEnabled = settings.ProcessSamplingEnabled;
         _overlayIsVertical = settings.OverlayOrientation == OverlayOrientation.Vertical;
         _overlayFontScale = settings.OverlayFontScale;
         _overlayOpacity = settings.OverlayOpacity;
@@ -110,6 +112,7 @@ public sealed partial class SettingsViewModel : ObservableObject
 
     [ObservableProperty] private double _pollIntervalSeconds;
     [ObservableProperty] private int _historyWindowMinutes;
+    [ObservableProperty] private bool _processSamplingEnabled;
     [ObservableProperty] private ThresholdRulePairOption? _selectedAddablePair;
     [ObservableProperty] private bool _hasAddableRulePairs;
     [ObservableProperty] private bool _overlayIsVertical;
@@ -280,9 +283,23 @@ public sealed partial class SettingsViewModel : ObservableObject
 
     partial void OnShowCoreMatrixChanged(bool value)
     {
-        if (!_loaded) return;
+        if (!_loaded || _syncing) return;
         _s.ShowCoreMatrix = value;
         Raise(SettingsChange.CoreMatrix);
+    }
+
+    partial void OnProcessSamplingEnabledChanged(bool value)
+    {
+        if (!_loaded) return;
+        _s.ProcessSamplingEnabled = value;
+        Raise(SettingsChange.Processes);
+    }
+
+    public void SyncShowCoreMatrix()
+    {
+        _syncing = true;
+        try { ShowCoreMatrix = _s.ShowCoreMatrix; }
+        finally { _syncing = false; }
     }
 
     partial void OnReadMotherboardAndCoolersChanged(bool value)

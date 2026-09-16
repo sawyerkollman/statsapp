@@ -19,6 +19,8 @@ public class IsolationMetadataTests
         ("Stats.Core.Sensors", "LhmSensorReader"),
         ("Stats.Core.Sensors", "PerfCounterSensorReader"),
         ("Stats.Core.Sensors", "CompositeSensorReader"),
+        ("Stats.Core.Processes", "SystemProcessSource"),
+        ("Stats.Core.Processes", "GpuEngineCounters"),
         ("Stats.Core.Frames", "FrameRateReader"),
         ("Stats.Core.Frames", "PresentMonProcess"),
         ("Stats.Core.Frames", "PresentMonLocator"),

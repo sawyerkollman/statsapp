@@ -1,0 +1,46 @@
+<Window x:Class="Stats.App.Views.SessionWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Stats — Sessions" Width="720" Height="500" MinWidth="520" MinHeight="320"
+        Background="{DynamicResource WindowBg}">
+    <DockPanel Margin="12">
+        <DockPanel DockPanel.Dock="Top" Margin="0,0,0,10">
+            <StackPanel Orientation="Horizontal" DockPanel.Dock="Right">
+                <Button Content="Start" Command="{Binding StartCommand}" IsEnabled="{Binding CanStart}" Style="{StaticResource PrimaryButton}" Margin="0,0,6,0"/>
+                <Button Content="Stop" Command="{Binding StopCommand}" IsEnabled="{Binding CanStop}" Style="{StaticResource HeaderButton}" Margin="0,0,6,0"/>
+                <Button Content="Open…" Click="Open_Click" IsEnabled="{Binding CanOpenOrExport}" Style="{StaticResource HeaderButton}" Margin="0,0,6,0"/>
+                <Button Content="Export CSV…" Click="Export_Click" IsEnabled="{Binding CanOpenOrExport}" Style="{StaticResource HeaderButton}"/>
+            </StackPanel>
+            <TextBlock Text="Sessions" FontSize="{StaticResource FontSizeTitle}" FontWeight="SemiBold" Foreground="{DynamicResource TextPrimary}"/>
+        </DockPanel>
+        <TextBlock DockPanel.Dock="Top" Text="{Binding Status}" Foreground="{DynamicResource TextSecondary}" Margin="0,0,0,4"/>
+        <TextBlock DockPanel.Dock="Top" Text="{Binding Error}" Foreground="{DynamicResource CritBrush}" TextWrapping="Wrap" Margin="0,0,0,4"/>
+        <TextBlock DockPanel.Dock="Top" Text="{Binding ChartLimitText}" Foreground="{DynamicResource TextSecondary}" FontSize="{StaticResource FontSizeDense}" TextWrapping="Wrap" Margin="0,0,0,8"/>
+        <TextBlock DockPanel.Dock="Top" Text="{Binding DatedSummary}" Foreground="{DynamicResource TextSecondary}" FontSize="{StaticResource FontSizeDense}" Margin="0,0,0,8"/>
+        <StackPanel DockPanel.Dock="Bottom" Margin="0,8,0,0">
+            <TextBlock Text="Select up to four metrics to compare." Foreground="{DynamicResource TextSecondary}" Margin="0,0,0,6"/>
+            <Button Content="Compare selected metrics" Command="{Binding CompareCommand}" Style="{StaticResource PrimaryButton}" HorizontalAlignment="Left"/>
+        </StackPanel>
+        <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto">
+            <DockPanel Grid.IsSharedSizeScope="True" MinWidth="450">
+                <Grid DockPanel.Dock="Top" Margin="8,0,8,4">
+                    <Grid.ColumnDefinitions><ColumnDefinition Width="30"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto" SharedSizeGroup="SessionMin"/><ColumnDefinition Width="Auto" SharedSizeGroup="SessionAvg"/><ColumnDefinition Width="Auto" SharedSizeGroup="SessionMax"/></Grid.ColumnDefinitions>
+                    <TextBlock Grid.Column="1" Text="Metric" Foreground="{DynamicResource TextSecondary}"/>
+                    <TextBlock Grid.Column="2" Text="Min" Foreground="{DynamicResource TextSecondary}" Margin="12,0,0,0" TextAlignment="Right"/>
+                    <TextBlock Grid.Column="3" Text="Average" Foreground="{DynamicResource TextSecondary}" Margin="12,0,0,0" TextAlignment="Right"/>
+                    <TextBlock Grid.Column="4" Text="Max" Foreground="{DynamicResource TextSecondary}" Margin="12,0,0,0" TextAlignment="Right"/>
+                </Grid>
+            <ItemsControl ItemsSource="{Binding Rows}">
+                <ItemsControl.ItemTemplate><DataTemplate><Border Background="{DynamicResource TileBg}" CornerRadius="4" Padding="8,5" Margin="0,2"><Grid>
+                    <Grid.ColumnDefinitions><ColumnDefinition Width="30"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto" SharedSizeGroup="SessionMin"/><ColumnDefinition Width="Auto" SharedSizeGroup="SessionAvg"/><ColumnDefinition Width="Auto" SharedSizeGroup="SessionMax"/></Grid.ColumnDefinitions>
+                    <CheckBox IsChecked="{Binding IsSelected, Mode=TwoWay}" AutomationProperties.Name="{Binding Metric}" VerticalAlignment="Center" Margin="0,0,10,0"/>
+                    <TextBlock Grid.Column="1" Text="{Binding Metric}" ToolTip="{Binding Metric}" Foreground="{DynamicResource TextPrimary}" TextTrimming="CharacterEllipsis"/>
+                    <TextBlock Grid.Column="2" Text="{Binding MinText}" Foreground="{DynamicResource TextSecondary}" Margin="12,0,0,0" TextAlignment="Right"/>
+                    <TextBlock Grid.Column="3" Text="{Binding AverageText}" Foreground="{DynamicResource TextSecondary}" Margin="12,0,0,0" TextAlignment="Right"/>
+                    <TextBlock Grid.Column="4" Text="{Binding MaxText}" Foreground="{DynamicResource TextPrimary}" Margin="12,0,0,0" TextAlignment="Right"/>
+                </Grid></Border></DataTemplate></ItemsControl.ItemTemplate>
+            </ItemsControl>
+            </DockPanel>
+        </ScrollViewer>
+    </DockPanel>
+</Window>

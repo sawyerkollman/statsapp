@@ -30,6 +30,7 @@ public static class CaptureHost
         SubstateCatalog.Validate(spec.View, spec.SubstateList);
         if (string.IsNullOrEmpty(spec.Output))
             throw new ArgumentException("--output is required for a capture (or use --batch/--interactive).");
+        listener.TakeAndClear(); // begin this capture's binding-error window before any composition or view construction
 
         bool themeCycle = spec.SubstateList.Contains("theme-cycle");
         var buildSubstates = spec.SubstateList
@@ -74,7 +75,6 @@ public static class CaptureHost
         DispatcherUtil.WaitFrames();
 
         var results = new List<Outcome>();
-        listener.TakeAndClear(); // discard construction-time noise from before this capture started
         try
         {
             if (themeCycle)
@@ -122,6 +122,8 @@ public static class CaptureHost
             case FansWindow f: f.AllowClose = true; break;
             case PeaksWindow p: p.AllowClose = true; break;
             case MetricDetailWindow m: m.AllowClose = true; break;
+            case ComparisonWindow c: c.AllowClose = true; break;
+            case SessionWindow s: s.AllowClose = true; break;
         }
     }
 
@@ -149,6 +151,9 @@ public static class CaptureHost
         "fans" => new FansWindow { DataContext = c.Fans },
         "peaks" => new PeaksWindow { DataContext = c.Peaks },
         "alerts" => new PeaksWindow { DataContext = c.Peaks },
+        "processes" => new PeaksWindow { DataContext = c.Peaks },
+        "comparison" => new ComparisonWindow { DataContext = c.Comparison },
+        "sessions" => new SessionWindow { DataContext = c.Sessions },
         "details" => BuildDetails(spec, c),
         "overlay" => new OverlayWindow { DataContext = c.Overlay, Opacity = c.Settings.OverlayOpacity },
         "threshold-dialog" => BuildThresholdDialog(spec, c),
@@ -235,6 +240,9 @@ public static class CaptureHost
                 case "tile-menu" when window is DashboardWindow:
                     OpenFirstTileContextMenu(window);
                     break;
+                case "view-menu" when window is DashboardWindow:
+                    OpenViewMenu(window);
+                    break;
                 case "theme-dropdown" when window is DashboardWindow:
                     DispatcherUtil.WaitFrames();
                     OpenThemeDropdown(window, c);
@@ -245,6 +253,7 @@ public static class CaptureHost
             }
         }
         if (spec.View == "alerts" && window is PeaksWindow pw) SelectAlertsTab(pw);
+        if (spec.View == "processes" && window is PeaksWindow processWindow) SelectProcessesTab(processWindow);
     }
 
     private static void SelectSettingsCategory(Window window, string category)
@@ -320,6 +329,20 @@ public static class CaptureHost
         var tabs = VisualTreeUtil.FirstDescendant<TabControl>(window);
         if (tabs is null || tabs.Items.Count < 2) return;
         tabs.SelectedIndex = 1;
+        DispatcherUtil.WaitFrames();
+    }
+
+    private static void OpenViewMenu(Window window)
+    {
+        if (window.FindName("ViewButton") is not Button button) return;
+        button.RaiseEvent(new RoutedEventArgs(Button.ClickEvent, button));
+        DispatcherUtil.WaitFrames();
+    }
+
+    private static void SelectProcessesTab(Window window)
+    {
+        var tabs = VisualTreeUtil.FirstDescendant<TabControl>(window);
+        if (tabs is not null && tabs.Items.Count > 2) tabs.SelectedIndex = 2;
         DispatcherUtil.WaitFrames();
     }
 

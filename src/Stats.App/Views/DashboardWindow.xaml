@@ -111,7 +111,7 @@
                      (DESIGN.md §3) — the title above stays docked left/unaffected. -->
                 <WrapPanel HorizontalAlignment="Right">
                     <Button x:Name="ViewButton" Style="{StaticResource HeaderButton}" Click="ViewButton_Click"
-                            AutomationProperties.Name="View: collapse or expand all sections">
+                            AutomationProperties.Name="View: layout mode, layout profiles, collapse or expand sections">
                         <StackPanel Orientation="Horizontal">
                             <Path Style="{StaticResource IconGlyph}" Data="{StaticResource Icon.View}"/>
                             <TextBlock Text="View" FontSize="{StaticResource FontSizeBody}" Foreground="{DynamicResource TextPrimary}" Margin="8,0,4,0" VerticalAlignment="Center"/>
@@ -624,6 +624,10 @@
                                                 <RadioButton Content="15 min" IsChecked="{Binding HistoryWindowMinutes, Converter={StaticResource Equals}, ConverterParameter=15}"/>
                                                 <RadioButton Content="60 min" IsChecked="{Binding HistoryWindowMinutes, Converter={StaticResource Equals}, ConverterParameter=60}"/>
                                             </StackPanel>
+                                            <TextBlock Text="Processes" Style="{StaticResource SettingsHeader}"/>
+                                            <CheckBox Content="Sample top processes while the Peaks window is open" IsChecked="{Binding ProcessSamplingEnabled}" Margin="0,0,0,2"/>
+                                            <TextBlock Text="Refreshes at the polling cadence (at least every 2 seconds); shows the top 12 processes."
+                                                       Foreground="{DynamicResource TextSecondary}" FontSize="{StaticResource FontSizeDense}" TextWrapping="Wrap"/>
 
                                             <TextBlock Text="Thresholds (warn / crit)" Style="{StaticResource SettingsHeader}"/>
                                             <!-- Header row (DESIGN.md §5 "Show clear Warn / Critical labels"): static column labels

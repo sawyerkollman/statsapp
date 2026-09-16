@@ -112,6 +112,63 @@ public class DashboardLayoutModeTests
     }
 
     [Fact]
+    public void LayoutLock_BlocksPositionEdits_AndUndoRestoresTheLastPosition()
+    {
+        var (vm, s, _, _) = Make(DashboardLayoutMode.Free, showCoreMatrix: false, "cpu.temp");
+        var originalX = s.TilePrefs["cpu.temp"].X;
+        vm.SetTilePosition("cpu.temp", 101, 53);
+        Assert.True(vm.CanUndoLayoutEdit);
+
+        vm.UndoLayoutEditCommand.Execute(null);
+        Assert.Equal(originalX, s.TilePrefs["cpu.temp"].X);
+        Assert.False(vm.CanUndoLayoutEdit);
+
+        vm.SetLayoutLocked(true);
+        vm.SetTilePosition("cpu.temp", 200, 80);
+        vm.SetTileSize("cpu.temp", TileSize.L);
+        vm.ResetPositionsCommand.Execute(null);
+        Assert.Equal(originalX, s.TilePrefs["cpu.temp"].X);
+        Assert.Equal(TileSize.M, s.TilePrefs["cpu.temp"].Size);
+    }
+
+    [Fact]
+    public void Undo_RestoresThePriorProfileModifiedState()
+    {
+        var (vm, s, _, _) = Make(DashboardLayoutMode.Free, showCoreMatrix: false, "cpu.temp");
+        vm.SaveLayoutProfileCommand.Execute("Desk");
+        vm.SetTilePosition("cpu.temp", 40, 20); // marks Desk modified
+        vm.SetTilePosition("cpu.temp", 80, 20); // undo snapshot is already-modified state
+
+        vm.UndoLayoutEditCommand.Execute(null);
+
+        Assert.True(s.LayoutProfileModified);
+        Assert.True(vm.IsLayoutModified);
+    }
+
+    [Fact]
+    public void ExternalCoreMatrixChange_ClearsObsoleteUndo()
+    {
+        var (vm, s, _, _) = Make(DashboardLayoutMode.Free, showCoreMatrix: false, "cpu.temp");
+        vm.SetTilePosition("cpu.temp", 40, 20);
+        Assert.True(vm.CanUndoLayoutEdit);
+
+        s.ShowCoreMatrix = true;
+        vm.ExternalCoreMatrixChanged();
+
+        Assert.False(vm.CanUndoLayoutEdit);
+    }
+
+    [Fact]
+    public void SetTileKind_SameValue_LeavesExistingUndoAvailable()
+    {
+        var (vm, _, _, _) = Make(DashboardLayoutMode.Free, showCoreMatrix: false, "cpu.temp");
+        vm.SetTilePosition("cpu.temp", 40, 20);
+        vm.SetTileKind("cpu.temp", TileKind.Auto);
+
+        Assert.True(vm.CanUndoLayoutEdit);
+    }
+
+    [Fact]
     public void SetTilePosition_GridMode_SnapsToGridSize()
     {
         var (vm, s, _, _) = Make(DashboardLayoutMode.Grid, showCoreMatrix: false, "cpu.temp");

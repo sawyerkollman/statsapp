@@ -1,4 +1,5 @@
 using Stats.Core.Fans;
+using Stats.Core.Processes;
 using Stats.UiPreview.Fixtures;
 
 namespace Stats.UiPreview.Tests;
@@ -36,6 +37,15 @@ public class CompositionIsolationTests : IDisposable
         Assert.IsType<NullFanArmedMarker>(c.FanMarker);
         Assert.IsAssignableFrom<IFanControlBackend>(c.FanBackend);
         Assert.IsAssignableFrom<IFanArmedMarker>(c.FanMarker);
+    }
+
+    [Fact]
+    public void Build_DoesNotExposeProductionProcessSources()
+    {
+        var composition = PreviewComposition.Build("normal", NewSubRoot(), Array.Empty<string>());
+        var exposed = composition.GetType().GetProperties().Select(property => property.PropertyType.FullName ?? "");
+        Assert.DoesNotContain(typeof(SystemProcessSource).FullName!, exposed);
+        Assert.DoesNotContain("Stats.Core.Processes.GpuEngineCounters", exposed);
     }
 
     [Theory]

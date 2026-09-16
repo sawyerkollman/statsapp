@@ -32,11 +32,12 @@ public sealed partial class PeaksViewModel : ObservableObject
     private readonly MetricStore _store;
     private readonly AppSettings _settings;
 
-    public PeaksViewModel(MetricStore store, AppSettings settings, AlertLogViewModel? alertLog = null)
+    public PeaksViewModel(MetricStore store, AppSettings settings, AlertLogViewModel? alertLog = null, ProcessListViewModel? processes = null)
     {
         _store = store;
         _settings = settings;
         AlertLog = alertLog ?? new AlertLogViewModel();
+        Processes = processes ?? new ProcessListViewModel();
         RebuildRows();
     }
 
@@ -45,6 +46,7 @@ public sealed partial class PeaksViewModel : ObservableObject
     /// captured) — the parameterless fallback here only exists so tests and other callers aren't forced to wire
     /// one up.</summary>
     public AlertLogViewModel AlertLog { get; }
+    public ProcessListViewModel Processes { get; }
 
     public ObservableCollection<PeakRowViewModel> Rows { get; } = new();
 

@@ -15,6 +15,7 @@ using Stats.Core.Alerts;
 using Stats.Core.Fans;
 using Stats.Core.Frames;
 using Stats.Core.Metrics;
+using Stats.Core.Processes;
 using Stats.Core.Refresh;
 using Stats.Core.Sensors;
 using Stats.Core.Settings;
@@ -63,6 +64,11 @@ public partial class App : Application
     private FansWindow? _fans;
     private FansViewModel? _fansVm;
     private System.Threading.Timer? _processScan;
+    private ProcessSampler? _processSampler;
+    private ProcessListViewModel? _processListVm;
+    private ProcessListSnapshot? _latestProcessSnapshot;
+    private readonly RefreshCoalescer _processCoalescer = new();
+    private DateTime _processVisibleSinceUtc;
     private volatile string[] _processNames = Array.Empty<string>();
     private volatile bool _fansVisible;
     private IReadOnlyList<MetricDefinition> _definitions = Array.Empty<MetricDefinition>();
@@ -148,11 +154,11 @@ public partial class App : Application
         }
 
         _store = new MetricStore(definitions);
-        _alertLog = new AlertLogViewModel(); // created before any window so early alerts (Peaks not yet opened) are captured
+        InitializeMonitoring(settingsDir); // explicit production persistence; preview never constructs App
         _alertEngine = new AlertEngine { HoldSeconds = _settings.AlertHoldSeconds };
         _alertEngine.EpisodeEnded += (metricId, raisedAtLocal, duration) =>
         {
-            if (raisedAtLocal is not null) _alertLog.Complete(metricId, duration);
+            if (raisedAtLocal is DateTime raised) _alertLog?.Complete(metricId, raised, duration);
         };
         _poller = new SensorPoller(_reader)
         {
@@ -169,6 +175,7 @@ public partial class App : Application
             IsDegraded = degraded,
             UiScale = _settings.DashboardUiScale,
         };
+        _gameMode.GamingChanged += gaming => Dispatcher.BeginInvoke(() => _dashboardVm?.ApplyGameModeLayout(gaming));
 
         _overlayVm = new OverlayViewModel(_store, _settings);
         _overlay = new OverlayWindow
@@ -209,6 +216,8 @@ public partial class App : Application
         _store.ResizeAll(HistoryCapacity.Compute(_settings.HistoryWindowMinutes, _settings.PollIntervalSeconds));
 
         _dashboardVm.OpenPeaksRequested += ShowPeaks;
+        _dashboardVm.OpenComparisonRequested += ShowComparison;
+        _dashboardVm.OpenSessionsRequested += ShowSessions;
         _dashboardVm.OpenFansRequested += ShowFans;
         _dashboardVm.OpenTileDetailRequested += ShowMetricDetail;
         _dashboardVm.DashboardMetricsChanged += () => { _peaksVm?.RebuildRows(); ApplyFrameTracing(); };
@@ -286,6 +295,8 @@ public partial class App : Application
         _fanController?.RestoreAll();             // … then hand every fan back to device control, always
         if (stopped) _reader?.Dispose();
         else System.Diagnostics.Trace.WriteLine("[Stats] poll loop did not stop in time; skipping reader dispose to avoid concurrent LHM access");
+        _processSampler?.Dispose();
+        StopMonitoring();
         SaveSettings();
         _trayRenderer?.Dispose();
         _appIcon?.Dispose();
@@ -554,6 +565,7 @@ public partial class App : Application
         if (snapshot is null || _store is null || _dashboardVm is null || _dashboard is null) return;
 
         _store.Apply(snapshot);
+        RefreshMonitoring(snapshot);
         if (_dashboard.IsVisible)
         {
             _dashboardVm.RefreshAll();
@@ -561,7 +573,7 @@ public partial class App : Application
         }
         if (_overlay is { IsVisible: true }) { _overlayVm?.RefreshAll(); PushOverlayStatus(); }
         UpdateTrayTooltip();
-        if (_settings?.AlertsEnabled == true) EvaluateAlerts();
+        if (_settings?.AlertsEnabled == true) EvaluateAlerts(snapshot.TimestampUtc);
         if (_peaks is { IsVisible: true }) _peaksVm?.Refresh();
         if (_fans is { IsVisible: true }) _fansVm?.Refresh();
         if (_detail is { IsVisible: true }) _detailVm?.Refresh();
@@ -571,7 +583,7 @@ public partial class App : Application
     /// selections (evaluated regardless of whether either window is visible), ticks <see cref="_alertEngine"/>,
     /// and surfaces any raised alert as a tray balloon (optionally with a chime) plus a log row. A balloon failure
     /// (e.g. the shell not being ready) must never take the refresh path down with it.</summary>
-    private void EvaluateAlerts()
+    private void EvaluateAlerts(DateTime timestampUtc)
     {
         if (_store is null || _settings is null || _alertEngine is null || _alertLog is null) return;
         var defsById = _store.Definitions.ToDictionary(d => d.Id);
@@ -587,9 +599,11 @@ public partial class App : Application
             samples.Add(new AlertSample(def, history.Current, severity, rule));
         }
 
-        foreach (var evt in _alertEngine.Tick(samples, DateTime.UtcNow))
+        foreach (var evt in _alertEngine.Tick(samples, timestampUtc))
         {
-            _alertLog.Add(evt);
+            var context = defsById.TryGetValue(evt.MetricId, out var definition) && _store.TryGet(evt.MetricId, out var history)
+                ? history.CopySeries(definition) : null;
+            _alertLog.Add(evt, evt.RaisedAtLocal.ToUniversalTime(), context);
             try { _tray?.ShowNotification("Stats alert", evt.Message); }
             catch (Exception ex) { System.Diagnostics.Trace.WriteLine("[Stats] alert balloon failed: " + ex.Message); }
             if (_settings.AlertSoundEnabled)
@@ -652,8 +666,11 @@ public partial class App : Application
         if (_store is null || _settings is null) return;
         if (_peaks is null)
         {
-            _peaksVm = new PeaksViewModel(_store, _settings, _alertLog);
+            _processListVm = new ProcessListViewModel();
+            _processListVm.SetEnabled(_settings.ProcessSamplingEnabled);
+            _peaksVm = new PeaksViewModel(_store, _settings, _alertLog, _processListVm);
             _peaks = new PeaksWindow { DataContext = _peaksVm };
+            _peaks.IsVisibleChanged += (_, _) => UpdateProcessSampling();
             if (_settings.PeaksWidth is double w) _peaks.Width = w;
             if (_settings.PeaksHeight is double h) _peaks.Height = h;
             if (_settings.PeaksLeft is double l) _peaks.Left = ClampToVirtualScreenX(l, 200);
@@ -665,6 +682,45 @@ public partial class App : Application
         _peaks.Show();
         _peaks.WindowState = WindowState.Normal;
         _peaks.Activate();
+        UpdateProcessSampling();
+    }
+
+    private void UpdateProcessSampling()
+    {
+        bool want = _settings?.ProcessSamplingEnabled == true && _peaks is { IsVisible: true };
+        if (!want)
+        {
+            _processSampler?.Pause();
+            Interlocked.Exchange(ref _latestProcessSnapshot, null);
+            return;
+        }
+        if (_processSampler is null)
+        {
+            _processSampler = new ProcessSampler(new SystemProcessSource())
+            {
+                Interval = ProcessSampler.IntervalFor(_settings!.PollIntervalSeconds),
+            };
+            _processSampler.SampleAvailable += snapshot =>
+            {
+                Volatile.Write(ref _latestProcessSnapshot, snapshot);
+                if (!Dispatcher.HasShutdownStarted && _processCoalescer.TryPost()) Dispatcher.BeginInvoke(RunProcessRefresh);
+            };
+        }
+        if (!_processSampler.IsActive)
+        {
+            _processVisibleSinceUtc = DateTime.UtcNow;
+            _processListVm?.BeginSampling();
+            _processSampler.Resume();
+        }
+    }
+
+    private void RunProcessRefresh()
+    {
+        _processCoalescer.Take();
+        var snapshot = Interlocked.Exchange(ref _latestProcessSnapshot, null);
+        if (snapshot is not null && snapshot.TimestampUtc >= _processVisibleSinceUtc &&
+            _settings?.ProcessSamplingEnabled == true && _peaks is { IsVisible: true })
+            _processListVm?.Apply(snapshot);
     }
 
     private void SavePeaksBounds()
@@ -750,6 +806,11 @@ public partial class App : Application
                 if (_poller is not null) _poller.Interval = TimeSpan.FromSeconds(_settings.PollIntervalSeconds);
                 if (_frameReader is not null) _frameReader.Window = TimeSpan.FromSeconds(_settings.PollIntervalSeconds);
                 _store?.ResizeAll(HistoryCapacity.Compute(_settings.HistoryWindowMinutes, _settings.PollIntervalSeconds));
+                if (_processSampler is not null) _processSampler.Interval = ProcessSampler.IntervalFor(_settings.PollIntervalSeconds);
+                break;
+            case SettingsChange.Processes:
+                _processListVm?.SetEnabled(_settings.ProcessSamplingEnabled);
+                UpdateProcessSampling();
                 break;
             case SettingsChange.HistoryWindow:
                 _store?.ResizeAll(HistoryCapacity.Compute(_settings.HistoryWindowMinutes, _settings.PollIntervalSeconds));
@@ -777,7 +838,7 @@ public partial class App : Application
                 ApplyHotkey();
                 break;
             case SettingsChange.CoreMatrix:
-                _dashboardVm?.RebuildSections();
+                _dashboardVm?.ExternalCoreMatrixChanged();
                 break;
             case SettingsChange.Hardware:
                 if (_settingsVm is not null) _settingsVm.HardwareStatus = "Restart Stats to apply";
@@ -788,6 +849,7 @@ public partial class App : Application
                 break;
             case SettingsChange.Alerts:
                 if (_alertEngine is not null) _alertEngine.HoldSeconds = _settings.AlertHoldSeconds;
+                if (!_settings.AlertsEnabled) _alertEngine?.Reset(DateTime.UtcNow);
                 break;
             case SettingsChange.Tray:
                 _trayCpuTempDef = TrayMetricSelector.Resolve(_settings.TrayMetricId, _definitions)
@@ -942,6 +1004,8 @@ public partial class App : Application
         if (_peaks is not null) _peaks.AllowClose = true;
         if (_fans is not null) _fans.AllowClose = true;
         if (_detail is not null) _detail.AllowClose = true;
+        if (_comparison is not null) _comparison.AllowClose = true;
+        if (_sessions is not null) _sessions.AllowClose = true;
         _tray?.Dispose();
         SaveWindowBounds();
         Shutdown();

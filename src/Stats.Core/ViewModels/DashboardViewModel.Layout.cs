@@ -55,7 +55,15 @@ public sealed partial class DashboardViewModel
     /// Auto, places nothing). Either way the mode change itself always ends up persisted.</summary>
     partial void OnLayoutModeChanged(DashboardLayoutMode value)
     {
+        if (_applyingLayoutProfile || _restoringLayoutUndo) return;
+        if (!BeginLayoutEdit(undoable: false))
+        {
+            if (LayoutMode != _settings.DashboardLayoutMode) LayoutMode = _settings.DashboardLayoutMode;
+            return;
+        }
         _settings.DashboardLayoutMode = value;
+        ClearLayoutUndo();
+        MarkLayoutModified();
         RebuildSections();
         if (!_seedPackSavedLastRebuild) _saveSettings();
         OnPropertyChanged(nameof(IsAutoLayout));
@@ -72,6 +80,7 @@ public sealed partial class DashboardViewModel
     [RelayCommand]
     private void ResetPositions()
     {
+        if (!BeginLayoutEdit(undoable: true)) return;
         foreach (var pref in _settings.TilePrefs.Values)
         {
             pref.X = null;
@@ -80,6 +89,7 @@ public sealed partial class DashboardViewModel
         _settings.CoreMatrixX = null;
         _settings.CoreMatrixY = null;
         _tilesSeededBelowUnmeasuredBlock.Clear();
+        MarkLayoutModified();
         RebuildSections(); // re-seeds (outside Auto) and recomputes the canvas extent unconditionally
         RecomputeCanvasExtent();
         _saveSettings(); // unconditional — must persist even with zero tiles/no core matrix, or in Auto layout
@@ -92,8 +102,9 @@ public sealed partial class DashboardViewModel
     /// have no drag/nudge handlers wired to it.</summary>
     public void SetTilePosition(string id, double x, double y)
     {
+        if (!BeginLayoutEdit(undoable: true)) return;
         var tile = Tiles.FirstOrDefault(t => t.Definition.Id == id);
-        if (tile is null) return;
+        if (tile is null) { ClearLayoutUndo(); return; }
 
         (x, y) = ClampAndMaybeSnap(x, y);
 
@@ -107,6 +118,7 @@ public sealed partial class DashboardViewModel
         tile.X = x;
         tile.Y = y;
 
+        MarkLayoutModified();
         RecomputeCanvasExtent();
         _saveSettings();
     }
@@ -115,6 +127,7 @@ public sealed partial class DashboardViewModel
     /// its own — its position lives directly on this view model as <see cref="CoreMatrixX"/>/<see cref="CoreMatrixY"/>.</summary>
     public void SetCoreMatrixPosition(double x, double y)
     {
+        if (!BeginLayoutEdit(undoable: true)) return;
         (x, y) = ClampAndMaybeSnap(x, y);
 
         _settings.CoreMatrixX = x;
@@ -122,6 +135,7 @@ public sealed partial class DashboardViewModel
         CoreMatrixX = x;
         CoreMatrixY = y;
 
+        MarkLayoutModified();
         RecomputeCanvasExtent();
         _saveSettings();
     }
