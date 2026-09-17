@@ -110,13 +110,13 @@ public class FrameRateReaderTests
         h.Source.Emit(Header);
         h.EmitFrames(1234, 60, 16.6);
         var s = h.Reader.Read();
-        Assert.Equal(60f, s.Values["fps.avg"]);
+        Assert.Equal(30f, s.Values["fps.avg"]);
         Assert.Equal(16.6f, s.Values["fps.frametime"]!.Value, 2);
         Assert.Null(s.Values["fps.low1"]); // < 100 frames
     }
 
     [Fact]
-    public void Read_ForegroundIsSomeoneElse_Null()
+    public void Read_ForegroundSwitchesToUntrackedOrNoPid_NoStaleValues()
     {
         var h = new Harness();
         h.Reader.SetActive(true);
@@ -129,14 +129,38 @@ public class FrameRateReaderTests
     }
 
     [Fact]
-    public void Window_ControlsFpsDenominator()
+    public void Read_BatchedFrames_UsesFixedTwoSecondWindowBetweenPolls()
     {
         var h = new Harness();
-        h.Reader.Window = TimeSpan.FromSeconds(2);
         h.Reader.SetActive(true);
         h.Source.Emit(Header);
-        h.EmitFrames(1234, 60, 16.6);
-        Assert.Equal(30f, h.Reader.Read().Values["fps.avg"]);
+        h.EmitFrames(1234, 120, 16.6);
+
+        h.Now = h.Now.AddSeconds(.5);
+        var betweenBatches = h.Reader.Read().Values;
+        Assert.Equal(60f, betweenBatches["fps.avg"]);
+        Assert.Equal(16.6f, betweenBatches["fps.frametime"]!.Value, 2);
+
+        h.Now = h.Now.AddSeconds(1);
+        Assert.Equal(60f, h.Reader.Read().Values["fps.avg"]);
+
+        h.Now = h.Now.AddSeconds(.5);
+        h.EmitFrames(1234, 120, 16.6);
+        Assert.Equal(60f, h.Reader.Read().Values["fps.avg"]);
+    }
+
+    [Fact]
+    public void Read_FramesExpireAfterTwoSecondsWithoutAnotherBatch()
+    {
+        var h = new Harness();
+        h.Reader.SetActive(true);
+        h.Source.Emit(Header);
+        h.EmitFrames(1234, 120, 16.6);
+
+        h.Now = h.Now.AddSeconds(2);
+        var values = h.Reader.Read().Values;
+        Assert.Null(values["fps.avg"]);
+        Assert.Null(values["fps.frametime"]);
     }
 
     [Fact]
@@ -302,6 +326,6 @@ public class FrameRateReaderTests
         Assert.Contains("fps.low1", s.Values.Keys);
         Assert.Contains("fps.frametime", s.Values.Keys);
         // The reader stays active/available across a restart, so frames still inside the window are served.
-        Assert.Equal(60f, s.Values["fps.avg"]);
+        Assert.Equal(30f, s.Values["fps.avg"]);
     }
 }

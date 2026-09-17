@@ -170,7 +170,6 @@ public partial class App : Application
         {
             Interval = TimeSpan.FromSeconds(_settings.PollIntervalSeconds),
         };
-        if (_frameReader is not null) _frameReader.Window = TimeSpan.FromSeconds(_settings.PollIntervalSeconds);
         ApplyFrameTracing();
         _fanController = new FanController(_composite!, _settings, RequestSaveSettings, new FileFanArmedMarker(settingsDir));
         _fanRecovered = _fanController.RecoverFromUncleanShutdown(out _fanRecoveryPartial); // before _poller.Start(): single-threaded here
@@ -857,7 +856,6 @@ public partial class App : Application
         {
             case SettingsChange.PollInterval:
                 if (_poller is not null) _poller.Interval = TimeSpan.FromSeconds(_settings.PollIntervalSeconds);
-                if (_frameReader is not null) _frameReader.Window = TimeSpan.FromSeconds(_settings.PollIntervalSeconds);
                 _store?.ResizeAll(HistoryCapacity.Compute(_settings.HistoryWindowMinutes, _settings.PollIntervalSeconds));
                 if (_processSampler is not null) _processSampler.Interval = ProcessSampler.IntervalFor(_settings.PollIntervalSeconds);
                 break;

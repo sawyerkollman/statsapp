@@ -11,6 +11,7 @@ namespace Stats.Core.Frames;
 /// </summary>
 public sealed class FrameRateReader : ISensorReader
 {
+    private static readonly TimeSpan SamplingWindow = TimeSpan.FromSeconds(2);
     private static readonly TimeSpan[] Backoff = { TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(5), TimeSpan.FromSeconds(30) };
 
     private readonly string? _exePath;
@@ -57,8 +58,6 @@ public sealed class FrameRateReader : ISensorReader
 
     public string Name => "PresentMon";
     public bool IsDegraded => false;
-    /// <summary>Poll interval; FPS = frames in the last Window ÷ Window seconds.</summary>
-    public TimeSpan Window { get; set; } = TimeSpan.FromSeconds(1);
     public bool IsActive { get; private set; }
     /// <summary>False when the exe is missing, tracing was denied, the CSV was unreadable, or restarts were exhausted.</summary>
     public bool IsAvailable { get; private set; }
@@ -74,7 +73,7 @@ public sealed class FrameRateReader : ISensorReader
         lock (_gate)
         {
             if (IsActive && IsAvailable && foreground is int pid)
-                stats = _aggregator.Snapshot(pid, _clock(), Window);
+                stats = _aggregator.Snapshot(pid, _clock(), SamplingWindow);
         }
         return new SensorSnapshot(new Dictionary<string, float?>
         {
