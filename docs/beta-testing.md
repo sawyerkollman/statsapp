@@ -17,6 +17,13 @@ Release notes: https://github.com/sawyerkollman/statsapp/releases
 
 Feedback: https://github.com/sawyerkollman/statsapp/issues
 
+## Beta.5 installer workaround
+
+If the beta.5 installer reports that it cannot automatically close applications, cancel setup,
+choose **Exit** from the Stats tray menu, then run the downloaded beta.5 installer again. The window's
+close button only hides Stats. Beta.5 has a malformed shutdown-command path; the packaging repair
+corrects it and checks system executable paths before building future installers.
+
 ## Return to stable
 
 Turning **Receive beta updates** off stops offers of future betas; it does **not** downgrade the app.

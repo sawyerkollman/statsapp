@@ -141,10 +141,15 @@ var
   ResultCode: Integer;
 begin
   Result := '';
-  if Exec(ExpandConstant('{sys}	askkill.exe'), '/F /T /IM {#AppExe}', '', SW_HIDE, ewWaitUntilTerminated, ResultCode) then
+  if Exec(ExpandConstant('{sys}\taskkill.exe'), '/F /T /IM {#AppExe}', '', SW_HIDE, ewWaitUntilTerminated, ResultCode) then
     Log(Format('PrepareToInstall: taskkill {#AppExe} exit code %d (128 = not running)', [ResultCode]))
   else
+  begin
     Log('PrepareToInstall: taskkill could not be started: ' + SysErrorMessage(ResultCode));
+    Result := 'Setup could not start Windows taskkill.exe to close Stats.' + #13#10 +
+      'Close Stats manually, then run setup again.' + #13#10 +
+      'Details: ' + SysErrorMessage(ResultCode);
+  end;
 end;
 
 procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
