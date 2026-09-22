@@ -82,7 +82,14 @@ cover the longest poll window, 5 s, even at 1000 fps); PIDs with no frame for **
   buffer); `null` until the buffer holds ≥ **100** frames. Percentile: sort ascending, take element at
   `ceil(0.99·n) − 1`.
 
-`window` is the poll interval (from settings). Timestamps are assigned on receipt; PresentMon's own
+`window` is a fixed two seconds, independent of the hardware poll interval (updated 2026-09-17).
+Redirected frame delivery can arrive in batches: a 0.5-second receipt window repeatedly ran empty
+between batches in native testing, while a two-second window resolved the observed dashes.
+FPS and frame time therefore smooth the last two seconds while refreshing at the selected poll rate.
+This tolerates short delivery gaps, not arbitrary stalls; values still expire when the window empties.
+Initial FPS can read low until a full two seconds of frames have accumulated (the existing
+frames-per-full-window formula is unchanged).
+Timestamps are assigned on receipt; PresentMon's own
 CPUStartTime is not used for windowing so clock domains never matter.
 
 **`ForegroundProcess`** (static, P/Invoke `GetForegroundWindow` + `GetWindowThreadProcessId`) — returns
@@ -131,8 +138,8 @@ flag to `ThresholdRule`. Recorded as out of scope, not forgotten.
 
 ### Settings
 
-No new settings. The lifecycle derives from existing `DashboardMetrics` / `OverlayMetrics`. Poll
-interval is reused as the FPS window.
+No new settings. The lifecycle derives from existing `DashboardMetrics` / `OverlayMetrics`.
+Poll interval controls refresh cadence, not the fixed FPS measurement window.
 
 ## Installer / build
 
@@ -185,6 +192,22 @@ non-Store PowerShell / cmd.
 No unit tests for `PresentMonProcess` or `ForegroundProcess` (thin OS shells). Manual verification:
 select FPS on overlay from the Start-menu-launched app, run a game, confirm numbers roughly match the
 game's own counter; alt-tab to desktop → tiles blank; deselect → `PresentMon.exe` gone from Task Manager.
+
+### 2026-09-17 sampling-window repair validation
+
+- Integration branch: `fix/beta-fps-sampling`, based on `8cc9c4f`; four-file repair.
+- `dotnet build Stats.sln -c Release --no-restore --nologo`: passed, zero warnings/errors.
+- `dotnet test Stats.sln -c Release --no-build --no-restore --nologo`: passed,
+  1007 Core tests and 369 preview tests. Includes deterministic receipt-batch gap and expiry tests.
+- Parent ran validation with SDK access outside the filesystem sandbox after its initial build
+  was denied SDK-directory access. No native PresentMon or hardware initialization was run.
+- Implementation: `stats_ui_terra` (`/root/fps_sampling`, configured Terra/medium);
+  independent read-only review: `stats_ui_reviewer` (`/root/lab_review`, configured Sol/high),
+  no material findings. Role definitions and tool availability inspected; effective model metadata
+  unobservable. No worker repair retries.
+- Pending: native gameplay verification of this new binary at 0.5-second refresh in Arc Raiders
+  and Helldivers 2. The user's successful two-second test was on the previous binary.
+- No UI layout changes; screenshots are not a verification of this timing repair. Not released.
 
 ## Out of scope
 

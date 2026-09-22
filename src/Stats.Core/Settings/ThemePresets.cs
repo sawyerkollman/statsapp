@@ -12,6 +12,7 @@ public static partial class ThemePresets
     public static readonly IReadOnlyList<string> Names = new[]
     {
         "Dark Amber", "Dark Blue", "Dark Green", "Dark Purple", "Light",
+        "Synthwave", "Outrun", "Midnight", "CRT Terminal", "Arctic Glass", "Reactor", "Deep Space",
     };
 
     /// <summary>Predefined accent swatches offered in Settings, independent of the active preset.</summary>

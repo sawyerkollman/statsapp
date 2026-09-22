@@ -59,6 +59,7 @@ public sealed class SettingsService
         settings.DashboardUiScale = Math.Clamp(settings.DashboardUiScale, 0.9, 1.3);
         settings.CoreMatrixX = SanitizePosition(settings.CoreMatrixX);
         settings.CoreMatrixY = SanitizePosition(settings.CoreMatrixY);
+        settings.TilePrefs ??= new();
         foreach (var pref in settings.TilePrefs.Values.Where(p => p is not null))
         {
             pref.X = SanitizePosition(pref.X);
@@ -67,13 +68,26 @@ public sealed class SettingsService
         // An explicit JSON null deserializes over the property initializer, so re-establish the empty collections.
         settings.ThresholdRules ??= new();
         settings.ThresholdOverrides ??= new();
+        settings.DashboardMetrics ??= new();
+        settings.OverlayMetrics ??= new();
+        settings.DashboardMetrics.RemoveAll(string.IsNullOrWhiteSpace);
+        settings.OverlayMetrics.RemoveAll(string.IsNullOrWhiteSpace);
+        settings.CollapsedGroups ??= new();
         settings.FanChannels ??= new();
         settings.FanProfiles ??= new();
         settings.IgnoredFanConflicts ??= new();
         ThresholdDefaults.EnsureDefaults(settings.ThresholdRules, settings.ThresholdOverrides);
         settings.OverlayHotkey ??= "";
+        settings.OverlayCanvas = OverlayCanvasLayout.Normalize(settings.OverlayCanvas);
         settings.ThemePreset = ThemePresets.SanitizePresetName(settings.ThemePreset);
         settings.ThemeAccent = ThemePresets.SanitizeAccentHex(settings.ThemeAccent);
+        settings.ThemeSecondary = ThemePresets.SanitizeAccentHex(settings.ThemeSecondary);
+        if (!DashboardScene.ValidLabels(settings.SceneSectionLabels)) settings.SceneSectionLabels = new();
+        settings.Scenes = (settings.Scenes ?? new()).Where(s => s is not null).Take(50)
+            .Where(s => { try { s.Validate(); return true; } catch { return false; } }).DistinctBy(s => s.Name).ToList();
+        settings.ThemeDesigns = (settings.ThemeDesigns ?? new()).Where(d => d is not null).Take(50)
+            .Select(d => { try { return d.Validate(); } catch { return null; } })
+            .OfType<ThemeDesign>().DistinctBy(d => d.Name).ToList();
         // Null *elements* deserialize just as happily as null collections ({"FanChannels":{"a":null}}), and the
         // sanitation below dereferences every one of them.
         settings.FanChannels = settings.FanChannels.Where(kv => kv.Value is not null).ToDictionary(kv => kv.Key, kv => kv.Value);
@@ -85,6 +99,26 @@ public sealed class SettingsService
             profile.Channels = (profile.Channels ?? new()).Where(kv => kv.Value is not null).ToDictionary(kv => kv.Key, kv => kv.Value);
             foreach (var pref in profile.Channels.Values) Sanitize(pref);
         }
+        settings.LayoutProfiles ??= new();
+        settings.LayoutProfiles.RemoveAll(p => p is null);
+        foreach (var profile in settings.LayoutProfiles)
+        {
+            profile.Name ??= "";
+            profile.DashboardMetrics = (profile.DashboardMetrics ?? new()).Where(id => id is not null).ToList();
+            profile.OverlayMetrics = (profile.OverlayMetrics ?? new()).Where(id => id is not null).ToList();
+            profile.CollapsedGroups = (profile.CollapsedGroups ?? new()).Where(id => id is not null).ToList();
+            profile.TilePrefs = (profile.TilePrefs ?? new()).Where(pair => pair.Value is not null).ToDictionary(pair => pair.Key, pair => pair.Value);
+            foreach (var pref in profile.TilePrefs.Values)
+            {
+                pref.X = SanitizePosition(pref.X);
+                pref.Y = SanitizePosition(pref.Y);
+            }
+            profile.CoreMatrixX = SanitizePosition(profile.CoreMatrixX);
+            profile.CoreMatrixY = SanitizePosition(profile.CoreMatrixY);
+        }
+        if (settings.ActiveLayoutProfile is string active && !settings.LayoutProfiles.Any(p => p.Name == active))
+            settings.ActiveLayoutProfile = null;
+        if (settings.ActiveLayoutProfile is null) settings.LayoutProfileModified = false;
 
         static void Sanitize(FanChannelPref pref)
         {

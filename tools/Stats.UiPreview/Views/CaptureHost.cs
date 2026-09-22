@@ -23,6 +23,7 @@ public static class CaptureHost
     {
         ("Dark Amber", null), ("Dark Blue", null), ("Dark Green", null),
         ("Dark Purple", null), ("Light", null), ("Dark Amber", "#3FBFBF"),
+        ("Synthwave", null), ("Outrun", null), ("Midnight", null), ("Light", null),
     };
 
     public static List<Outcome> Run(CaptureSpec spec, string tempRoot, BindingErrorListener listener)
@@ -30,10 +31,11 @@ public static class CaptureHost
         SubstateCatalog.Validate(spec.View, spec.SubstateList);
         if (string.IsNullOrEmpty(spec.Output))
             throw new ArgumentException("--output is required for a capture (or use --batch/--interactive).");
+        listener.TakeAndClear(); // begin this capture's binding-error window before any composition or view construction
 
         bool themeCycle = spec.SubstateList.Contains("theme-cycle");
         var buildSubstates = spec.SubstateList
-            .Where(s => s != "theme-cycle" && !s.StartsWith("category-", StringComparison.Ordinal))
+            .Where(s => spec.View != "lab" && s != "theme-cycle" && !s.StartsWith("category-", StringComparison.Ordinal))
             .Select(s => spec.View == "settings" && s == "update-error" ? "settings-update-error" : s)
             .ToArray();
 
@@ -74,7 +76,6 @@ public static class CaptureHost
         DispatcherUtil.WaitFrames();
 
         var results = new List<Outcome>();
-        listener.TakeAndClear(); // discard construction-time noise from before this capture started
         try
         {
             if (themeCycle)
@@ -122,6 +123,8 @@ public static class CaptureHost
             case FansWindow f: f.AllowClose = true; break;
             case PeaksWindow p: p.AllowClose = true; break;
             case MetricDetailWindow m: m.AllowClose = true; break;
+            case ComparisonWindow c: c.AllowClose = true; break;
+            case SessionWindow s: s.AllowClose = true; break;
         }
     }
 
@@ -149,12 +152,51 @@ public static class CaptureHost
         "fans" => new FansWindow { DataContext = c.Fans },
         "peaks" => new PeaksWindow { DataContext = c.Peaks },
         "alerts" => new PeaksWindow { DataContext = c.Peaks },
+        "processes" => new PeaksWindow { DataContext = c.Peaks },
+        "comparison" => new ComparisonWindow { DataContext = c.Comparison },
+        "sessions" => new SessionWindow { DataContext = c.Sessions },
+        "theme-studio" => new ThemeStudioWindow { DataContext = new ThemeStudioViewModel(c.Settings, () => { }) },
+        "scenes" => BuildScenes(c),
+        "lab" => BuildLab(spec, c),
         "details" => BuildDetails(spec, c),
         "overlay" => new OverlayWindow { DataContext = c.Overlay, Opacity = c.Settings.OverlayOpacity },
+        "overlay-editor" => new OverlayEditorWindow { DataContext = new OverlayEditorViewModel(c.Settings, c.Store, () => { }) },
         "threshold-dialog" => BuildThresholdDialog(spec, c),
         "input-dialog" => BuildInputDialog(),
         _ => throw new ArgumentException($"Unknown --view '{spec.View}'."),
     };
+
+    private static Window BuildScenes(PreviewComposition c)
+    {
+        var vm = new SceneComposerViewModel(c.Settings, c.Definitions, () => { });
+        vm.Name = "Gaming cockpit"; vm.SaveCurrentCommand.Execute(null);
+        return new SceneComposerWindow { DataContext = vm };
+    }
+
+    private static Window BuildLab(CaptureSpec spec, PreviewComposition c)
+    {
+        var vm = new LabViewModel(Path.Combine(c.TempRoot, "beta-lab"), c.Definitions);
+        vm.AddGameCommand.Execute(null); vm.SelectedGame!.ExecutableBaseName = "simulated-game";
+        vm.AddRuleCommand.Execute(null);
+        vm.SelectedRule!.FirstMetricId = c.Definitions.FirstOrDefault()?.Id ?? "";
+        vm.SelectedRule.SecondMetricId = c.Definitions.Skip(1).FirstOrDefault()?.Id ?? "";
+        vm.SelectedRule.FirstThreshold = 90; vm.SelectedRule.SecondThreshold = 80;
+        vm.AddTimeline("bookmark", "Simulated warm-up complete", TimeSeries.FixedTimeUtc);
+        vm.SetDiagnostics("preview", "simulated Windows", ".NET 8", true);
+        if (spec.Substate is "notebook" or "support")
+        {
+            vm.AddNotebookEntryCommand.Execute(null);
+            vm.SelectedNotebookEntry!.Name = "Simulated graphics experiment";
+            vm.SelectedNotebookEntry.Workload = "Fixed simulated benchmark";
+            vm.SelectedNotebookEntry.StabilityNotes = "Fixture note only; no hardware changes.";
+            vm.FeedbackText = "Simulated feedback text";
+        }
+        var window = new LabWindow { DataContext = vm };
+        window.Closed += (_, _) => vm.Dispose();
+        var index = Array.IndexOf(new[] { "gaming", "compound", "history", "timeline", "diagnostics", "notebook", "support" }, spec.Substate);
+        ((TabControl)window.FindName("LabTabs")).SelectedIndex = Math.Max(0, index);
+        return window;
+    }
 
     private static DashboardWindow BuildDashboard(CaptureSpec spec, PreviewComposition c, bool openFlyout = false, int tab = 0)
     {
@@ -235,6 +277,9 @@ public static class CaptureHost
                 case "tile-menu" when window is DashboardWindow:
                     OpenFirstTileContextMenu(window);
                     break;
+                case "view-menu" when window is DashboardWindow:
+                    OpenViewMenu(window);
+                    break;
                 case "theme-dropdown" when window is DashboardWindow:
                     DispatcherUtil.WaitFrames();
                     OpenThemeDropdown(window, c);
@@ -245,6 +290,8 @@ public static class CaptureHost
             }
         }
         if (spec.View == "alerts" && window is PeaksWindow pw) SelectAlertsTab(pw);
+        if (spec.View == "processes" && window is PeaksWindow processWindow) SelectProcessesTab(processWindow);
+        if (spec.View == "sessions" && spec.Substate == "analysis" && window is SessionWindow sessionWindow) ScrollToAnalysis(sessionWindow);
     }
 
     private static void SelectSettingsCategory(Window window, string category)
@@ -284,7 +331,7 @@ public static class CaptureHost
     {
         var combo = VisualTreeUtil.FirstDescendant<ComboBox>(window,
             b => ReferenceEquals(b.ItemsSource, c.SettingsVm.ThemePresetNames));
-        if (combo is null) return;
+        if (combo is null) throw new InvalidOperationException("Theme preset picker was not found in the preview visual tree.");
         combo.BringIntoView(); // the Settings tab is a ScrollViewer — the preset picker sits below the fold
         DispatcherUtil.WaitFrames(5);
         // BringIntoView scrolls the minimum distance, landing the combo flush with the viewport's bottom edge —
@@ -296,8 +343,13 @@ public static class CaptureHost
         }
         combo.Focus();
         DispatcherUtil.WaitFrames(3);
+        var popup = combo.Template.FindName("PART_Popup", combo) as System.Windows.Controls.Primitives.Popup;
+        // Queue draining is not elapsed animation time; capture the popup's settled state, not its slide-in.
+        if (popup is not null) popup.PopupAnimation = System.Windows.Controls.Primitives.PopupAnimation.None;
         combo.IsDropDownOpen = true;
-        DispatcherUtil.WaitFrames();
+        DispatcherUtil.WaitFrames(10);
+        if (!combo.IsDropDownOpen || popup?.Child?.IsVisible != true)
+            throw new InvalidOperationException($"Theme dropdown did not open: visible={combo.IsVisible}, focused={combo.IsKeyboardFocusWithin}, open={combo.IsDropDownOpen}, popup={popup?.IsOpen}.");
     }
 
     /// <summary>"layout-resize-grip" (docs/superpowers/specs/2026-09-11-tile-resize-design.md "Preview harness"):
@@ -320,6 +372,27 @@ public static class CaptureHost
         var tabs = VisualTreeUtil.FirstDescendant<TabControl>(window);
         if (tabs is null || tabs.Items.Count < 2) return;
         tabs.SelectedIndex = 1;
+        DispatcherUtil.WaitFrames();
+    }
+
+    private static void OpenViewMenu(Window window)
+    {
+        if (window.FindName("ViewButton") is not Button button) return;
+        button.RaiseEvent(new RoutedEventArgs(Button.ClickEvent, button));
+        DispatcherUtil.WaitFrames();
+    }
+
+    private static void SelectProcessesTab(Window window)
+    {
+        var tabs = VisualTreeUtil.FirstDescendant<TabControl>(window);
+        if (tabs is not null && tabs.Items.Count > 2) tabs.SelectedIndex = 2;
+        DispatcherUtil.WaitFrames();
+    }
+    private static void ScrollToAnalysis(Window window)
+    {
+        var expander = VisualTreeUtil.FirstDescendant<Expander>(window, e => e.Header?.ToString()?.Contains("A/B", StringComparison.Ordinal) == true);
+        expander?.BringIntoView();
+        if (expander is not null) expander.IsExpanded = true;
         DispatcherUtil.WaitFrames();
     }
 

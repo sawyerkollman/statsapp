@@ -142,6 +142,14 @@
                         <TextBlock Text="{Binding GameModeStatus}" Foreground="{DynamicResource TextSecondary}" FontSize="{StaticResource FontSizeDense}"
                                    VerticalAlignment="Center" Margin="0,0,0,4"/>
                     </WrapPanel>
+                    <WrapPanel Margin="0,2,0,0">
+                        <TextBlock Text="Gaming layout:" Foreground="{DynamicResource TextSecondary}" VerticalAlignment="Center" Margin="0,0,6,4"/>
+                        <ComboBox ItemsSource="{Binding LayoutProfileOptions}" SelectedItem="{Binding SelectedGamingLayout}" MinWidth="150" Margin="0,0,12,4"/>
+                        <TextBlock Text="Desktop layout:" Foreground="{DynamicResource TextSecondary}" VerticalAlignment="Center" Margin="0,0,6,4"/>
+                        <ComboBox ItemsSource="{Binding LayoutProfileOptions}" SelectedItem="{Binding SelectedDesktopLayout}" MinWidth="150" Margin="0,0,12,4"/>
+                    </WrapPanel>
+                    <TextBlock Text="Layout profiles are saved from the dashboard's View menu and switch together with the fan profiles above."
+                               FontSize="{StaticResource FontSizeDense}" Foreground="{DynamicResource TextSecondary}" Margin="0,0,0,4" TextWrapping="Wrap"/>
                 </StackPanel>
 
                 <Border Background="#4A1E1E" CornerRadius="{StaticResource RadiusPanel}" Padding="12,8" Margin="0,0,0,10"

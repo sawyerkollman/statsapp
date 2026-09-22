@@ -63,6 +63,12 @@ public sealed class HistoryChart : FrameworkElement
         nameof(Capacity), typeof(int), typeof(HistoryChart),
         new FrameworkPropertyMetadata(0, FrameworkPropertyMetadataOptions.AffectsRender));
 
+    // Optional UTC path used by comparison/session charts. Leaving TimesUtc null preserves the legacy index axis.
+    public static readonly DependencyProperty TimesUtcProperty = DependencyProperty.Register(nameof(TimesUtc), typeof(IReadOnlyList<DateTime>), typeof(HistoryChart), new FrameworkPropertyMetadata(null, FrameworkPropertyMetadataOptions.AffectsRender, OnChartAxisChanged));
+    public static readonly DependencyProperty AxisStartUtcProperty = DependencyProperty.Register(nameof(AxisStartUtc), typeof(DateTime?), typeof(HistoryChart), new FrameworkPropertyMetadata(null, FrameworkPropertyMetadataOptions.AffectsRender, OnChartAxisChanged));
+    public static readonly DependencyProperty AxisEndUtcProperty = DependencyProperty.Register(nameof(AxisEndUtc), typeof(DateTime?), typeof(HistoryChart), new FrameworkPropertyMetadata(null, FrameworkPropertyMetadataOptions.AffectsRender, OnChartAxisChanged));
+    public static readonly DependencyProperty CursorTimeUtcProperty = DependencyProperty.Register(nameof(CursorTimeUtc), typeof(DateTime?), typeof(HistoryChart), new FrameworkPropertyMetadata(null, FrameworkPropertyMetadataOptions.AffectsRender | FrameworkPropertyMetadataOptions.BindsTwoWayByDefault, OnCursorChanged));
+
     /// <summary>0→1 progress of the last-value pulse ring; started by <see cref="OnValuesChanged"/> and driven by
     /// a <see cref="DoubleAnimation"/>, never a timer — idle (no new sample) costs nothing.</summary>
     private static readonly DependencyProperty PulseProgressProperty = DependencyProperty.Register(
@@ -160,6 +166,10 @@ public sealed class HistoryChart : FrameworkElement
     public IReadOnlyList<string>? TimeAxisLabels { get => (IReadOnlyList<string>?)GetValue(TimeAxisLabelsProperty); set => SetValue(TimeAxisLabelsProperty, value); }
     public IReadOnlyList<string>? YAxisLabels { get => (IReadOnlyList<string>?)GetValue(YAxisLabelsProperty); set => SetValue(YAxisLabelsProperty, value); }
     public int Capacity { get => (int)GetValue(CapacityProperty); set => SetValue(CapacityProperty, value); }
+    public IReadOnlyList<DateTime>? TimesUtc { get => (IReadOnlyList<DateTime>?)GetValue(TimesUtcProperty); set => SetValue(TimesUtcProperty, value); }
+    public DateTime? AxisStartUtc { get => (DateTime?)GetValue(AxisStartUtcProperty); set => SetValue(AxisStartUtcProperty, value); }
+    public DateTime? AxisEndUtc { get => (DateTime?)GetValue(AxisEndUtcProperty); set => SetValue(AxisEndUtcProperty, value); }
+    public DateTime? CursorTimeUtc { get => (DateTime?)GetValue(CursorTimeUtcProperty); set => SetValue(CursorTimeUtcProperty, value); }
     private double PulseProgress { get => (double)GetValue(PulseProgressProperty); set => SetValue(PulseProgressProperty, value); }
 
     /// <summary>Starts the last-value pulse ring when a new sample arrives (a changed last-finite value, or a
@@ -179,6 +189,18 @@ public sealed class HistoryChart : FrameworkElement
         ctrl.BeginAnimation(PulseProgressProperty, new DoubleAnimation(0, 1, TimeSpan.FromMilliseconds(500)) { FillBehavior = FillBehavior.Stop });
     }
 
+    private static void OnChartAxisChanged(DependencyObject d, DependencyPropertyChangedEventArgs e)
+    {
+        var ctrl = (HistoryChart)d;
+        ctrl._cacheValues = null;
+    }
+
+    private static void OnCursorChanged(DependencyObject d, DependencyPropertyChangedEventArgs e)
+    {
+        // Cursor movement changes only the crosshair; retain line/fill geometry and the TwoWay binding expression.
+        ((HistoryChart)d).InvalidateVisual();
+    }
+
     private static float? LastFinite(IReadOnlyList<float>? values)
     {
         if (values is null) return null;
@@ -191,8 +213,9 @@ public sealed class HistoryChart : FrameworkElement
         base.OnMouseMove(e);
         var values = Values;
         double plotW = ActualWidth - LeftMargin - RightMargin;
-        if (values is null || values.Count < 2 || plotW <= 0) return;
-        int idx = SampleAxis.IndexAt(e.GetPosition(this).X, values.Count, Capacity, LeftMargin, plotW);
+        if (values is null || values.Count == 0 || plotW <= 0) return;
+        int idx = IndexAt(e.GetPosition(this).X, values.Count, plotW);
+        if (HasTimestampAxis(values.Count)) SetCurrentValue(CursorTimeUtcProperty, TimeAt(e.GetPosition(this).X, plotW));
         if (idx == _hoverIndex) return;
         _hoverIndex = idx;
         InvalidateVisual();
@@ -234,7 +257,7 @@ public sealed class HistoryChart : FrameworkElement
         if (range < 1e-6f) range = 1f;
         _cachedRange = range;
 
-        double X(int i) => SampleAxis.X(i, values.Count, Capacity, plotLeft, plotW);
+        double X(int i) => XAt(i, values.Count, plotLeft, plotW);
         double Y(float v) => plotTop + plotH - (v - min) / range * plotH;
         Point At(int i) => new(X(i), Y(values[i]));
 
@@ -307,7 +330,7 @@ public sealed class HistoryChart : FrameworkElement
         }
 
         var values = Values;
-        if (values is null || values.Count < 2 || plotW <= 0 || plotH <= 0) return;
+        if (values is null || values.Count == 0 || plotW <= 0 || plotH <= 0) return;
 
         bool smooth = GraphStyle.SmoothLines;
         bool effects = GraphStyle.Effects;
@@ -322,7 +345,7 @@ public sealed class HistoryChart : FrameworkElement
             _cacheCapacity = Capacity; _cacheSmooth = smooth; _cacheEffects = effects;
         }
 
-        double X(int i) => SampleAxis.X(i, values.Count, Capacity, plotLeft, plotW);
+        double X(int i) => XAt(i, values.Count, plotLeft, plotW);
         double Y(float v) => plotTop + plotH - (v - _cachedMin) / _cachedRange * plotH;
 
         DrawGuide(dc, WarnValue, _hasData ? _cachedMin : float.NaN, _hasData ? _cachedMax : float.NaN, Y, plotLeft, plotW, _warnPen);
@@ -358,13 +381,15 @@ public sealed class HistoryChart : FrameworkElement
 
         // hover crosshair + value/time label — a gap sample still shows the crosshair (so the user can see where
         // the gap is) but no dot, and the label reports "—" for its value (see HoverLabel).
-        if (_hoverIndex >= 0 && _hoverIndex < values.Count)
+        var cursorTime = CursorTimeUtc is not null && HasTimestampAxis(values.Count) ? CursorTimeUtc : null;
+        var cursorIndex = cursorTime is not null ? NearestTimeIndex(cursorTime.Value) : _hoverIndex;
+        if (cursorIndex >= 0 && cursorIndex < values.Count)
         {
-            double hx = X(_hoverIndex);
+            double hx = cursorTime is DateTime time ? XAt(time, plotLeft, plotW) : X(cursorIndex);
             dc.DrawLine(_hoverLinePen, new Point(hx, plotTop), new Point(hx, plotTop + plotH));
-            if (!float.IsNaN(values[_hoverIndex]))
-                dc.DrawEllipse(_hoverDotBrush, null, new Point(hx, Y(values[_hoverIndex])), 3.5, 3.5);
-            DrawHoverLabel(dc, HoverLabel(values, _hoverIndex), hx, plotTop, plotLeft, plotW);
+            if (!float.IsNaN(values[cursorIndex]))
+                dc.DrawEllipse(_hoverDotBrush, null, new Point(hx, Y(values[cursorIndex])), 3.5, 3.5);
+            DrawHoverLabel(dc, HoverLabel(values, cursorIndex, cursorTime), hx, plotTop, plotLeft, plotW);
         }
     }
 
@@ -376,14 +401,47 @@ public sealed class HistoryChart : FrameworkElement
         dc.DrawLine(pen, new Point(plotLeft, gy), new Point(plotLeft + plotW, gy));
     }
 
-    private string HoverLabel(IReadOnlyList<float> values, int idx)
+    private string HoverLabel(IReadOnlyList<float> values, int idx, DateTime? cursorTime)
     {
         if (HoverTextProvider is { } provider) { var text = provider(idx); if (text.Length > 0) return text; }
         float v = values[idx];
         string valueText = float.IsNaN(v) ? "—" : string.Create(CultureInfo.InvariantCulture, $"{v:F1} {Unit}").TrimEnd();
+        if (HasTimestampAxis(values.Count)) return $"{valueText} at {(cursorTime ?? TimesUtc![idx]).ToUniversalTime():HH:mm:ss} UTC";
         double secondsAgo = (values.Count - 1 - idx) * SecondsPerSample;
         string when = secondsAgo < 0.5 ? "now" : "-" + HistoryCapacity.FormatWindow(secondsAgo);
         return $"{valueText} at {when}";
+    }
+
+    private bool HasTimestampAxis(int count) => TimesUtc is { } times && times.Count == count && AxisStartUtc is DateTime start && AxisEndUtc is DateTime end && end > start;
+    private double XAt(int index, int count, double left, double width)
+    {
+        if (!HasTimestampAxis(count)) return SampleAxis.X(index, count, Capacity, left, width);
+        return left + width * (TimesUtc![index] - AxisStartUtc!.Value).TotalSeconds / (AxisEndUtc!.Value - AxisStartUtc.Value).TotalSeconds;
+    }
+    private double XAt(DateTime time, double left, double width) => left + width * (time - AxisStartUtc!.Value).TotalSeconds / (AxisEndUtc!.Value - AxisStartUtc.Value).TotalSeconds;
+    private int IndexAt(double x, int count, double width)
+    {
+        if (!HasTimestampAxis(count)) return SampleAxis.IndexAt(x, count, Capacity, LeftMargin, width);
+        var fraction = Math.Clamp((x - LeftMargin) / width, 0, 1);
+        var time = AxisStartUtc!.Value + TimeSpan.FromTicks((long)((AxisEndUtc!.Value - AxisStartUtc.Value).Ticks * fraction));
+        return NearestTimeIndex(time);
+    }
+    private DateTime TimeAt(double x, double width)
+    {
+        var fraction = Math.Clamp((x - LeftMargin) / width, 0, 1);
+        return AxisStartUtc!.Value + TimeSpan.FromTicks((long)((AxisEndUtc!.Value - AxisStartUtc.Value).Ticks * fraction));
+    }
+    private int NearestTimeIndex(DateTime time)
+    {
+        var times = TimesUtc!;
+        int best = 0;
+        long distance = long.MaxValue;
+        for (int i = 0; i < times.Count; i++)
+        {
+            var next = Math.Abs((times[i] - time).Ticks);
+            if (next < distance) { distance = next; best = i; }
+        }
+        return best;
     }
 
     private double PixelsPerDip => VisualTreeHelper.GetDpi(this).PixelsPerDip;
@@ -408,7 +466,7 @@ public sealed class HistoryChart : FrameworkElement
     {
         if (string.IsNullOrEmpty(text)) return;
         var ft = new FormattedText(text, CultureInfo.InvariantCulture, FlowDirection.LeftToRight, Typeface, 11, _hoverDotBrush, PixelsPerDip);
-        double tx = Math.Clamp(hx - ft.Width / 2, plotLeft, plotLeft + plotW - ft.Width);
+        double tx = Math.Clamp(hx - ft.Width / 2, plotLeft, Math.Max(plotLeft, plotLeft + plotW - ft.Width));
         dc.DrawText(ft, new Point(tx, Math.Max(0, top - ft.Height - 2)));
     }
 }

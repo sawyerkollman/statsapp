@@ -78,6 +78,12 @@ public sealed class AppSettings
     public string ThemePreset { get; set; } = ThemePresets.Default;
     /// <summary>Custom accent override as "#RRGGBB", or null to use the preset's own accent colour.</summary>
     public string? ThemeAccent { get; set; }
+    public string? ThemeSecondary { get; set; }
+    public bool ThemeGradient { get; set; } = true;
+    public bool ReactiveDecorations { get; set; }
+    public List<ThemeDesign> ThemeDesigns { get; set; } = new();
+    public List<DashboardScene> Scenes { get; set; } = new();
+    public Dictionary<string, string> SceneSectionLabels { get; set; } = new();
 
     // ---- v1.8 alerts ----
     /// <summary>Master switch for the alert engine (tray balloon + log); evaluated regardless of dashboard/overlay
@@ -119,7 +125,6 @@ public sealed class AppSettings
     /// <summary>Master switch for the line glow, gradient fills, last-value pulse, and eased bar/gauge fills — off
     /// restores the plain pre-effects look.</summary>
     public bool GraphEffects { get; set; } = true;
-
     // ---- dashboard layout modes ----
     /// <summary>Auto (grouped WrapPanel, default/unchanged) vs Free/Grid (one whole-dashboard canvas with
     /// persisted per-tile positions — see <see cref="TilePref.X"/>/<see cref="TilePref.Y"/>). See
@@ -132,6 +137,18 @@ public sealed class AppSettings
     /// Never touched while <see cref="DashboardLayoutMode"/> is Auto.</summary>
     public double? CoreMatrixX { get; set; }
     public double? CoreMatrixY { get; set; }
+    // ---- v1.10 processes ----
+    /// <summary>Sample top processes while the Peaks window is open; off prevents process enumeration.</summary>
+    public bool ProcessSamplingEnabled { get; set; } = true;
+
+    // ---- layout profiles ----
+    public List<LayoutProfile> LayoutProfiles { get; set; } = new();
+    public string? ActiveLayoutProfile { get; set; }
+    public bool LayoutProfileModified { get; set; }
+    public string? GameModeGamingLayoutProfile { get; set; }
+    public string? GameModeDesktopLayoutProfile { get; set; }
+    /// <summary>Blocks user layout edits; explicit profile changes remain available.</summary>
+    public bool IsLayoutLocked { get; set; }
 
     // ---- toast alerts ----
     /// <summary>Raise a Windows notification (H.NotifyIcon tray balloon, rendered by Windows 10/11 as a toast) when an
@@ -150,6 +167,8 @@ public sealed class AppSettings
     /// <summary>Optional one-line status strip (fan control state / game mode / PresentMon reason) at the
     /// overlay's bottom edge; collapses when no source has anything to say. See <see cref="ViewModels.OverlayStatusComposer"/>.</summary>
     public bool OverlayStatusLine { get; set; }
+    /// <summary>Optional freeform overlay geometry; null retains the automatic stack layout.</summary>
+    public OverlayCanvasLayout? OverlayCanvas { get; set; }
     /// <summary>Get-or-create the TilePref for a metric id.</summary>
     public TilePref PrefFor(string metricId)
     {

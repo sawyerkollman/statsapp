@@ -11,7 +11,10 @@
                 <ScaleTransform ScaleX="{Binding FontScale}" ScaleY="{Binding FontScale}"/>
             </Border.LayoutTransform>
             <StackPanel>
-                <ItemsControl x:Name="TilesHost" ItemsSource="{Binding Tiles}" HorizontalAlignment="Left">
+                <Canvas Width="{Binding CanvasWidth}" Height="{Binding CanvasHeight}" Visibility="{Binding HasCustomCanvas, Converter={StaticResource BoolToVis}}">
+                    <ItemsControl ItemsSource="{Binding CanvasTiles}"><ItemsControl.ItemsPanel><ItemsPanelTemplate><Canvas/></ItemsPanelTemplate></ItemsControl.ItemsPanel><ItemsControl.ItemContainerStyle><Style TargetType="ContentPresenter"><Setter Property="Canvas.Left" Value="{Binding X}"/><Setter Property="Canvas.Top" Value="{Binding Y}"/></Style></ItemsControl.ItemContainerStyle><ItemsControl.ItemTemplate><DataTemplate><Border Width="{Binding Width}" Height="{Binding Height}" CornerRadius="4" Padding="10"><Border.Style><Style TargetType="Border"><Setter Property="BorderThickness" Value="0"/><Setter Property="BorderBrush" Value="#FF00E5FF"/><Style.Triggers><DataTrigger Binding="{Binding DataContext.HasFixedNeonBorder, RelativeSource={RelativeSource AncestorType=Window}}" Value="True"><Setter Property="BorderThickness" Value="2"/></DataTrigger></Style.Triggers></Style></Border.Style><StackPanel><TextBlock Text="{Binding Tile.DisplayName}" FontSize="10" Foreground="{StaticResource OverlayTextSecondary}"/><StackPanel Orientation="Horizontal"><TextBlock Text="{Binding Tile.CurrentText}" FontSize="16" FontWeight="SemiBold" Foreground="{Binding Tile.Severity, Converter={StaticResource SeverityToBrush}, ConverterParameter=Overlay}"/><controls:Sparkline Width="56" Height="16" Margin="6,0,0,0" Values="{Binding Tile.HistoryValues}" Capacity="{Binding Tile.HistorySampleCapacity}" Stroke="{Binding Tile.Severity, Converter={StaticResource SeverityToBrush}, ConverterParameter=Overlay}" ShowGuides="False" Visibility="{Binding DataContext.ShowSparklines, RelativeSource={RelativeSource AncestorType=ItemsControl}, Converter={StaticResource BoolToVis}}"/></StackPanel></StackPanel></Border></DataTemplate></ItemsControl.ItemTemplate></ItemsControl>
+                </Canvas>
+                <ItemsControl x:Name="TilesHost" ItemsSource="{Binding Tiles}" HorizontalAlignment="Left" Visibility="{Binding HasAutomaticCanvas, Converter={StaticResource BoolToVis}}">
                     <ItemsControl.ItemsPanel>
                         <ItemsPanelTemplate>
                             <StackPanel Orientation="{Binding DataContext.Orientation, RelativeSource={RelativeSource AncestorType=ItemsControl}, Converter={StaticResource OverlayOrientation}}"/>
@@ -49,6 +52,13 @@
                         </DataTemplate>
                     </ItemsControl.ItemTemplate>
                 </ItemsControl>
+                <TextBlock Text="{Binding FrameStatusText}"
+                           FontSize="11" MaxWidth="260" TextWrapping="Wrap" Margin="10,0">
+                    <TextBlock.Style><Style TargetType="TextBlock"><Setter Property="Foreground" Value="{StaticResource OverlayTextSecondary}"/><Style.Triggers>
+                        <DataTrigger Binding="{Binding FrameStatusIsWarning}" Value="True"><Setter Property="Foreground" Value="{StaticResource OverlayWarn}"/></DataTrigger>
+                        <Trigger Property="Text" Value=""><Setter Property="Visibility" Value="Collapsed"/></Trigger>
+                    </Style.Triggers></Style></TextBlock.Style>
+                </TextBlock>
                 <!-- status strip: bottom edge in both orientations, inside the Border so FontScale and the
                      move-mode outline cover it -->
                 <!-- MaxWidth and the 10/4 inset live on one Border, as Padding, so the strip's whole footprint is

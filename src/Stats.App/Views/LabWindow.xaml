@@ -1,0 +1,102 @@
+<Window x:Class="Stats.App.Views.LabWindow"
+ xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+ Title="Stats — Beta lab" Width="900" Height="700" MinWidth="600" MinHeight="420" Background="{DynamicResource WindowBg}">
+ <Window.Resources>
+  <Style TargetType="TextBlock"><Setter Property="Foreground" Value="{DynamicResource TextPrimary}"/><Setter Property="TextWrapping" Value="Wrap"/><Setter Property="Margin" Value="0,6,0,4"/></Style>
+  <Style TargetType="Button" BasedOn="{StaticResource HeaderButton}"><Setter Property="Margin" Value="0,4,6,4"/></Style>
+  <Style TargetType="TextBox"><Setter Property="MinHeight" Value="28"/><Setter Property="Margin" Value="0,2,0,6"/></Style>
+ </Window.Resources>
+ <Grid Margin="16">
+  <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+  <TextBlock Text="Beta lab" FontSize="20" FontWeight="SemiBold"/>
+  <TabControl x:Name="LabTabs" Grid.Row="1">
+   <TabItem Header="Gaming">
+    <ScrollViewer VerticalScrollBarVisibility="Auto"><StackPanel Margin="12">
+     <CheckBox Content="Enable passive gaming automation" IsChecked="{Binding Options.AutoGamingEnabled}"/>
+     <TextBlock Text="Uses FPS already enabled in Metrics. Does not enable tracing or fan control. Executable name excludes .exe; unmatched games are recorded in the timeline but do not change layouts." Foreground="{DynamicResource TextSecondary}"/>
+     <ListBox ItemsSource="{Binding Games}" SelectedItem="{Binding SelectedGame}" DisplayMemberPath="ExecutableBaseName" Height="100" AutomationProperties.Name="Game mappings"/>
+     <WrapPanel><Button Content="Add game" Command="{Binding AddGameCommand}"/><Button Content="Remove selected" Command="{Binding RemoveGameCommand}"/></WrapPanel>
+     <StackPanel DataContext="{Binding SelectedGame}">
+      <TextBlock Text="Executable base name"/><TextBox Text="{Binding ExecutableBaseName, UpdateSourceTrigger=PropertyChanged}" MaxLength="100" AutomationProperties.Name="Executable base name"/>
+      <TextBlock Text="Saved layout profile (blank leaves it unchanged)"/><TextBox Text="{Binding LayoutName}" MaxLength="100" AutomationProperties.Name="Gaming layout profile"/>
+      <TextBlock Text="Saved overlay scene (blank leaves it unchanged)"/><TextBox Text="{Binding OverlaySceneName}" MaxLength="100" AutomationProperties.Name="Gaming overlay scene"/>
+      <CheckBox Content="Automatically record this game (never takes over a manual recording)" IsChecked="{Binding AutoRecord}"/>
+      <TextBlock Text="Saved theme or preset (blank leaves it unchanged)"/><TextBox Text="{Binding ThemeName}" MaxLength="100" AutomationProperties.Name="Game theme"/>
+      <TextBlock Text="Named alert set (blank leaves it unchanged)"/><TextBox Text="{Binding AlertSetName}" MaxLength="100" AutomationProperties.Name="Game alert set"/>
+     </StackPanel>
+     <TextBlock Text="After a game ends, its recording is available in Session lab for replay, bookmarks and A/B analysis." Foreground="{DynamicResource TextSecondary}"/>
+     <TextBlock Text="Profile choices persist after the game ends until you change them manually or another game profile applies. This includes theme and active alert rules; no previous settings are restored automatically." Foreground="{DynamicResource TextSecondary}"/>
+     <TextBlock Text="{Binding PostGameReportText}"/>
+     <Button Content="Open post-game report" Command="{Binding OpenPostGameReportCommand}" IsEnabled="{Binding HasPostGameReport}" HorizontalAlignment="Left"/>
+    </StackPanel></ScrollViewer>
+   </TabItem>
+   <TabItem Header="Compound alerts">
+    <ScrollViewer VerticalScrollBarVisibility="Auto"><StackPanel Margin="12">
+     <TextBlock Text="Both conditions must hold. Missing data resets the hold. Test-only rules write timeline entries without notifications; the global Alerts switch also applies." Foreground="{DynamicResource TextSecondary}"/>
+     <ListBox ItemsSource="{Binding Rules}" SelectedItem="{Binding SelectedRule}" DisplayMemberPath="FirstMetricId" Height="80" AutomationProperties.Name="Compound rules"/>
+     <WrapPanel><Button Content="Add rule" Command="{Binding AddRuleCommand}"/><Button Content="Remove selected" Command="{Binding RemoveRuleCommand}"/></WrapPanel>
+     <TextBlock Text="Named rule set"/><WrapPanel><TextBox Width="160" Text="{Binding RuleSetName}" AutomationProperties.Name="Rule set name"/><Button Content="Save current rules" Command="{Binding SaveRuleSetCommand}"/></WrapPanel>
+     <ItemsControl ItemsSource="{Binding NamedRuleSets}"><ItemsControl.ItemTemplate><DataTemplate><WrapPanel><TextBlock Text="{Binding Name}" VerticalAlignment="Center"/><Button Content="Apply" Command="{Binding DataContext.ApplyRuleSetCommand, RelativeSource={RelativeSource AncestorType=Window}}" CommandParameter="{Binding Name}"/><Button Content="Delete" Command="{Binding DataContext.DeleteRuleSetCommand, RelativeSource={RelativeSource AncestorType=Window}}" CommandParameter="{Binding Name}"/></WrapPanel></DataTemplate></ItemsControl.ItemTemplate></ItemsControl>
+     <StackPanel DataContext="{Binding SelectedRule}">
+      <TextBlock Text="First metric"/>
+      <ComboBox ItemsSource="{Binding DataContext.Metrics, RelativeSource={RelativeSource AncestorType=Window}}" DisplayMemberPath="DisplayName" SelectedValuePath="Id" SelectedValue="{Binding FirstMetricId}" AutomationProperties.Name="First metric"/>
+      <TextBlock Text="First threshold (sensor units)"/><TextBox Text="{Binding FirstThreshold, ValidatesOnExceptions=True}" AutomationProperties.Name="First threshold"/>
+      <CheckBox Content="First value at or below threshold (unchecked: at or above)" IsChecked="{Binding FirstLower}"/>
+      <TextBlock Text="Second metric"/>
+      <ComboBox ItemsSource="{Binding DataContext.Metrics, RelativeSource={RelativeSource AncestorType=Window}}" DisplayMemberPath="DisplayName" SelectedValuePath="Id" SelectedValue="{Binding SecondMetricId}" AutomationProperties.Name="Second metric"/>
+      <TextBlock Text="Second threshold (sensor units)"/><TextBox Text="{Binding SecondThreshold, ValidatesOnExceptions=True}" AutomationProperties.Name="Second threshold"/>
+      <CheckBox Content="Second value at or below threshold" IsChecked="{Binding SecondLower}"/>
+      <TextBlock Text="Hold seconds (1–120)"/><TextBox Text="{Binding HoldSeconds, ValidatesOnExceptions=True}" AutomationProperties.Name="Hold seconds"/>
+      <TextBlock Text="Cooldown seconds (1–3600; requires recovery before another alert)"/><TextBox Text="{Binding CooldownSeconds, ValidatesOnExceptions=True}" AutomationProperties.Name="Cooldown seconds"/>
+      <CheckBox Content="Enabled" IsChecked="{Binding Enabled}" Margin="0,4"/>
+      <CheckBox Content="Test only — no Windows notification" IsChecked="{Binding TestOnly}" Margin="0,4"/>
+     </StackPanel>
+    </StackPanel></ScrollViewer>
+   </TabItem>
+   <TabItem Header="History">
+    <ScrollViewer VerticalScrollBarVisibility="Auto"><StackPanel Margin="12">
+     <CheckBox Content="Enable compact local history" IsChecked="{Binding Options.HistoryEnabled}"/>
+     <TextBlock Text="One-minute min/mean/max of up to 128 selected metrics. Missing samples are not zeros. Storage limits apply only to compact history, never manually saved recordings." Foreground="{DynamicResource TextSecondary}"/>
+     <TextBlock Text="Retention days (1–90)"/><TextBox Text="{Binding Options.RetentionDays, ValidatesOnExceptions=True}" AutomationProperties.Name="History retention days"/>
+     <TextBlock Text="Storage cap MB (16–512)"/><TextBox Text="{Binding Options.MaximumHistoryMb, ValidatesOnExceptions=True}" AutomationProperties.Name="History storage cap"/>
+      <Button Content="Refresh recent summaries" Command="{Binding RefreshHistoryCommand}" HorizontalAlignment="Left"/>
+      <Button Content="Restart history writer" Command="{Binding RestartHistoryCommand}" HorizontalAlignment="Left"/>
+      <TextBlock Text="After a storage or clock error, adjust limits if needed, Save, then restart the writer." Foreground="{DynamicResource TextSecondary}"/>
+     <TextBlock Text="Most recent 1000 saved summaries from up to seven files. The current minute appears after it is flushed." Foreground="{DynamicResource TextSecondary}"/>
+     <DataGrid ItemsSource="{Binding History}" IsReadOnly="True" AutoGenerateColumns="True" Height="260"/>
+    </StackPanel></ScrollViewer>
+   </TabItem>
+   <TabItem Header="Timeline">
+    <Grid Margin="12"><Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
+     <TextBox Text="{Binding BookmarkText, UpdateSourceTrigger=PropertyChanged}" MaxLength="200" AutomationProperties.Name="Timeline bookmark"/>
+     <Button Grid.Row="1" Content="Add bookmark" Command="{Binding BookmarkCommand}" HorizontalAlignment="Left"/>
+     <DataGrid Grid.Row="2" ItemsSource="{Binding Timeline}" IsReadOnly="True" AutoGenerateColumns="True"/>
+    </Grid>
+   </TabItem>
+   <TabItem Header="Diagnostics">
+    <ScrollViewer VerticalScrollBarVisibility="Auto"><StackPanel Margin="12">
+     <TextBlock Text="Review before export: version, OS/runtime, bitness, counts and Stats process memory/CPU/uptime. No sensor names, hardware IDs, paths, other processes, logs or user settings. No upload. Reopen this window to refresh counters." Foreground="{DynamicResource TextSecondary}"/>
+     <TextBox Text="{Binding DiagnosticPreview, Mode=OneWay}" IsReadOnly="True" AcceptsReturn="True" TextWrapping="Wrap" MinHeight="240" AutomationProperties.Name="Diagnostic export preview"/>
+     <Button Content="Export this preview…" Click="Export_Click" HorizontalAlignment="Left"/>
+    </StackPanel></ScrollViewer>
+   </TabItem>
+   <TabItem Header="Notebook"><ScrollViewer VerticalScrollBarVisibility="Auto"><StackPanel Margin="12">
+    <TextBlock Text="Local tuning notes only. These fields do not change hardware; one clean run does not prove stability." Foreground="{DynamicResource TextSecondary}"/>
+    <ListBox ItemsSource="{Binding NotebookEntries}" SelectedItem="{Binding SelectedNotebookEntry}" DisplayMemberPath="Name" Height="100" AutomationProperties.Name="Notebook entries"/>
+    <WrapPanel><Button Content="Add entry" Command="{Binding AddNotebookEntryCommand}"/><Button Content="Delete selected" Command="{Binding RemoveNotebookEntryCommand}"/><Button Content="Save notebook" Command="{Binding SaveNotebookCommand}"/><Button Content="Compare linked recordings" Command="{Binding CompareNotebookRunsCommand}"/></WrapPanel>
+    <StackPanel DataContext="{Binding SelectedNotebookEntry}"><TextBlock Text="Name"/><TextBox MaxLength="1000" AutomationProperties.Name="Notebook Name" Text="{Binding Name}"/><TextBlock Text="Workload"/><TextBox MaxLength="1000" AutomationProperties.Name="Notebook Workload" Text="{Binding Workload}"/><TextBlock Text="Graphics settings"/><TextBox MaxLength="1000" AutomationProperties.Name="Notebook GraphicsSettings" Text="{Binding GraphicsSettings}"/><TextBlock Text="Core offset (note)"/><TextBox MaxLength="1000" AutomationProperties.Name="Notebook CoreOffsetMHz" Text="{Binding CoreOffsetMHz}"/><TextBlock Text="Memory offset (note)"/><TextBox MaxLength="1000" AutomationProperties.Name="Notebook MemoryOffsetMHz" Text="{Binding MemoryOffsetMHz}"/><TextBlock Text="Voltage/power limit (notes)"/><TextBox MaxLength="1000" AutomationProperties.Name="Notebook Voltage" Text="{Binding Voltage}"/><TextBox MaxLength="1000" AutomationProperties.Name="Notebook PowerLimit" Text="{Binding PowerLimit}"/><TextBlock Text="Stability observations"/><TextBox MaxLength="1000" AutomationProperties.Name="Notebook StabilityNotes" Text="{Binding StabilityNotes}" AcceptsReturn="True"/><TextBlock Text="Recording A/B paths"/><TextBox MaxLength="260" AutomationProperties.Name="Notebook RecordingA" Text="{Binding RecordingA}"/><TextBox MaxLength="260" AutomationProperties.Name="Notebook RecordingB" Text="{Binding RecordingB}"/></StackPanel>
+   </StackPanel></ScrollViewer></TabItem>
+   <TabItem Header="Support"><ScrollViewer VerticalScrollBarVisibility="Auto"><StackPanel Margin="12">
+    <TextBlock Text="Feedback is copied only when you explicitly choose Copy. No notebook, recording path, settings, log, or diagnostic data is attached." Foreground="{DynamicResource TextSecondary}"/>
+    <TextBox Text="{Binding FeedbackText, UpdateSourceTrigger=PropertyChanged}" MaxLength="4000" AcceptsReturn="True" AutomationProperties.Name="Feedback text"/>
+    <Button Content="Copy feedback" Click="CopyFeedback_Click"/><Button Content="Release notes" Click="ReleaseNotes_Click"/><Button Content="Feedback issue" Click="FeedbackIssue_Click"/>
+    <TextBlock Text="To return to stable updates, turn off Receive beta updates in Settings. This does not downgrade an installed beta; it waits for a suitable stable release. For a manual downgrade, exit Stats normally and back up the entire Stats data folder first. See the beta testing guide." Foreground="{DynamicResource TextSecondary}"/>
+   </StackPanel></ScrollViewer></TabItem>
+  </TabControl>
+  <StackPanel Grid.Row="2">
+   <TextBlock Text="{Binding Error}" Foreground="{DynamicResource CritBrush}"/>
+   <TextBlock Text="{Binding Status}" Foreground="{DynamicResource TextSecondary}"/>
+   <Button Content="Save lab options" Command="{Binding SaveCommand}" HorizontalAlignment="Right"/>
+  </StackPanel>
+ </Grid>
+</Window>

@@ -35,6 +35,9 @@ public static class ThemeManager
         "TextPrimary", "TextSecondary", "AccentBrush", "WarnBrush", "CritBrush", "GaugeTrack",
     };
 
+    private const string NeonSecondaryBrush = "NeonSecondaryBrush";
+    private const string NeonOverviewVisibility = "NeonOverviewVisibility";
+
     /// <summary>"AccentBrush" → "AccentColor", "WindowBg" → "WindowBgColor", etc. — the naming convention used
     /// throughout Theme.xaml for a brush's backing Color resource.</summary>
     private static string ColorKeyFor(string brushKey) =>
@@ -71,6 +74,27 @@ public static class ThemeManager
                 ["CritBrush"] = "#FFB23A2F",
                 ["GaugeTrack"] = "#FFD8D8DE",
             },
+            ["Synthwave"] = NeonPalette(
+                "#FF16111F", "#FF241631", "#FF2B1B3D", "#FF342246", "#FF563970",
+                "#FFF5EEFF", "#FFC5B8D8", "#FFEA4AAA", "#FF52E5FF"),
+            ["Outrun"] = NeonPalette(
+                "#FF21121B", "#FF321721", "#FF421C29", "#FF512333", "#FF78364F",
+                "#FFFFF0F4", "#FFFFC1CB", "#FFFF71B8", "#FFFFB347"),
+            ["Midnight"] = NeonPalette(
+                "#FF0D1726", "#FF122238", "#FF172B46", "#FF1D3453", "#FF2D527B",
+                "#FFEAF6FF", "#FFB8D2E8", "#FF77C9FF", "#FFA6E3FF"),
+            ["CRT Terminal"] = NeonPalette(
+                "#FF101A14", "#FF18271E", "#FF203127", "#FF293C30", "#FF43664C",
+                "#FFF0FFF3", "#FFB6D5BE", "#FF80E8A0", "#FFB9F59E"),
+            ["Arctic Glass"] = NeonPalette(
+                "#FF101C25", "#FF182C39", "#FF203847", "#FF284454", "#FF41677D",
+                "#FFF0FAFF", "#FFB8D5E5", "#FF83DFFF", "#FFB7EEEB"),
+            ["Reactor"] = NeonPalette(
+                "#FF211A12", "#FF30271A", "#FF3C3020", "#FF483B28", "#FF6C5939",
+                "#FFFFF8EC", "#FFDDCCAC", "#FFFFCC72", "#FFB6ED87"),
+            ["Deep Space"] = NeonPalette(
+                "#FF121322", "#FF1D2034", "#FF272A43", "#FF303552", "#FF4A527D",
+                "#FFF3F3FF", "#FFC4C8E8", "#FFB7A5FF", "#FF81DCED"),
         };
 
     private static IReadOnlyDictionary<string, string> DarkPalette(string accent) => new Dictionary<string, string>
@@ -88,12 +112,30 @@ public static class ThemeManager
         ["GaugeTrack"] = "#FF3A3A40",
     };
 
+    private static IReadOnlyDictionary<string, string> NeonPalette(
+        string window, string tile, string flyout, string control, string border,
+        string primary, string secondary, string accent, string neonSecondary) => new Dictionary<string, string>
+    {
+        ["WindowBg"] = window,
+        ["TileBg"] = tile,
+        ["FlyoutBg"] = flyout,
+        ["ControlBg"] = control,
+        ["BorderDim"] = border,
+        ["TextPrimary"] = primary,
+        ["TextSecondary"] = secondary,
+        ["AccentBrush"] = accent,
+        ["WarnBrush"] = DarkWarn,
+        ["CritBrush"] = DarkCrit,
+        ["GaugeTrack"] = border,
+        [NeonSecondaryBrush] = neonSecondary,
+    };
+
     /// <summary>Replaces the 11 palette brush entries (and their backing Color resources) on
     /// Application.Current.Resources (top level). Safe to call before any window is created (App startup, before
     /// Show()) or any time after (live from a Settings change). Falls back to the default preset if
     /// <paramref name="presetName"/> is unknown, so a future preset removed from this dictionary (or Core's
     /// ThemePresets.Names drifting out of sync with it) never throws.</summary>
-    public static void Apply(string? presetName, string? accentHex)
+    public static void Apply(string? presetName, string? accentHex, string? secondaryHexOverride = null, bool gradient = true)
     {
         if (Application.Current is null) return;
         var preset = ThemePresets.SanitizePresetName(presetName);
@@ -118,6 +160,20 @@ public static class ThemeManager
             brush.Freeze();
             resources[key] = brush;
         }
+        var neonSecondary = (Color)ColorConverter.ConvertFromString(ThemePresets.IsValidHex(secondaryHexOverride)
+            ? secondaryHexOverride! : palette.TryGetValue(NeonSecondaryBrush, out var secondaryHex) ? secondaryHex : palette["BorderDim"]);
+        resources[ColorKeyFor(NeonSecondaryBrush)] = neonSecondary;
+        var neonBrush = new SolidColorBrush(neonSecondary);
+        neonBrush.Freeze();
+        resources[NeonSecondaryBrush] = neonBrush;
+        Brush decoration = gradient
+            ? new LinearGradientBrush((Color)resources["AccentColor"], neonSecondary, 90)
+            : new SolidColorBrush((Color)resources["AccentColor"]);
+        decoration.Freeze();
+        resources["NeonDecorationBrush"] = decoration;
+        resources[NeonOverviewVisibility] = preset is "Synthwave" or "Outrun" or "Midnight" or "CRT Terminal" or "Arctic Glass" or "Reactor" or "Deep Space"
+            ? Visibility.Visible
+            : Visibility.Collapsed;
         Changed?.Invoke();
     }
 

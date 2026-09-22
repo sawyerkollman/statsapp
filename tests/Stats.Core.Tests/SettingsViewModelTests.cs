@@ -68,6 +68,19 @@ public class SettingsViewModelTests
     }
 
     [Fact]
+    public void ProcessSampling_WritesThroughAndRaises()
+    {
+        var (vm, s, changes, saves) = Make();
+        Assert.True(vm.ProcessSamplingEnabled);
+
+        vm.ProcessSamplingEnabled = false;
+
+        Assert.False(s.ProcessSamplingEnabled);
+        Assert.Equal(new[] { SettingsChange.Processes }, changes);
+        Assert.Equal(1, saves());
+    }
+
+    [Fact]
     public void ThresholdRuleItem_ValidPair_UpdatesRuleAndRaises()
     {
         var (vm, s, changes, _) = Make();

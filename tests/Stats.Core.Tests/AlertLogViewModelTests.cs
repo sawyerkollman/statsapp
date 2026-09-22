@@ -54,6 +54,20 @@ public class AlertLogViewModelTests
     }
 
     [Fact]
+    public void ExportThenLoad_PreservesEventFormat_ForPeakAndThresholdText()
+    {
+        var source = new AlertLogViewModel();
+        source.Add(new AlertEvent(new DateTime(2026, 9, 2, 14, 30, 5), "memory.used", "Memory Used", "GB", 15.7f, 15.5f, false, "F1"));
+
+        var log = new AlertLogViewModel();
+        log.Load(source.ExportRecords());
+
+        var row = Assert.Single(log.Rows);
+        Assert.Equal("15.7 GB", row.PeakText);
+        Assert.Equal("≥ 15.5 GB", row.ThresholdText);
+    }
+
+    [Fact]
     public void Row_DurationText_IsOngoingUntilComplete()
     {
         var log = new AlertLogViewModel();

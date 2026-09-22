@@ -24,6 +24,7 @@ public sealed class GameModeSwitcher
     public GameModeSwitcher(FanController controller, AppSettings settings) { _controller = controller; _settings = settings; }
 
     public bool IsGaming { get; private set; }
+    public event Action<bool>? GamingChanged;
 
     public string StatusText => _settings.GameModeEnabled ? _status : "Game mode: off";
 
@@ -41,18 +42,22 @@ public sealed class GameModeSwitcher
         if (active) { _activeSince ??= nowUtc; _inactiveSince = null; } else { _inactiveSince ??= nowUtc; _activeSince = null; }
         // The transition is only recorded once Apply has returned: if applying throws (e.g. the profile list was
         // mutated underneath us) the next tick retries instead of latching IsGaming with the old curve running.
+        bool? transition = null;
         if (!IsGaming && _activeSince is DateTime a && nowUtc - a >= EnterAfter)
         {
             Apply(_settings.GameModeGamingProfile);
             IsGaming = true;
             _gamingSince = nowUtc;
+            transition = true;
         }
         else if (IsGaming && _inactiveSince is DateTime i && nowUtc - i >= ExitAfter)
         {
             Apply(_settings.GameModeDesktopProfile);
             IsGaming = false;
+            transition = false;
         }
         UpdateStatus();
+        if (transition is bool value) GamingChanged?.Invoke(value);
     }
 
     private void Apply(string? name)

@@ -10,6 +10,7 @@ using Stats.Core.Settings;
 namespace Stats.Core.ViewModels;
 
 public sealed record FanSourceOption(string Id, string Label);
+public sealed record LayoutProfileOption(string? Name, string Label) { public override string ToString() => Label; }
 
 /// <summary>One checkbox entry in a channel's multi-source picker; toggling pushes the whole selection to the controller.</summary>
 public sealed partial class FanSourceSelection : ObservableObject
@@ -181,7 +182,9 @@ public sealed partial class FansViewModel : ObservableObject
     private DateTime _lastConflictCheck = DateTime.MinValue;
     private bool _refreshingProfiles;
     private bool _clearingProfileRefs;
+    private bool _refreshingLayoutPicks;
     public static readonly TimeSpan ConflictCheckEvery = TimeSpan.FromSeconds(5);
+    public static readonly LayoutProfileOption NoLayoutProfile = new(null, "None (leave layout as is)");
 
     /// <summary>Raised after a Game mode setting changes (enable toggle or either profile pick) so the host
     /// can re-apply frame tracing (game mode keeps the FPS reader running while enabled).</summary>
@@ -225,9 +228,11 @@ public sealed partial class FansViewModel : ObservableObject
         // "loaded" too, so an edit right after opening the window still offers Reload.
         LastLoadedProfile = controller.ActiveProfile;
         SetSelectedProfileQuietly(controller.ActiveProfile);
+        SyncLayoutProfiles();
     }
 
     public ObservableCollection<FanDeviceGroupViewModel> Devices { get; } = new();
+    public ObservableCollection<LayoutProfileOption> LayoutProfileOptions { get; } = new();
     public bool HasChannels => _byId.Count > 0;
     /// <summary>Why there are no controllable fans, judged against the setting the reader was BUILT with — a user
     /// who just ticked the box needs "restart", not "enable it".</summary>
@@ -317,6 +322,40 @@ public sealed partial class FansViewModel : ObservableObject
         _settings.GameModeDesktopProfile = value;
         _saveSettings();
         GameModeChanged?.Invoke();
+    }
+
+    [ObservableProperty] private LayoutProfileOption? _selectedGamingLayout;
+    partial void OnSelectedGamingLayoutChanged(LayoutProfileOption? value)
+    {
+        if (_refreshingLayoutPicks || value is null) return;
+        _settings.GameModeGamingLayoutProfile = value.Name;
+        _saveSettings();
+    }
+
+    [ObservableProperty] private LayoutProfileOption? _selectedDesktopLayout;
+    partial void OnSelectedDesktopLayoutChanged(LayoutProfileOption? value)
+    {
+        if (_refreshingLayoutPicks || value is null) return;
+        _settings.GameModeDesktopLayoutProfile = value.Name;
+        _saveSettings();
+    }
+
+    private void SyncLayoutProfiles()
+    {
+        var names = _settings.LayoutProfiles.Select(p => p.Name).ToList();
+        if (!LayoutProfileOptions.Select(p => p.Name).SequenceEqual(new string?[] { null }.Concat(names)))
+        {
+            LayoutProfileOptions.Clear();
+            LayoutProfileOptions.Add(NoLayoutProfile);
+            foreach (var name in names) LayoutProfileOptions.Add(new(name, name));
+        }
+        _refreshingLayoutPicks = true;
+        try
+        {
+            SelectedGamingLayout = LayoutProfileOptions.FirstOrDefault(p => p.Name == _settings.GameModeGamingLayoutProfile);
+            SelectedDesktopLayout = LayoutProfileOptions.FirstOrDefault(p => p.Name == _settings.GameModeDesktopLayoutProfile);
+        }
+        finally { _refreshingLayoutPicks = false; }
     }
 
     /// <summary>A ComboBox cannot select an item that is not in its ItemsSource, so WPF coerces SelectedItem to
@@ -470,5 +509,6 @@ public sealed partial class FansViewModel : ObservableObject
         if (Enabled != _controller.Enabled) Enabled = _controller.Enabled;
         SyncProfileState();
         RefreshGameModeStatus();
+        SyncLayoutProfiles();
     }
 }

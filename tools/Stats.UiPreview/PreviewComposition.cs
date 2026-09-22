@@ -2,6 +2,8 @@ using Stats.Core.Alerts;
 using Stats.Core.Fans;
 using Stats.Core.Frames;
 using Stats.Core.Metrics;
+using Stats.Core.Processes;
+using Stats.Core.Recording;
 using Stats.Core.Sensors;
 using Stats.Core.Settings;
 using Stats.Core.Updates;
@@ -30,11 +32,15 @@ public sealed class PreviewComposition
     public required OverlayViewModel Overlay { get; init; }
     public required PeaksViewModel Peaks { get; init; }
     public required AlertLogViewModel AlertLog { get; init; }
+    public required ComparisonViewModel Comparison { get; init; }
+    public required SessionViewModel Sessions { get; init; }
+    public required ProcessListViewModel Processes { get; init; }
     public required FansViewModel Fans { get; init; }
     public required FanController FanController { get; init; }
     public required FakeFanControlBackend FanBackend { get; init; }
     public required FakeSensorReader Reader { get; init; }
     public required NullFanArmedMarker FanMarker { get; init; }
+    public required GameModeSwitcher GameModeSwitcher { get; init; }
 
     /// <summary>Builds one scenario's full composition under a fresh per-run temp root
     /// (%TEMP%\Stats.UiPreview\&lt;run-id&gt;\...) — never the user's live %AppData%\Stats. When
@@ -134,17 +140,32 @@ public sealed class PreviewComposition
 
         var overlay = new OverlayViewModel(store, settings);
         var alertLog = new AlertLogViewModel();
-        var peaks = new PeaksViewModel(store, settings, alertLog);
+        var processes = new ProcessListViewModel();
+        processes.Apply(new ProcessListSnapshot([
+            new ProcessGroup("Stats Preview", 1, 18.5f, 4.2f, 420_000_000, 610_000_000),
+            new ProcessGroup("GameClient", 2, 12.4f, 2.8f, 860_000_000, 1_100_000_000),
+            new ProcessGroup("Browser", 6, 7.1f, 0.0f, 1_200_000_000, 1_450_000_000),
+        ], true, TimeSeries.FixedTimeUtc));
+        var peaks = new PeaksViewModel(store, settings, alertLog, processes);
+        dashboard.OverlayMetricsChanged += overlay.Rebuild;
+        dashboard.DashboardMetricsChanged += peaks.RebuildRows;
+        settingsVm.Changed += change => { if (change == SettingsChange.CoreMatrix) dashboard.ExternalCoreMatrixChanged(); };
+        var comparison = new ComparisonViewModel(store, settings);
+        var recorder = new SessionRecorder(Path.Combine(tempRoot, "sessions"), () => TimeSeries.FixedTimeUtc);
+        var sessions = new SessionViewModel(recorder,
+            () => settings.DashboardMetrics.Where(id => store.TryGet(id, out _)).Select(id => fixture.Definitions.First(d => d.Id == id)).Take(4).ToArray(),
+            () => TimeSeries.FixedTimeUtc, Path.Combine(tempRoot, "sessions"));
 
         var fanBackend = new FakeFanControlBackend(commands);
         fanBackend.Chans.AddRange(fixture.FanChannels);
         var fanMarker = new NullFanArmedMarker();
         var fanController = new FanController(fanBackend, settings, Save, fanMarker);
+        var gameModeSwitcher = new GameModeSwitcher(fanController, settings);
         var fans = new FansViewModel(fanController, fixture.Definitions, settings,
             processNames: () => Array.Empty<string>(),
             clock: () => TimeSeries.FixedTimeUtc,
             saveSettings: Save,
-            switcher: new GameModeSwitcher(fanController, settings),
+            switcher: gameModeSwitcher,
             hardwareEnabledAtStartup: true);
 
         var reader = new FakeSensorReader(fixture.Definitions, fixture.Ticks.Count > 0 ? fixture.Ticks[^1] : new(new Dictionary<string, float?>(), TimeSeries.FixedTimeUtc), fixture.Degraded);
@@ -164,15 +185,42 @@ public sealed class PreviewComposition
             Overlay = overlay,
             Peaks = peaks,
             AlertLog = alertLog,
+            Comparison = comparison,
+            Sessions = sessions,
+            Processes = processes,
             Fans = fans,
             FanController = fanController,
             FanBackend = fanBackend,
             Reader = reader,
             FanMarker = fanMarker,
+            GameModeSwitcher = gameModeSwitcher,
         };
+
+        composition.GameModeSwitcher.GamingChanged += composition.Dashboard.ApplyGameModeLayout;
+        CreateSessionFixture(composition.Sessions, recorder,
+            settings.DashboardMetrics.Where(id => store.TryGet(id, out _)).Select(id => fixture.Definitions.First(d => d.Id == id)).Take(4).ToArray(), fixture.Ticks);
 
         foreach (var substate in substates) ApplySubstate(composition, fixture, substate);
         return composition;
+    }
+
+    private static void CreateSessionFixture(SessionViewModel sessions, SessionRecorder recorder, IReadOnlyList<MetricDefinition> definitions, IReadOnlyList<SensorSnapshot> ticks)
+    {
+        if (definitions.Count == 0) return;
+        recorder.Start(definitions, TimeSeries.FixedTimeUtc.AddSeconds(-3));
+        foreach (var tick in ticks.TakeLast(3)) recorder.Record(tick);
+        recorder.StopAsync().GetAwaiter().GetResult();
+        if (recorder.FilePath is { } path) sessions.Open(path);
+    }
+
+    private static void AddAlertContextFixture(PreviewComposition composition)
+    {
+        var definition = composition.Definitions.FirstOrDefault(definition => composition.Store.TryGet(definition.Id, out _));
+        if (definition is null) return;
+        var series = composition.Store[definition.Id].CopySeries(definition);
+        var at = series.TimesUtc.LastOrDefault(TimeSeries.FixedTimeUtc);
+        composition.AlertLog.Add(new AlertEvent(at.ToLocalTime(), definition.Id, definition.DisplayName, definition.Unit, 99, 90, false), at, series);
+        composition.AlertLog.Load(composition.AlertLog.ExportRecords().Select(record => record with { State = AlertState.Interrupted }));
     }
 
     /// <summary>View-model/settings-level substates that need no visual tree (popup/dropdown/context-menu
@@ -209,8 +257,32 @@ public sealed class PreviewComposition
                 c.Dashboard.RebuildSections();
                 break;
             case "tile-menu": break; // visual-tree substate — applied in CaptureHost
+            case "view-menu": break; // visual-tree substate — applied in CaptureHost
 
-    // ---- graph effects (T3 of docs/superpowers/plans/2026-09-11-graph-effects.md) ----
+            // ---- dashboard layout modes (docs/superpowers/specs/2026-09-11-dashboard-layout-modes-design.md) ----
+            // Setting LayoutMode (rather than poking AppSettings.DashboardLayoutMode directly) runs the VM's own
+            // OnLayoutModeChanged hook, which persists, calls RebuildSections(), and — since RebuildSections runs
+            // PlaceUnpositioned() whenever LayoutMode != Auto — seeds every still-null tile/core-matrix position
+            // deterministically. That is the easy, harness-friendly path the design calls out explicitly.
+            case "layout-free": c.Dashboard.LayoutMode = DashboardLayoutMode.Free; break;
+            case "layout-grid": c.Dashboard.LayoutMode = DashboardLayoutMode.Grid; break;
+            case "layout-free-placed": ApplyLayoutFreePlaced(c); break;
+
+            // ---- tile resize by drag (docs/superpowers/specs/2026-09-11-tile-resize-design.md "Preview harness") ----
+            case "layout-resized": ApplyLayoutResized(c); break;
+            case "profiles-saved": c.Dashboard.SaveLayoutProfileCommand.Execute("Preview layout"); break;
+            case "layout-locked": c.Dashboard.SetLayoutLocked(true); break;
+
+            // ---- monitoring workflow previews ----
+            case "captured": c.Comparison.SetCaptured("Preview session", c.Sessions.Rows.Take(4).Select(row => row.Series)); break;
+            case "live": c.Comparison.SwitchToLive(); break;
+            case "recorded": break; // fixture is opened during Build
+            case "analysis": if (c.Sessions.FilePath is { } analysisPath) c.Sessions.OpenComparison(analysisPath); break;
+            case "slow-frames": CreateSlowFrameFixture(c); break;
+            case "alert-context": AddAlertContextFixture(c); break;
+            case "layout-resize-grip": break; // visual-tree substate — applied in CaptureHost (focuses the first Free container so the grip renders); pair with "layout-free" to reach Free mode first
+
+            // ---- graph effects (T3 of docs/superpowers/plans/2026-09-11-graph-effects.md) ----
             // Settings-level, applied here (before the window/controls exist) so GraphStyle.Apply — called by
             // CaptureHost right after Build() returns, still before window.Show() — has the right values in hand
             // before any control's Loaded/OnRender runs. "graphs-effects" is mostly documentary: both settings
@@ -253,21 +325,8 @@ public sealed class PreviewComposition
             case "detail-plain": c.Settings.SmoothLines = false; c.Settings.GraphEffects = false; break;
             // Also a no-op against defaults, same as "graphs-effects" above (review N4) — kept as its own named
             // substate because it targets the details view rather than the dashboard.
-    case "detail-smooth": c.Settings.SmoothLines = true; c.Settings.GraphEffects = true; break;
-    case "detail-warmup": break; // history already trimmed above, before the ViewModels were built
-
-    // ---- dashboard layout modes (docs/superpowers/specs/2026-09-11-dashboard-layout-modes-design.md) ----
-            // Setting LayoutMode (rather than poking AppSettings.DashboardLayoutMode directly) runs the VM's own
-            // OnLayoutModeChanged hook, which persists, calls RebuildSections(), and — since RebuildSections runs
-            // PlaceUnpositioned() whenever LayoutMode != Auto — seeds every still-null tile/core-matrix position
-            // deterministically. That is the easy, harness-friendly path the design calls out explicitly.
-    case "layout-free": c.Dashboard.LayoutMode = DashboardLayoutMode.Free; break;
-    case "layout-grid": c.Dashboard.LayoutMode = DashboardLayoutMode.Grid; break;
-    case "layout-free-placed": ApplyLayoutFreePlaced(c); break;
-
-            // ---- tile resize by drag (docs/superpowers/specs/2026-09-11-tile-resize-design.md "Preview harness") ----
-            case "layout-resized": ApplyLayoutResized(c); break;
-            case "layout-resize-grip": break; // visual-tree substate — applied in CaptureHost (focuses the first Free container so the grip renders); pair with "layout-free" to reach Free mode first
+            case "detail-smooth": c.Settings.SmoothLines = true; c.Settings.GraphEffects = true; break;
+            case "detail-warmup": break; // history already trimmed above, before the ViewModels were built
 
             // ---- picker ----
             case "no-results":
@@ -401,6 +460,20 @@ public sealed class PreviewComposition
             default:
                 throw new ArgumentException($"Unknown substate '{substate}'.", nameof(substate));
         }
+    }
+
+    private static void CreateSlowFrameFixture(PreviewComposition c)
+    {
+        var defs = c.Definitions.Where(d => d.Id is FrameMetrics.FpsId or FrameMetrics.LowId or FrameMetrics.FrameTimeId || d.Unit is "°C" or "W").Take(8).ToArray();
+        if (defs.All(d => d.Id != FrameMetrics.FrameTimeId)) return;
+        using var recorder = new SessionRecorder(Path.Combine(c.TempRoot, "slow-frames"), () => TimeSeries.FixedTimeUtc.AddSeconds(20));
+        var start = TimeSeries.FixedTimeUtc; recorder.Start(defs, start);
+        for (var i = 0; i < 20; i++)
+        {
+            var values = defs.ToDictionary(d => d.Id, d => d.Id == FrameMetrics.FrameTimeId ? (float?)(i is 5 or 14 ? 33 : 7) : d.Id == FrameMetrics.FpsId ? 144f : d.Id == FrameMetrics.LowId ? 92f : 60f + i);
+            recorder.Record(new SensorSnapshot(values, start.AddSeconds(i)));
+        }
+        recorder.StopAsync().GetAwaiter().GetResult(); if (recorder.FilePath is { } path) c.Sessions.Open(path);
     }
 
     /// <summary>"game-tiles" substate (docs/superpowers/specs/2026-09-11-game-tiles-design.md): sets the FPS

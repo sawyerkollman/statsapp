@@ -50,12 +50,25 @@ public sealed partial class DashboardViewModel : ObservableObject
     public ObservableCollection<GroupSectionViewModel> Sections { get; } = new();
     /// <summary>All dashboard tiles, flat (same instances as in Sections), group order then user order.</summary>
     public ObservableCollection<MetricTileViewModel> Tiles { get; } = new();
+    /// <summary>The synthwave overview's compact readings. These are references to the corresponding entries in
+    /// <see cref="Tiles"/>, never copies, so they refresh with the normal dashboard batch.</summary>
+    public ObservableCollection<MetricTileViewModel> OverviewTiles { get; } = new();
     public List<MetricPickerItem> PickerItems { get; } = new();
     public CoreMatrixViewModel? CoreMatrix { get; private set; }
 
     public event Action? OverlayMetricsChanged;
     public event Action? OverlayToggleRequested;
     public event Action? OpenPeaksRequested;
+    public event Action? OpenComparisonRequested;
+    public event Action? OpenSessionsRequested;
+    public event Action? OpenThemeStudioRequested;
+    public event Action? OpenLabRequested;
+    public event Action? OpenScenesRequested;
+    [RelayCommand] private void OpenThemeStudio() => OpenThemeStudioRequested?.Invoke();
+    [RelayCommand] private void OpenLab() => OpenLabRequested?.Invoke();
+    [RelayCommand] private void OpenScenes() => OpenScenesRequested?.Invoke();
+    [RelayCommand] private void OpenComparison() => OpenComparisonRequested?.Invoke();
+    [RelayCommand] private void OpenSessions() => OpenSessionsRequested?.Invoke();
     public event Action? OpenFansRequested;
     /// <summary>A tile's double-click or "Details…" menu item was activated, carrying the metric id. The
     /// composition root owns the single retargetable MetricDetailWindow (see App.ShowMetricDetail).</summary>
@@ -215,6 +228,8 @@ public sealed partial class DashboardViewModel : ObservableObject
 
     public void RefreshAll()
     {
+        OnPropertyChanged(nameof(DecorationOpacity));
+        OnPropertyChanged(nameof(DecorationCaption));
         // Built once per batch rather than once per tile (v1.8 §10 "Cheap extras") — every tile/matrix cell below
         // looks up its governing rule in O(1) instead of scanning ThresholdRules itself.
         var thresholds = ThresholdIndex.Build(_settings);
@@ -239,6 +254,15 @@ public sealed partial class DashboardViewModel : ObservableObject
         CoreMatrix?.RaiseSeverityRefresh();
     }
 
+    private MetricDefinition? DecorationMetric => _settings.ReactiveDecorations && _settings.GraphEffects
+        ? Tiles.Select(t => t.Definition).FirstOrDefault(d => d.Unit == "%" && d.Group is MetricGroup.Cpu or MetricGroup.Gpu) : null;
+    public double DecorationOpacity => DecorationMetric is { } definition && _store[definition.Id].Current is float value && float.IsFinite(value)
+        ? 0.08 + Math.Clamp(value, 0, 100) / 100 * 0.18 : _settings.ReactiveDecorations && _settings.GraphEffects ? 0.04 : 0.18;
+    public string DecorationCaption => !_settings.ReactiveDecorations || !_settings.GraphEffects ? "Selected live readings"
+        : DecorationMetric is { } definition && _store[definition.Id].Current is float value && float.IsFinite(value)
+        ? $"Decorative response: {definition.DisplayName} · not a health indicator"
+        : "Decorative response unavailable · select a CPU/GPU % metric";
+
     // ---- picker ----
 
     public bool PickerMatches(MetricPickerItem item)
@@ -252,6 +276,7 @@ public sealed partial class DashboardViewModel : ObservableObject
 
     public void SelectAllInGroup(string pickerGroupName, bool selected)
     {
+        if (!BeginLayoutEdit(undoable: false)) return;
         _suppressPickerEvents = true;
         try
         {
@@ -265,6 +290,8 @@ public sealed partial class DashboardViewModel : ObservableObject
             }
         }
         finally { _suppressPickerEvents = false; }
+        ClearLayoutUndo();
+        MarkLayoutModified();
         RebuildSections();
         DashboardMetricsChanged?.Invoke();
         _saveSettings();
@@ -276,21 +303,27 @@ public sealed partial class DashboardViewModel : ObservableObject
 
         if (e.PropertyName == nameof(MetricPickerItem.IsChecked))
         {
+            if (!BeginLayoutEdit(undoable: false)) { _suppressPickerEvents = true; item.IsChecked = !item.IsChecked; _suppressPickerEvents = false; return; }
             if (item.IsChecked && !_settings.DashboardMetrics.Contains(item.Definition.Id))
                 _settings.DashboardMetrics.Add(item.Definition.Id);
             else if (!item.IsChecked)
                 _settings.DashboardMetrics.Remove(item.Definition.Id);
             RebuildSections();
+            ClearLayoutUndo();
+            MarkLayoutModified();
             DashboardMetricsChanged?.Invoke();
             _saveSettings();
         }
         else if (e.PropertyName == nameof(MetricPickerItem.IsOnOverlay))
         {
+            if (!BeginLayoutEdit(undoable: false)) { _suppressPickerEvents = true; item.IsOnOverlay = !item.IsOnOverlay; _suppressPickerEvents = false; return; }
             if (item.IsOnOverlay && !_settings.OverlayMetrics.Contains(item.Definition.Id))
                 _settings.OverlayMetrics.Add(item.Definition.Id);
             else if (!item.IsOnOverlay)
                 _settings.OverlayMetrics.Remove(item.Definition.Id);
             RaiseFpsHintChanged();
+            ClearLayoutUndo();
+            MarkLayoutModified();
             OverlayMetricsChanged?.Invoke();
             _saveSettings();
         }
@@ -300,20 +333,28 @@ public sealed partial class DashboardViewModel : ObservableObject
 
     public void MoveTile(string fromId, string toId)
     {
-        if (fromId == toId) return;
+        if (!BeginLayoutEdit(undoable: true)) return;
+        if (fromId == toId) { ClearLayoutUndo(); return; }
         var list = _settings.DashboardMetrics;
         int from = list.IndexOf(fromId), to = list.IndexOf(toId);
-        if (from < 0 || to < 0) return;
-        if (!_store.TryGet(fromId, out _) || !_store.TryGet(toId, out _)) return;
-        if (GroupOf(fromId) != GroupOf(toId)) return;
+        if (from < 0 || to < 0 || !_store.TryGet(fromId, out _) || !_store.TryGet(toId, out _) || GroupOf(fromId) != GroupOf(toId)) { ClearLayoutUndo(); return; }
         list.RemoveAt(from);
         list.Insert(to, fromId);
         RebuildSections();
+        MarkLayoutModified();
         DashboardMetricsChanged?.Invoke();
         _saveSettings();
     }
 
-    public void SetTileKind(string id, TileKind kind) { _settings.PrefFor(id).Kind = kind; AfterPrefChange(); }
+    public void SetTileKind(string id, TileKind kind)
+    {
+        if (_settings.PrefFor(id).Kind == kind) return;
+        if (!BeginLayoutEdit(undoable: false)) return;
+        _settings.PrefFor(id).Kind = kind;
+        ClearLayoutUndo();
+        MarkLayoutModified();
+        AfterPrefChange();
+    }
 
     /// <summary>S9: a tile grown S→L in Free/Snap can push past the canvas's current extent — RebuildSections
     /// (via <see cref="AfterPrefChange"/>) already recomputes it every time, but do so explicitly too so the
@@ -324,9 +365,11 @@ public sealed partial class DashboardViewModel : ObservableObject
     /// press via <see cref="StepTileSize"/>, must be a true no-op (no flicker, no spurious save).</summary>
     public void SetTileSize(string id, TileSize size)
     {
+        if (!BeginLayoutEdit(undoable: true)) return;
         var pref = _settings.PrefFor(id);
-        if (pref.Size == size) return;
+        if (pref.Size == size) { ClearLayoutUndo(); return; }
         pref.Size = size;
+        MarkLayoutModified();
         AfterPrefChange();
         RecomputeCanvasExtent();
     }
@@ -449,6 +492,7 @@ public sealed partial class DashboardViewModel : ObservableObject
 
             var section = new GroupSectionViewModel(group, !_settings.CollapsedGroups.Contains(group.ToString()), OnSectionExpandedChanged)
             {
+                DisplayLabel = _settings.SceneSectionLabels.TryGetValue(group.ToString(), out var label) && !string.IsNullOrWhiteSpace(label) ? label : group.ToString(),
                 CoreMatrix = matrix,
                 StatusText = _groupStatus.TryGetValue(group, out var st) ? st : "",
             };
@@ -465,6 +509,7 @@ public sealed partial class DashboardViewModel : ObservableObject
             }
             Sections.Add(section);
         }
+        RebuildOverviewTiles();
         RaiseFpsHintChanged();
         OnPropertyChanged(nameof(IsEmpty));
         RebuildStatusLines();
@@ -487,11 +532,22 @@ public sealed partial class DashboardViewModel : ObservableObject
         RecomputeCanvasExtent();
     }
 
+    private void RebuildOverviewTiles()
+    {
+        OverviewTiles.Clear();
+        foreach (var group in new[] { MetricGroup.Cpu, MetricGroup.Gpu, MetricGroup.Memory, MetricGroup.Game })
+        {
+            var tile = Tiles.FirstOrDefault(t => t.Definition.Group == group);
+            if (tile is not null) OverviewTiles.Add(tile);
+        }
+    }
+
     private void OnSectionExpandedChanged(string name, bool expanded)
     {
+        if (!BeginLayoutEdit(undoable: false)) { RebuildSections(); return; }
         bool changed = expanded ? _settings.CollapsedGroups.Remove(name)
                                 : !_settings.CollapsedGroups.Contains(name) && Add(_settings.CollapsedGroups, name);
-        if (changed) _saveSettings();
+        if (changed) { ClearLayoutUndo(); MarkLayoutModified(); _saveSettings(); }
 
         static bool Add(List<string> list, string v) { list.Add(v); return true; }
     }

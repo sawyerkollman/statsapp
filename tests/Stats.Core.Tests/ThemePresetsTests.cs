@@ -5,9 +5,15 @@ namespace Stats.Core.Tests;
 public class ThemePresetsTests
 {
     [Fact]
-    public void Names_ContainsAllFivePresetsInOrder()
+    public void Names_ContainsAllPresetsInOrder()
     {
-        Assert.Equal(new[] { "Dark Amber", "Dark Blue", "Dark Green", "Dark Purple", "Light" }, ThemePresets.Names);
+        Assert.Equal(new[] { "Dark Amber", "Dark Blue", "Dark Green", "Dark Purple", "Light", "Synthwave", "Outrun", "Midnight", "CRT Terminal", "Arctic Glass", "Reactor", "Deep Space" }, ThemePresets.Names);
+    }
+
+    [Fact]
+    public void PresetNames_RoundTripThroughSanitization()
+    {
+        Assert.All(ThemePresets.Names, name => Assert.Equal(name, ThemePresets.SanitizePresetName(name)));
     }
 
     [Theory]
@@ -16,6 +22,9 @@ public class ThemePresetsTests
     [InlineData("Dark Green")]
     [InlineData("Dark Purple")]
     [InlineData("Light")]
+    [InlineData("Synthwave")]
+    [InlineData("Outrun")]
+    [InlineData("Midnight")]
     public void SanitizePresetName_KnownName_PassesThrough(string name)
     {
         Assert.Equal(name, ThemePresets.SanitizePresetName(name));

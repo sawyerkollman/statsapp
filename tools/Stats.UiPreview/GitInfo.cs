@@ -35,9 +35,15 @@ internal static class GitInfo
             foreach (var a in args) psi.ArgumentList.Add(a);
             using var proc = Process.Start(psi);
             if (proc is null) return null;
-            string output = proc.StandardOutput.ReadToEnd();
-            proc.WaitForExit(5000);
-            return proc.ExitCode == 0 ? output : null;
+            var output = proc.StandardOutput.ReadToEndAsync();
+            var errors = proc.StandardError.ReadToEndAsync();
+            if (!proc.WaitForExit(5000))
+            {
+                proc.Kill(entireProcessTree: true);
+                return null;
+            }
+            if (!Task.WhenAll(output, errors).Wait(1000)) return null;
+            return proc.ExitCode == 0 ? output.Result : null;
         }
         catch (Exception)
         {

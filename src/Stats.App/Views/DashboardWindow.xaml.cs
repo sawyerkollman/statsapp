@@ -75,6 +75,7 @@ public partial class DashboardWindow : Window
     public DashboardWindow()
     {
         InitializeComponent();
+        InitializeCinema();
         DarkTitleBar.Apply(this);
         DataContextChanged += (_, _) =>
         {
@@ -126,6 +127,7 @@ public partial class DashboardWindow : Window
             _dragTileId = null;
             return;
         }
+        if (Vm?.IsLayoutLocked == true) return;
         _dragStart = e.GetPosition(this);
         _dragTileId = (sender as FrameworkElement)?.DataContext is MetricTileViewModel tile ? tile.Definition.Id : null;
     }
@@ -158,7 +160,7 @@ public partial class DashboardWindow : Window
         e.Handled = true;
         if (sender is not FrameworkElement target || target.DataContext is not MetricTileViewModel targetTile
             || !e.Data.GetDataPresent(DragFormat) || e.Data.GetData(DragFormat) is not string fromId
-            || Vm is not DashboardViewModel vm || vm.GroupOf(fromId) != vm.GroupOf(targetTile.Definition.Id))
+            || Vm is not DashboardViewModel vm || vm.IsLayoutLocked || vm.GroupOf(fromId) != vm.GroupOf(targetTile.Definition.Id))
         {
             e.Effects = DragDropEffects.None;
             RemoveInsertionAdorner();
@@ -214,6 +216,7 @@ public partial class DashboardWindow : Window
         if (sender is not FrameworkElement container) return;
         if (FindAncestorButtonOrSelf(e.OriginalSource as DependencyObject, container) is not null) return; // never drag from "…" or another button
         if (container.DataContext is not MetricTileViewModel tile) return;
+        if (Vm?.IsLayoutLocked == true) return;
 
         if (FindAncestorNamedOrSelf(e.OriginalSource as DependencyObject, "TileResizeGrip", container) is not null)
         {
@@ -272,6 +275,7 @@ public partial class DashboardWindow : Window
         _freeDragContainer = null;
         container.ReleaseMouseCapture();
         if (!_freeDragExceededThreshold) return; // a click, not a drag — position unchanged
+        if (PresentationSource.FromVisual(container) is null) return;
         if (container.DataContext is MetricTileViewModel tile)
         {
             Vm?.SetTilePosition(tile.Definition.Id, Canvas.GetLeft(container), Canvas.GetTop(container));
@@ -411,6 +415,7 @@ public partial class DashboardWindow : Window
         if (sender is not FrameworkElement container) return;
         if (FindAncestorButtonOrSelf(e.OriginalSource as DependencyObject, container) is not null) return; // mirrors FreeTile_*: never drag from a button
         if (e.ClickCount == 2) return; // mirrors FreeTile_*'s double-click branch; the block has no double-click action, so just don't start a drag
+        if (Vm?.IsLayoutLocked == true) return;
         container.Focus(); // makes arrow-key nudge reachable right after this drag/click, not just via Tab-cycling
         _coreDragContainer = container;
         _coreDragMouseStart = e.GetPosition(ParentCanvas(container));
@@ -443,6 +448,7 @@ public partial class DashboardWindow : Window
         _coreDragContainer = null;
         container.ReleaseMouseCapture();
         if (!_coreDragExceededThreshold) return;
+        if (PresentationSource.FromVisual(container) is null) return;
         if (Vm is DashboardViewModel vm)
         {
             vm.SetCoreMatrixPosition(Canvas.GetLeft(container), Canvas.GetTop(container));
@@ -606,7 +612,6 @@ public partial class DashboardWindow : Window
         }
         return true;
     }
-
     /// <summary>Every kind offered in the "Tile kind" submenu, in menu order. "Histogram" is offered on every
     /// tile; "FPS summary" is gated to <see cref="GameMetricRole.Fps"/> tiles below (owner decision B).</summary>
     private static readonly TileKind[] MenuKinds =
@@ -628,7 +633,7 @@ public partial class DashboardWindow : Window
 
         var menu = new ContextMenu { PlacementTarget = target };
 
-        var kind = new MenuItem { Header = "Tile kind" };
+        var kind = new MenuItem { Header = "Tile kind", IsEnabled = !vm.IsLayoutLocked };
         foreach (var k in MenuKinds)
         {
             if (k == TileKind.FpsSummary && tile.GameRole != GameMetricRole.Fps) continue;
@@ -636,7 +641,7 @@ public partial class DashboardWindow : Window
             mi.Click += (_, _) => vm.SetTileKindEditCommand.Execute(new TileKindEdit(id, k));
             kind.Items.Add(mi);
         }
-        var size = new MenuItem { Header = "Size" };
+        var size = new MenuItem { Header = "Size", IsEnabled = !vm.IsLayoutLocked };
         foreach (var s in new[] { TileSize.S, TileSize.M, TileSize.L })
         {
             var mi = new MenuItem { Header = s switch { TileSize.S => "Small", TileSize.L => "Large", _ => "Medium" }, IsCheckable = true, IsChecked = tile.Size == s };
@@ -670,7 +675,7 @@ public partial class DashboardWindow : Window
         thresholds.Click += (_, _) => PromptThresholds(vm, tile);
         var details = new MenuItem { Header = "Details…" };
         details.Click += (_, _) => vm.OpenTileDetail(id);
-        var remove = new MenuItem { Header = "Remove from dashboard" };
+        var remove = new MenuItem { Header = "Remove from dashboard", IsEnabled = !vm.IsLayoutLocked };
         remove.Click += (_, _) => vm.RemoveTileCommand.Execute(id);
 
         menu.Items.Add(kind);
@@ -774,6 +779,16 @@ public partial class DashboardWindow : Window
         if (Vm is not DashboardViewModel vm || sender is not FrameworkElement target) return;
         var menu = new ContextMenu { PlacementTarget = target, Placement = PlacementMode.Bottom };
 
+        menu.Items.Add(new MenuItem { Header = "Compare metrics…", Command = vm.OpenComparisonCommand });
+        menu.Items.Add(new MenuItem { Header = "Beta lab…", Command = vm.OpenLabCommand });
+        menu.Items.Add(new MenuItem { Header = "Theme studio…", Command = vm.OpenThemeStudioCommand });
+        menu.Items.Add(new MenuItem { Header = "Scene builder / overlays…", Command = vm.OpenScenesCommand });
+        var cinema = new MenuItem { Header = "Cinema mode (F11, Esc to leave)", IsCheckable = true, IsChecked = IsCinemaMode };
+        cinema.Click += (_, _) => ToggleCinema();
+        menu.Items.Add(cinema);
+        menu.Items.Add(new MenuItem { Header = "Recordings…", Command = vm.OpenSessionsCommand });
+        menu.Items.Add(new Separator());
+
         var expand = new MenuItem { Header = "Expand all", IsEnabled = vm.IsAutoLayout };
         expand.Click += (_, _) => vm.ExpandAllCommand.Execute(null);
         var collapse = new MenuItem { Header = "Collapse all", IsEnabled = vm.IsAutoLayout };
@@ -789,16 +804,44 @@ public partial class DashboardWindow : Window
         var reset = new MenuItem { Header = "Reset tile positions…", IsEnabled = !vm.IsAutoLayout };
         reset.Click += (_, _) => vm.ResetPositionsCommand.Execute(null);
         menu.Items.Add(new Separator());
+        reset.IsEnabled &= !vm.IsLayoutLocked;
         menu.Items.Add(reset);
+        menu.Items.Add(new Separator());
+        var locked = new MenuItem { Header = "Lock layout", IsCheckable = true, IsChecked = vm.IsLayoutLocked };
+        locked.Click += (_, _) => vm.ToggleLayoutLockCommand.Execute(null);
+        menu.Items.Add(locked);
+        menu.Items.Add(new MenuItem { Header = "Undo layout edit", IsEnabled = vm.CanUndoLayoutEdit, Command = vm.UndoLayoutEditCommand });
+        menu.Items.Add(BuildLayoutProfilesMenu(vm));
 
         menu.IsOpen = true;
     }
 
     private static MenuItem LayoutModeItem(string header, DashboardLayoutMode mode, DashboardViewModel vm)
     {
-        var item = new MenuItem { Header = header, IsCheckable = true, IsChecked = vm.LayoutMode == mode };
+        var item = new MenuItem { Header = header, IsCheckable = true, IsChecked = vm.LayoutMode == mode, IsEnabled = !vm.IsLayoutLocked };
         item.Click += (_, _) => vm.SetLayoutModeCommand.Execute(mode);
         return item;
+    }
+
+    private MenuItem BuildLayoutProfilesMenu(DashboardViewModel vm)
+    {
+        var active = vm.ActiveLayoutProfileName;
+        var header = active is null ? "Layout profiles" : vm.IsLayoutModified ? $"Layout profile: {active} (modified)" : $"Layout profile: {active}";
+        var menu = new MenuItem { Header = header };
+        if (vm.LayoutProfileNames.Count == 0) menu.Items.Add(new MenuItem { Header = "No saved layouts yet", IsEnabled = false });
+        foreach (var name in vm.LayoutProfileNames)
+            menu.Items.Add(new MenuItem { Header = name, IsCheckable = true, IsChecked = name == active, Command = vm.LoadLayoutProfileCommand, CommandParameter = name });
+        menu.Items.Add(new Separator());
+        menu.Items.Add(new MenuItem { Header = "Save", Command = vm.SaveActiveLayoutProfileCommand });
+        menu.Items.Add(new MenuItem { Header = "Revert", Command = vm.RevertLayoutProfileCommand });
+        var saveAs = new MenuItem { Header = "Save as…" };
+        saveAs.Click += (_, _) => { var name = InputDialog.Show(this, "Save layout profile", "Layout name:", active ?? ""); if (!string.IsNullOrWhiteSpace(name)) vm.SaveLayoutProfileCommand.Execute(name.Trim()); };
+        menu.Items.Add(saveAs);
+        var rename = new MenuItem { Header = "Rename…", IsEnabled = active is not null };
+        rename.Click += (_, _) => { var name = InputDialog.Show(this, "Rename layout profile", "New name:", active!); if (!string.IsNullOrWhiteSpace(name)) vm.RenameLayoutProfile(active!, name); };
+        menu.Items.Add(rename);
+        menu.Items.Add(new MenuItem { Header = active is null ? "Delete" : $"Delete \"{active}\"", Command = vm.DeleteLayoutProfileCommand, CommandParameter = active });
+        return menu;
     }
 
     // ---- flyout close / Escape / focus ----

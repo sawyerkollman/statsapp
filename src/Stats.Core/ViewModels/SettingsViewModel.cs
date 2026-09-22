@@ -10,7 +10,7 @@ namespace Stats.Core.ViewModels;
 
 // No GameMode member: the game-mode controls live in the Fans window, which re-applies frame tracing through
 // FansViewModel.GameModeChanged. A member nothing raises only invites the next feature onto a dead channel.
-public enum SettingsChange { PollInterval, HistoryWindow, Thresholds, Limits, Overlay, Hotkey, CoreMatrix, Hardware, Updates, Theme, Alerts, Tray, UiScale, Graphs, UpdateChannel }
+public enum SettingsChange { PollInterval, HistoryWindow, Thresholds, Limits, Overlay, Hotkey, CoreMatrix, Hardware, Updates, Theme, Alerts, Tray, UiScale, Graphs, Processes, UpdateChannel }
 
 /// <summary>One editable metric limit (PPT/TDC/EDC/GPU power). Empty text = no limit.</summary>
 public sealed partial class LimitItemViewModel : ObservableObject
@@ -36,6 +36,7 @@ public sealed partial class LimitItemViewModel : ObservableObject
 /// <summary>Observable mirror of the editable AppSettings. Every setter writes through, saves, and raises Changed(reason).</summary>
 public sealed partial class SettingsViewModel : ObservableObject
 {
+    private bool _syncing;
     private readonly AppSettings _s;
     private readonly Action _save;
     private readonly IReadOnlyList<MetricDefinition> _definitions;
@@ -66,6 +67,7 @@ public sealed partial class SettingsViewModel : ObservableObject
 
         _pollIntervalSeconds = settings.PollIntervalSeconds;
         _historyWindowMinutes = settings.HistoryWindowMinutes;
+        _processSamplingEnabled = settings.ProcessSamplingEnabled;
         _overlayIsVertical = settings.OverlayOrientation == OverlayOrientation.Vertical;
         _overlayFontScale = settings.OverlayFontScale;
         _overlayOpacity = settings.OverlayOpacity;
@@ -113,6 +115,7 @@ public sealed partial class SettingsViewModel : ObservableObject
 
     [ObservableProperty] private double _pollIntervalSeconds;
     [ObservableProperty] private int _historyWindowMinutes;
+    [ObservableProperty] private bool _processSamplingEnabled;
     [ObservableProperty] private ThresholdRulePairOption? _selectedAddablePair;
     [ObservableProperty] private bool _hasAddableRulePairs;
     [ObservableProperty] private bool _overlayIsVertical;
@@ -244,21 +247,21 @@ public sealed partial class SettingsViewModel : ObservableObject
 
     partial void OnOverlayIsVerticalChanged(bool value)
     {
-        if (!_loaded) return;
+        if (!_loaded || _syncing) return;
         _s.OverlayOrientation = value ? OverlayOrientation.Vertical : OverlayOrientation.Horizontal;
         Raise(SettingsChange.Overlay);
     }
 
     partial void OnOverlayFontScaleChanged(double value)
     {
-        if (!_loaded) return;
+        if (!_loaded || _syncing) return;
         _s.OverlayFontScale = Math.Clamp(value, 0.8, 1.6);
         Raise(SettingsChange.Overlay);
     }
 
     partial void OnOverlayOpacityChanged(double value)
     {
-        if (!_loaded) return;
+        if (!_loaded || _syncing) return;
         _s.OverlayOpacity = Math.Clamp(value, 0.3, 1.0);
         Raise(SettingsChange.Overlay);
     }
@@ -289,9 +292,23 @@ public sealed partial class SettingsViewModel : ObservableObject
 
     partial void OnShowCoreMatrixChanged(bool value)
     {
-        if (!_loaded) return;
+        if (!_loaded || _syncing) return;
         _s.ShowCoreMatrix = value;
         Raise(SettingsChange.CoreMatrix);
+    }
+
+    partial void OnProcessSamplingEnabledChanged(bool value)
+    {
+        if (!_loaded) return;
+        _s.ProcessSamplingEnabled = value;
+        Raise(SettingsChange.Processes);
+    }
+
+    public void SyncShowCoreMatrix()
+    {
+        _syncing = true;
+        try { ShowCoreMatrix = _s.ShowCoreMatrix; }
+        finally { _syncing = false; }
     }
 
     partial void OnReadMotherboardAndCoolersChanged(bool value)
@@ -384,7 +401,7 @@ public sealed partial class SettingsViewModel : ObservableObject
 
     partial void OnOverlaySparklinesChanged(bool value)
     {
-        if (!_loaded) return;
+        if (!_loaded || _syncing) return;
         _s.OverlayGraphs = value ? OverlayGraphs.Sparkline : OverlayGraphs.None;
         Raise(SettingsChange.Overlay);
     }
@@ -437,7 +454,7 @@ public sealed partial class SettingsViewModel : ObservableObject
 
     partial void OnSelectedThemePresetChanged(string value)
     {
-        if (!_loaded) return;
+        if (!_loaded || _syncing) return;
         var sanitized = ThemePresets.SanitizePresetName(value);
         if (sanitized != value) { SelectedThemePreset = sanitized; return; } // re-enters with the sanitized name
         _s.ThemePreset = sanitized;
@@ -446,7 +463,7 @@ public sealed partial class SettingsViewModel : ObservableObject
 
     partial void OnAccentHexChanged(string value)
     {
-        if (!_loaded) return;
+        if (!_loaded || _syncing) return;
         if (value.Length == 0)
         {
             IsAccentInvalid = false;
@@ -538,6 +555,25 @@ public sealed partial class SettingsViewModel : ObservableObject
         foreach (var (group, unit) in discovered) AddableRulePairs.Add(new ThresholdRulePairOption(group, unit));
         HasAddableRulePairs = AddableRulePairs.Count > 0;
         SelectedAddablePair = AddableRulePairs.FirstOrDefault();
+    }
+
+    public void SyncTheme()
+    {
+        _syncing = true;
+        try { SelectedThemePreset = _s.ThemePreset; AccentHex = _s.ThemeAccent ?? ""; IsAccentInvalid = false; }
+        finally { _syncing = false; }
+    }
+
+    public void SyncOverlay()
+    {
+        _syncing = true;
+        try
+        {
+            OverlayIsVertical = _s.OverlayOrientation == OverlayOrientation.Vertical;
+            OverlayFontScale = _s.OverlayFontScale; OverlayOpacity = _s.OverlayOpacity;
+            OverlaySparklines = _s.OverlayGraphs == OverlayGraphs.Sparkline;
+        }
+        finally { _syncing = false; }
     }
 
     private void Raise(SettingsChange change)

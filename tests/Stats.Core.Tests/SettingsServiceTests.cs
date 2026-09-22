@@ -19,6 +19,9 @@ public class SettingsServiceTests : IDisposable
         var s = svc.Load();
         Assert.Equal(1.0, s.PollIntervalSeconds);
         Assert.Empty(s.DashboardMetrics);
+        Assert.Empty(s.LayoutProfiles);
+        Assert.Null(s.ActiveLayoutProfile);
+        Assert.Null(s.GameModeGamingLayoutProfile);
     }
 
     [Fact]
@@ -547,7 +550,6 @@ public class SettingsServiceTests : IDisposable
         Assert.True(l.SmoothLines);
         Assert.True(l.GraphEffects);
     }
-
     // ---- dashboard layout modes ----
 
     [Fact]
@@ -692,6 +694,26 @@ public class SettingsServiceTests : IDisposable
         Assert.Equal(TileKind.Histogram, loaded.TilePrefs["fps.frametime"].Kind);
         Assert.Equal(TileKind.FpsSummary, loaded.TilePrefs["fps.avg"].Kind);
     }
+
+    [Fact]
+    public void SaveThenLoad_RoundTripsLayoutProfiles_AndNormalizesNullCollections()
+    {
+        var svc = new SettingsService(_dir);
+        var settings = new AppSettings { ActiveLayoutProfile = "Desk", LayoutProfileModified = true };
+        settings.LayoutProfiles.Add(new LayoutProfile { Name = "Desk", DashboardMetrics = { "cpu" }, DashboardLayoutMode = DashboardLayoutMode.Grid, CoreMatrixX = 16 });
+        svc.Save(settings);
+        var loaded = svc.Load();
+        Assert.Equal("Desk", loaded.ActiveLayoutProfile);
+        Assert.True(loaded.LayoutProfileModified);
+        Assert.Equal(DashboardLayoutMode.Grid, loaded.LayoutProfiles.Single().DashboardLayoutMode);
+
+        Write("""{ "LayoutProfiles": [null, { "Name": null, "DashboardMetrics": null, "OverlayMetrics": null, "CollapsedGroups": null, "TilePrefs": null }] }""");
+        loaded = svc.Load();
+        Assert.Single(loaded.LayoutProfiles);
+        Assert.Equal("", loaded.LayoutProfiles[0].Name);
+        Assert.Empty(loaded.LayoutProfiles[0].TilePrefs);
+    }
+
 
     [Theory]
     [InlineData("Donut")]

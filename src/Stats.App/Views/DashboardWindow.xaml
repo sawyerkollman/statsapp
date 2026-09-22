@@ -111,7 +111,7 @@
                      (DESIGN.md §3) — the title above stays docked left/unaffected. -->
                 <WrapPanel HorizontalAlignment="Right">
                     <Button x:Name="ViewButton" Style="{StaticResource HeaderButton}" Click="ViewButton_Click"
-                            AutomationProperties.Name="View: collapse or expand all sections">
+                            AutomationProperties.Name="View: layout mode, layout profiles, collapse or expand sections">
                         <StackPanel Orientation="Horizontal">
                             <Path Style="{StaticResource IconGlyph}" Data="{StaticResource Icon.View}"/>
                             <TextBlock Text="View" FontSize="{StaticResource FontSizeBody}" Foreground="{DynamicResource TextPrimary}" Margin="8,0,4,0" VerticalAlignment="Center"/>
@@ -172,7 +172,85 @@
                         <Binding Path="IsEmpty" Converter="{StaticResource InverseBool}"/>
                     </MultiBinding>
                 </ScrollViewer.Visibility>
-                <ItemsControl x:Name="SectionsList" Margin="16,16,16,16" ItemsSource="{Binding Sections}">
+                <StackPanel Margin="16,16,16,16">
+                    <!-- ThemeManager supplies NeonOverviewVisibility: old themes collapse this whole additive panel,
+                         while Synthwave/Outrun/Midnight opt in. It stays out of Free/Grid so it cannot change
+                         users' saved tile coordinates or drag targets. -->
+                    <Border Padding="16,12" Margin="0,0,0,16" CornerRadius="8"
+                            Background="{DynamicResource TileBg}" BorderBrush="{DynamicResource AccentBrush}" BorderThickness="1">
+                        <Border.Style>
+                            <Style TargetType="Border">
+                                <Setter Property="Visibility" Value="{DynamicResource NeonOverviewVisibility}"/>
+                                <Style.Triggers>
+                                    <!-- Decorative chrome never appears in the existing empty dashboard state. -->
+                                    <DataTrigger Binding="{Binding IsEmpty}" Value="True">
+                                        <Setter Property="Visibility" Value="Collapsed"/>
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </Border.Style>
+                        <Grid ClipToBounds="True">
+                            <!-- Static, non-hit-testable vector sunset/horizon/grid: a restrained right-side
+                                 backdrop, never a competing blob behind the overview's label. -->
+                            <Canvas Width="300" Height="112" HorizontalAlignment="Right" VerticalAlignment="Top"
+                                    IsHitTestVisible="False" Opacity="{Binding DecorationOpacity}">
+                                <Ellipse Width="88" Height="88" Canvas.Left="164" Canvas.Top="-29" Fill="{DynamicResource NeonDecorationBrush}"/>
+                                <Line X1="0" Y1="62" X2="300" Y2="62" Stroke="{DynamicResource AccentBrush}" StrokeThickness="1"/>
+                                <Line X1="0" Y1="77" X2="300" Y2="77" Stroke="{DynamicResource NeonSecondaryBrush}" StrokeThickness="1"/>
+                                <Line X1="0" Y1="94" X2="300" Y2="94" Stroke="{DynamicResource AccentBrush}" StrokeThickness="1"/>
+                                <Line X1="0" Y1="111" X2="300" Y2="111" Stroke="{DynamicResource NeonSecondaryBrush}" StrokeThickness="1"/>
+                                <Line X1="150" Y1="62" X2="6" Y2="112" Stroke="{DynamicResource AccentBrush}" StrokeThickness="1"/>
+                                <Line X1="150" Y1="62" X2="64" Y2="112" Stroke="{DynamicResource AccentBrush}" StrokeThickness="1"/>
+                                <Line X1="150" Y1="62" X2="122" Y2="112" Stroke="{DynamicResource AccentBrush}" StrokeThickness="1"/>
+                                <Line X1="150" Y1="62" X2="178" Y2="112" Stroke="{DynamicResource AccentBrush}" StrokeThickness="1"/>
+                                <Line X1="150" Y1="62" X2="236" Y2="112" Stroke="{DynamicResource AccentBrush}" StrokeThickness="1"/>
+                                <Line X1="150" Y1="62" X2="294" Y2="112" Stroke="{DynamicResource AccentBrush}" StrokeThickness="1"/>
+                            </Canvas>
+                            <StackPanel>
+                                <DockPanel LastChildFill="False">
+                                    <StackPanel DockPanel.Dock="Left">
+                                        <TextBlock Text="NEON OVERVIEW" Foreground="{DynamicResource AccentBrush}" FontWeight="SemiBold"
+                                                   FontSize="{StaticResource FontSizeLabel}"/>
+                                        <TextBlock Text="{Binding DecorationCaption}" TextWrapping="Wrap" MaxWidth="340" Foreground="{DynamicResource TextPrimary}"
+                                                   FontSize="{StaticResource FontSizeBody}" Margin="0,2,0,10"/>
+                                    </StackPanel>
+                                    <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" Margin="12,0,0,0">
+                                        <Button Content="Compare" Command="{Binding OpenComparisonCommand}" Style="{StaticResource HeaderButton}"
+                                                AutomationProperties.Name="Compare selected metrics"/>
+                                        <Button Content="Recordings" Command="{Binding OpenSessionsCommand}" Style="{StaticResource HeaderButton}"
+                                                Margin="6,0,0,0" AutomationProperties.Name="Open recordings"/>
+                                    </StackPanel>
+                                </DockPanel>
+                                <ItemsControl ItemsSource="{Binding OverviewTiles}">
+                                    <ItemsControl.ItemsPanel>
+                                        <ItemsPanelTemplate><WrapPanel/></ItemsPanelTemplate>
+                                    </ItemsControl.ItemsPanel>
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate>
+                                            <!-- Readout-only: it deliberately has no tile menu, drag or click behavior. -->
+                                            <Border Width="178" MinHeight="68" Margin="0,0,8,8" Padding="10,8" CornerRadius="4"
+                                                    Background="{DynamicResource FlyoutBg}" BorderBrush="{DynamicResource AccentBrush}" BorderThickness="1"
+                                                    AutomationProperties.Name="{Binding AutomationLabel}">
+                                                <StackPanel>
+                                                    <TextBlock Text="{Binding DisplayName}" ToolTip="{Binding DisplayName}" TextTrimming="CharacterEllipsis"
+                                                               Foreground="{DynamicResource TextSecondary}" FontSize="{StaticResource FontSizeDense}"/>
+                                                    <StackPanel Orientation="Horizontal" Margin="0,4,0,0">
+                                                        <TextBlock Text="{Binding ValueText}" Foreground="{Binding Severity, Converter={StaticResource SeverityToBrush}}" FontWeight="SemiBold"
+                                                                   FontSize="20" FontFamily="Segoe UI"/>
+                                                        <TextBlock Text="{Binding UnitText}" Foreground="{DynamicResource TextSecondary}" FontSize="{StaticResource FontSizeBody}"
+                                                                   VerticalAlignment="Bottom" Margin="5,0,0,1"/>
+                                                        <TextBlock Text="{Binding SeverityGlyph}" Foreground="{Binding Severity, Converter={StaticResource SeverityToBrush}}" FontWeight="Bold"
+                                                                   VerticalAlignment="Center" Margin="6,0,0,0"/>
+                                                    </StackPanel>
+                                                </StackPanel>
+                                            </Border>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                            </StackPanel>
+                        </Grid>
+                    </Border>
+                    <ItemsControl x:Name="SectionsList" ItemsSource="{Binding Sections}">
                     <ItemsControl.ItemTemplate>
                         <DataTemplate>
                             <Expander IsExpanded="{Binding IsExpanded, Mode=TwoWay}" Margin="0,24,0,0">
@@ -182,7 +260,7 @@
                                          read why (e.g. "PresentMon: access denied") — it stays visible collapsed. -->
                                     <StackPanel>
                                         <StackPanel Orientation="Horizontal">
-                                            <TextBlock Text="{Binding Name}" Style="{StaticResource GroupHeader}" Margin="0"/>
+                                            <TextBlock Text="{Binding DisplayLabel}" Style="{StaticResource GroupHeader}" Margin="0" TextWrapping="Wrap" MaxWidth="260"/>
                                             <TextBlock Text="{Binding Tiles.Count, StringFormat='{}  ({0})'}"
                                                        Foreground="{DynamicResource TextSecondary}" FontSize="{StaticResource FontSizeLabel}" VerticalAlignment="Center"/>
                                         </StackPanel>
@@ -235,7 +313,8 @@
                             </Expander>
                         </DataTemplate>
                     </ItemsControl.ItemTemplate>
-                </ItemsControl>
+                    </ItemsControl>
+                </StackPanel>
             </ScrollViewer>
 
             <!-- Free/Snap dashboard layout (dashboard layout modes): one whole-dashboard canvas, group headers
@@ -534,6 +613,9 @@
                                             <TextBlock Text="Theme" Style="{StaticResource SettingsHeader}" Margin="0,0,0,6"/>
                                             <ComboBox ItemsSource="{Binding ThemePresetNames}" SelectedItem="{Binding SelectedThemePreset}"
                                                       MinWidth="160" HorizontalAlignment="Left" Margin="0,0,0,8"/>
+                                            <TextBlock Text="Creative palettes add the Neon overview in Auto layout. View → Theme studio edits and shares designs."
+                                                       Foreground="{DynamicResource TextSecondary}" FontSize="{StaticResource FontSizeDense}"
+                                                       TextWrapping="Wrap" Margin="0,0,0,12"/>
                                             <TextBlock Text="Accent colour" Style="{StaticResource SettingsLabel}" Margin="0,0,0,4"/>
                                             <ItemsControl ItemsSource="{Binding AccentSwatches}" Margin="0,0,0,6">
                                                 <ItemsControl.ItemsPanel>
@@ -624,6 +706,10 @@
                                                 <RadioButton Content="15 min" IsChecked="{Binding HistoryWindowMinutes, Converter={StaticResource Equals}, ConverterParameter=15}"/>
                                                 <RadioButton Content="60 min" IsChecked="{Binding HistoryWindowMinutes, Converter={StaticResource Equals}, ConverterParameter=60}"/>
                                             </StackPanel>
+                                            <TextBlock Text="Processes" Style="{StaticResource SettingsHeader}"/>
+                                            <CheckBox Content="Sample top processes while the Peaks window is open" IsChecked="{Binding ProcessSamplingEnabled}" Margin="0,0,0,2"/>
+                                            <TextBlock Text="Refreshes at the polling cadence (at least every 2 seconds); shows the top 12 processes."
+                                                       Foreground="{DynamicResource TextSecondary}" FontSize="{StaticResource FontSizeDense}" TextWrapping="Wrap"/>
 
                                             <TextBlock Text="Thresholds (warn / crit)" Style="{StaticResource SettingsHeader}"/>
                                             <!-- Header row (DESIGN.md §5 "Show clear Warn / Critical labels"): static column labels

@@ -5,6 +5,10 @@ Ryzen Master, Task Manager, Core Temp, and Afterburner each show a slice of:
 CPU per-core clocks/temps/loads, package power, PPT, voltages; GPU clocks,
 temps, fan, power, VRAM; RAM; per-disk activity; per-adapter network throughput.
 
+## Gaming command centre beta
+
+The gaming command centre is under development and not published. See the [gaming command centre guide](docs/gaming-command-centre.md) for Session Lab, post-game reports, overlay editing, notebooks, and support tools. For beta feedback and returning to stable, see [testing Stats betas](docs/beta-testing.md).
+
 ## Install
 
 Grab `Stats-Setup-<version>.exe` from the
@@ -79,6 +83,20 @@ Uninstall from Settings → Apps; PawnIO is left installed because other tools m
   (defaults: warn 60 fps, crit 30 fps), instead of the "higher is worse" rule used for temperatures
   and load. *1% Low FPS* starts on its own lower scale (warn 30, crit 15) so it isn't permanently
   amber; per-tile overrides for an inverted metric take the warn value first (e.g. `60/30`).
+- **Layout profiles** — **View → Layout profiles** saves named dashboard/overlay metric selections,
+  tile kinds/sizes/positions and layout modes. Save, revert, rename or delete without changing fan settings.
+  Optional Gaming/Desktop layout picks in **Fans → Game mode** switch on the existing game-state transition.
+- **Lock and undo** — **View → Lock layout** prevents accidental moves, resizing and layout-mode changes;
+  **Undo layout edit** restores the preceding move, resize, reorder or reset. Lock persists across restarts.
+- **Recordings** — **View → Recordings…** explicitly starts/stops timestamped recording of the selected
+  dashboard/overlay metrics. Reopen recordings for min/average/max summaries and export the full session to
+  CSV. Files live in `%AppData%\Stats\recordings`; interrupted recordings keep their valid samples.
+  Charts use the newest 3,600 samples; exports include all samples. Missing readings remain gaps, not zeroes.
+- **Comparison** — **View → Compare metrics…** plots up to four metrics on a shared UTC timeline with
+  separate scales, a linked cursor and Freeze/Resume. Recorded sessions and alert context use the same view.
+- **Top apps** — **Peaks → Processes** shows CPU and working-set memory (private bytes in the tooltip), plus GPU usage when Windows
+  exposes GPU-engine counters. Sort by any available column or copy the list. Sampling pauses while Peaks
+  is hidden and can be disabled in **Settings → Monitoring**; it never controls or terminates processes.
 - **Alerts** — when a monitored metric holds Crit for a hold time (default 10 s, Settings → Alerts,
   1–120 s), Stats raises a Windows notification titled `<metric> critical` with a body like `96 °C for
   10 s (crit ≥ 92)`, and can optionally play a chime (off by default) — the chime is the only sound a
@@ -89,9 +107,11 @@ Uninstall from Settings → Apps; PawnIO is left installed because other tools m
   most one per metric per 60 s. Windows Focus Assist / Do not disturb (e.g. behind a full-screen game)
   may hold a notification back in Action Center instead of showing it on screen. The *Peaks* window's
   **Alerts** tab logs each alert's time, metric, peak value, threshold, and duration (live "ongoing"
-  until the metric recovers) for the current session, newest first, capped at 200 rows, independent of
-  the notification settings and the chime. Alerts evaluate even while the dashboard and overlay are
-  hidden.
+  until the metric recovers), newest first, capped at 200 persisted rows, independent of notifications
+  and chime. **View context** opens up to 120 samples before and 120 after the alert; unfinished events
+  become **interrupted** after restart. Alerts evaluate even while the dashboard and overlay are hidden.
+  History stays local in `%AppData%\Stats\alerts.json`; transitions save promptly, ongoing context at
+  five-second intervals, with a final flush on clean shutdown.
 
 ## Beta updates
 
@@ -106,9 +126,8 @@ the latest stable release. After testing, merge `beta` into `master` and tag `v1
 Branch pushes alone do not publish installers. Existing stable installations need a stable release containing
 the opt-in control first; alternatively testers can install the first beta manually.
 
-Before the first beta release, reconcile the newer `master` notification changes with `beta` and rerun
-validation. This stable backport only enables the update channel; it does not include beta's larger features
-or publish an installer.
+`v1.10.1` enables this option on stable. `v1.11.0-beta.1` combines the beta workflows with the
+latest stable notification changes. Beta remains opt-in and does not replace the latest stable release.
 
 ## Run from source
 
@@ -161,7 +180,11 @@ hash after downloading an update (older releases without a published hash retain
 - **Themes and controls** — Dark Amber, Blue, Green, Purple, and Light presets apply live to native
   controls and their popups, including scrollbars, sliders, combo boxes, menus, progress bars,
   check/radio glyphs, and expanders. Light's accent and crit colours are slightly darker than
-  before for contrast (no new presets).
+  before for contrast. Beta adds **Synthwave**, **Outrun**, and **Midnight** under Settings → Appearance.
+  Their neon palettes include a compact **Neon overview** in Auto layout: a static horizon-grid backdrop,
+  live cards for the first selected CPU/GPU/Memory/Game metric, and Compare/Recordings shortcuts.
+  Readings reuse the existing tiles; absent groups are omitted and missing values stay missing.
+  Classic themes hide the overview; Free/Grid keep their user-positioned canvas with the new palette only.
 - **Graphs** — Settings → Appearance → **Smooth lines** draws sparklines and the detail chart as a
   monotone curve through the samples instead of a jagged polyline (never overshoots past a spike or
   flat run); **Glow and motion effects** adds a line/gauge glow, a stronger fill gradient, a brief
