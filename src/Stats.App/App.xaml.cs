@@ -48,6 +48,7 @@ public partial class App : Application
     private MenuItem? _moveOverlayMenuItem;
     private SettingsViewModel? _settingsVm;
     private GlobalHotkey? _hotkey;
+    private GlobalHotkey? _fpsOnlyHotkey;
     private PeaksWindow? _peaks;
     private PeaksViewModel? _peaksVm;
     private AlertEngine? _alertEngine;
@@ -217,6 +218,10 @@ public partial class App : Application
         _hotkey = new GlobalHotkey();
         _hotkey.Pressed += ToggleOverlay;
         ApplyHotkey();
+        _fpsOnlyHotkey = new GlobalHotkey();
+        _fpsOnlyHotkey.Pressed += ToggleFpsOnlyOverlay;
+        if (!_fpsOnlyHotkey.Register(HotkeyParser.Parse("Ctrl+Shift+F")))
+            Trace.WriteLine("[Stats] FPS-only hotkey unavailable; use the tray menu.");
 
         _store.ResizeAll(HistoryCapacity.Compute(_settings.HistoryWindowMinutes, _settings.PollIntervalSeconds));
 
@@ -297,6 +302,7 @@ public partial class App : Application
         _manualCheckCts?.Dispose();
         _updateService?.Dispose();
         _hotkey?.Dispose();
+        _fpsOnlyHotkey?.Dispose();
         _fansVisible = false;
         _processScan?.Dispose();
         bool stopped = _poller?.Stop() ?? true;   // stop the poll thread first …
@@ -437,10 +443,9 @@ public partial class App : Application
 
     private string? FrameStatus()
     {
-        if (_frameReader is null || !_frameReader.IsActive || _frameReader.IsAvailable) return null;
-        var msg = _frameReader.StatusMessage ?? "";
-        int cut = msg.IndexOf(". ", StringComparison.Ordinal);
-        return cut > 0 ? msg[..(cut + 1)] : msg;
+        if (_frameReader is null) return null;
+        var status = _frameReader.CaptureStatus;
+        return status.State is FrameCaptureState.Inactive or FrameCaptureState.Receiving ? null : status.Reason;
     }
 
     /// <summary>Composes the overlay status strip from already-published state and pushes it (no-op when
@@ -448,14 +453,16 @@ public partial class App : Application
     /// SetMode, ApplyProfile or Enabled's setter (rule 6).</summary>
     private void PushOverlayStatus()
     {
-        if (_overlayVm is null || _settings is null || !_settings.OverlayStatusLine) return;
+        if (_overlayVm is null || _settings is null) return;
+        _overlayVm.SetFrameStatus(FrameStatus(), _frameReader?.CaptureStatus.State == FrameCaptureState.Unavailable);
+        if (!_settings.OverlayStatusLine) return;
         bool fanEnabled = _fanController is { } fc && fc.Enabled;                 // getter only: brief lock on AppSettings.SyncRoot
         string? profile = fanEnabled ? _fanController!.ActiveProfile : null;
         IReadOnlyList<FanChannelStatus> statuses = fanEnabled
             ? _fanController!.Statuses()                                           // status-only read: no per-channel view allocation each tick
             : Array.Empty<FanChannelStatus>();
         string? game = _settings.GameModeEnabled ? _gameMode?.StatusText : null;   // volatile string composed on the poll thread
-        _overlayVm.SetStatus(OverlayStatusComposer.Compose(fanEnabled, profile, statuses, game, FrameStatus()));
+        _overlayVm.SetStatus(OverlayStatusComposer.Compose(fanEnabled, profile, statuses, game, null));
     }
 
     private void RestoreWindowBounds()
@@ -505,6 +512,12 @@ public partial class App : Application
         var moveOverlay = new MenuItem { Header = "Move overlay" };
         moveOverlay.Click += (_, _) => ToggleMoveMode();
         _moveOverlayMenuItem = moveOverlay;
+        var fpsOnly = new MenuItem { Header = "Toggle FPS-only overlay (Ctrl+Shift+F)" };
+        fpsOnly.Click += (_, _) => ToggleFpsOnlyOverlay();
+        var editOverlay = new MenuItem { Header = "Edit overlay…" };
+        editOverlay.Click += (_, _) => ShowOverlayEditor();
+        var reports = new MenuItem { Header = "Recordings / post-game report…" };
+        reports.Click += (_, _) => ShowSessions();
         var peaks = new MenuItem { Header = "Session peaks" };
         peaks.Click += (_, _) => ShowPeaks();
         var fans = new MenuItem { Header = "Fans…" };
@@ -517,6 +530,9 @@ public partial class App : Application
         menu.Items.Add(open);
         menu.Items.Add(overlay);
         menu.Items.Add(moveOverlay);
+        menu.Items.Add(fpsOnly);
+        menu.Items.Add(editOverlay);
+        menu.Items.Add(reports);
         menu.Items.Add(peaks);
         menu.Items.Add(fans);
         menu.Items.Add(settings);
@@ -577,6 +593,7 @@ public partial class App : Application
 
         _store.Apply(snapshot);
         RefreshMonitoring(snapshot);
+        if (_overlayEditor is { IsVisible: true }) _overlayEditorVm?.Refresh();
         if (_dashboard.IsVisible)
         {
             _dashboardVm.RefreshAll();

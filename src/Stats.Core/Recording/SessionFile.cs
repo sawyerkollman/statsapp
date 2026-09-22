@@ -9,6 +9,13 @@ public static class SessionFile
 {
     public const int ChartSampleLimit = 3600;
 
+    public sealed record ElapsedWindow(SessionData Data, double OffsetSeconds, double DurationSeconds,
+        int AvailableSamples, bool IsTruncated)
+    {
+        public double Coverage => AvailableSamples == 0 ? 0 : (double)(Data.Series.FirstOrDefault()?.Values.Length ?? 0) / AvailableSamples;
+        public DateTime WindowStartedUtc => Data.StartedUtc.AddSeconds(OffsetSeconds);
+    }
+
     internal static void ValidateDefinitions(IReadOnlyList<MetricDefinition> definitions)
     {
         if (definitions.Count is 0 or > 1024 || definitions.Any(d => d is null ||
@@ -83,6 +90,28 @@ public static class SessionFile
         return new(result.StartedUtc, result.EndedUtc, result.EndedUtc is not null, result.SampleCount, series, summaries);
     }
 
+    /// <summary>Streams an elapsed-time window without retaining samples outside it.</summary>
+    public static ElapsedWindow LoadElapsedWindow(string path, double offsetSeconds, double durationSeconds, CancellationToken cancellationToken = default)
+    {
+        if (!double.IsFinite(offsetSeconds) || offsetSeconds < 0 || offsetSeconds > 86400 ||
+            !double.IsFinite(durationSeconds) || durationSeconds < 1 || durationSeconds > 3600)
+            throw new ArgumentOutOfRangeException(!double.IsFinite(offsetSeconds) || offsetSeconds < 0 || offsetSeconds > 86400 ? nameof(offsetSeconds) : nameof(durationSeconds));
+        MetricDefinition[] definitions = []; var values = Array.Empty<List<float?>>(); var times = new List<DateTime>(ChartSampleLimit);
+        var available = 0; var truncated = false;
+        DateTime resultStart = default;
+        var result = Read(path, header => { definitions = header; values = header.Select(_ => new List<float?>(ChartSampleLimit)).ToArray(); }, (at, row) =>
+        {
+            var elapsed = (at - resultStart).TotalSeconds;
+            if (elapsed < offsetSeconds || elapsed > offsetSeconds + durationSeconds) return;
+            available++;
+            if (times.Count == ChartSampleLimit) { truncated = true; return; }
+            times.Add(at); for (var i = 0; i < row.Length; i++) values[i].Add(row[i]);
+        }, cancellationToken, out resultStart);
+        var series = definitions.Select((definition, i) => new MetricSeries(definition, times.ToArray(), values[i].ToArray())).ToArray();
+        var data = new SessionData(result.StartedUtc, result.EndedUtc, result.EndedUtc is not null, result.SampleCount, series, series.Select(Summary).ToArray());
+        return new(data, offsetSeconds, durationSeconds, available, truncated);
+    }
+
     private static SessionMetricSummary Summary(MetricSeries series)
     {
         var finite = series.Values.Where(v => v is float).Select(v => v!.Value).ToArray();
@@ -112,6 +141,8 @@ public static class SessionFile
     private sealed record ReadResult(MetricDefinition[] Definitions, DateTime StartedUtc, DateTime? EndedUtc, long SampleCount);
 
     private static ReadResult Read(string path, Action<MetricDefinition[]> header, Action<DateTime, float?[]> sample, CancellationToken cancellationToken = default)
+        => Read(path, header, sample, cancellationToken, out _);
+    private static ReadResult Read(string path, Action<MetricDefinition[]> header, Action<DateTime, float?[]> sample, CancellationToken cancellationToken, out DateTime resultStart)
     {
         using var reader = new StreamReader(new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite));
         var first = ReadLine(reader, out _) ?? throw new InvalidDataException("Missing session header.");
@@ -120,6 +151,7 @@ public static class SessionFile
         if (root.GetProperty("type").GetString() != "header" || root.GetProperty("version").GetInt32() != 1)
             throw new InvalidDataException("Unsupported session format.");
         var started = root.GetProperty("startedUtc").GetDateTime().ToUniversalTime();
+        resultStart = started;
         var definitions = root.GetProperty("metrics").Deserialize<MetricDefinition[]>()
             ?? throw new InvalidDataException("Missing session metrics.");
         ValidateDefinitions(definitions);

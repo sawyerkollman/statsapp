@@ -16,15 +16,26 @@ public partial class App
     private LabWindow? _labWindow;
     private SceneComposerWindow? _sceneWindow;
     private bool _autoRecordingOwned, _startingAutoRecording;
+    private string? _postGameRecordingPath;
     private void InitializeBetaLab(string directory)
     {
         _labVm = new LabViewModel(directory, _definitions);
         _labVm.RecordingRequested += OnLabRecordingRequested;
+        _labVm.OpenPostGameReportRequested += () =>
+        {
+            if (_postGameRecordingPath is { } path) OpenNotebookRecordings(path, null);
+        };
+        _labVm.OpenNotebookRecordingsRequested += OpenNotebookRecordings;
         _labVm.GameStateChanged += (gaming, name) =>
         {
             if (!gaming || _settings is null) return;
             var game = _labVm.Games.FirstOrDefault(g => string.Equals(g.ExecutableBaseName, name, StringComparison.OrdinalIgnoreCase));
             if (game is null) return;
+            if (Stats.Core.Lab.GameAppearance.Apply(_settings, game.ThemeName))
+            {
+                _settingsVm?.SyncTheme(); OnSettingsChanged(SettingsChange.Theme); SaveSettings();
+            }
+            _labVm.ApplyGameAlertSet(game.AlertSetName);
             if (!string.IsNullOrWhiteSpace(game.LayoutName))
             {
                 var profile = _settings.LayoutProfiles.FirstOrDefault(p => p.Name == game.LayoutName);
@@ -67,10 +78,26 @@ public partial class App
             {
                 _autoRecordingOwned = false;
                 await _sessionVm.StopCommand.ExecuteAsync(null);
-                _labVm.Status = $"Post-game recording: {name}. Open Session lab for replay and analysis.";
+                _postGameRecordingPath = _sessionVm.HasReport ? _sessionVm.FilePath : null;
+                _labVm.SetPostGameReport(_sessionVm.HasReport ? _sessionVm.ReportText : null);
+                _labVm.Status = _sessionVm.HasReport ? $"Post-game report ready: {name}." : "Post-game report unavailable.";
+                if (!string.IsNullOrEmpty(_sessionVm.Error)) _labVm.Error = _sessionVm.Error;
             }
         }
         catch (Exception ex) { _labVm.Error = "Automatic recording failed: " + ex.Message; }
+    }
+    private async void OpenNotebookRecordings(string first, string? second)
+    {
+        try
+        {
+            EnsureSessionViewModel();
+            if (_sessionVm is null || !await _sessionVm.OpenAsync(first))
+            { if (_labVm is not null) _labVm.Error = _sessionVm?.Error ?? "Session tools unavailable."; return; }
+            if (!string.IsNullOrWhiteSpace(second) && !await _sessionVm.OpenComparisonAsync(second) && _labVm is not null)
+                _labVm.Error = _sessionVm.Error;
+            ShowSessions();
+        }
+        catch (Exception ex) { if (_labVm is not null) _labVm.Error = "Could not open notebook recordings: " + ex.Message; }
     }
     private void RefreshBetaLab(SensorSnapshot snapshot)
     {
@@ -116,6 +143,7 @@ public partial class App
         {
             var vm = new SceneComposerViewModel(_settings, _definitions, SaveSettings);
             vm.SceneApplied += ApplyScene;
+            vm.EditOverlayRequested += ShowOverlayEditor;
             _sceneWindow = new SceneComposerWindow { DataContext = vm };
             _sceneWindow.Closed += (_, _) => _sceneWindow = null;
         }

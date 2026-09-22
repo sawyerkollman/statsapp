@@ -100,6 +100,7 @@ public class FrameRateReaderTests
         Assert.Contains("fps.low1", s.Values.Keys);
         Assert.Contains("fps.frametime", s.Values.Keys);
         Assert.All(s.Values.Values, v => Assert.Null(v));
+        Assert.Equal(FrameCaptureState.Inactive, h.Reader.CaptureStatus.State);
     }
 
     [Fact]
@@ -113,6 +114,7 @@ public class FrameRateReaderTests
         Assert.Equal(30f, s.Values["fps.avg"]);
         Assert.Equal(16.6f, s.Values["fps.frametime"]!.Value, 2);
         Assert.Null(s.Values["fps.low1"]); // < 100 frames
+        Assert.Equal(FrameCaptureState.Collecting, h.Reader.CaptureStatus.State);
     }
 
     [Fact]
@@ -124,8 +126,11 @@ public class FrameRateReaderTests
         h.EmitFrames(1234, 60, 16.6);
         h.ForegroundPid = 999;
         Assert.Null(h.Reader.Read().Values["fps.avg"]);
+        Assert.Equal(FrameCaptureState.Waiting, h.Reader.CaptureStatus.State);
+        Assert.Equal("Waiting for foreground app frames.", h.Reader.CaptureStatus.Reason);
         h.ForegroundPid = null;
         Assert.Null(h.Reader.Read().Values["fps.avg"]);
+        Assert.Equal("Waiting for a foreground app.", h.Reader.CaptureStatus.Reason);
     }
 
     [Fact]
@@ -147,6 +152,7 @@ public class FrameRateReaderTests
         h.Now = h.Now.AddSeconds(.5);
         h.EmitFrames(1234, 120, 16.6);
         Assert.Equal(60f, h.Reader.Read().Values["fps.avg"]);
+        Assert.Equal(FrameCaptureState.Receiving, h.Reader.CaptureStatus.State);
     }
 
     [Fact]
@@ -161,6 +167,7 @@ public class FrameRateReaderTests
         var values = h.Reader.Read().Values;
         Assert.Null(values["fps.avg"]);
         Assert.Null(values["fps.frametime"]);
+        Assert.Equal(FrameCaptureState.Waiting, h.Reader.CaptureStatus.State);
     }
 
     [Fact]
@@ -220,6 +227,7 @@ public class FrameRateReaderTests
         Assert.False(h.Reader.IsAvailable);
         Assert.Contains("access denied", h.Reader.StatusMessage, StringComparison.OrdinalIgnoreCase);
         Assert.Null(h.Reader.Read().Values["fps.avg"]);
+        Assert.Equal(FrameCaptureState.Unavailable, h.Reader.CaptureStatus.State);
     }
 
     [Fact]

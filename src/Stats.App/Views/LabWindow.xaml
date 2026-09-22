@@ -21,8 +21,13 @@
       <TextBlock Text="Saved layout profile (blank leaves it unchanged)"/><TextBox Text="{Binding LayoutName}" MaxLength="100" AutomationProperties.Name="Gaming layout profile"/>
       <TextBlock Text="Saved overlay scene (blank leaves it unchanged)"/><TextBox Text="{Binding OverlaySceneName}" MaxLength="100" AutomationProperties.Name="Gaming overlay scene"/>
       <CheckBox Content="Automatically record this game (never takes over a manual recording)" IsChecked="{Binding AutoRecord}"/>
+      <TextBlock Text="Saved theme or preset (blank leaves it unchanged)"/><TextBox Text="{Binding ThemeName}" MaxLength="100" AutomationProperties.Name="Game theme"/>
+      <TextBlock Text="Named alert set (blank leaves it unchanged)"/><TextBox Text="{Binding AlertSetName}" MaxLength="100" AutomationProperties.Name="Game alert set"/>
      </StackPanel>
      <TextBlock Text="After a game ends, its recording is available in Session lab for replay, bookmarks and A/B analysis." Foreground="{DynamicResource TextSecondary}"/>
+     <TextBlock Text="Profile choices persist after the game ends until you change them manually or another game profile applies. This includes theme and active alert rules; no previous settings are restored automatically." Foreground="{DynamicResource TextSecondary}"/>
+     <TextBlock Text="{Binding PostGameReportText}"/>
+     <Button Content="Open post-game report" Command="{Binding OpenPostGameReportCommand}" IsEnabled="{Binding HasPostGameReport}" HorizontalAlignment="Left"/>
     </StackPanel></ScrollViewer>
    </TabItem>
    <TabItem Header="Compound alerts">
@@ -30,6 +35,8 @@
      <TextBlock Text="Both conditions must hold. Missing data resets the hold. Test-only rules write timeline entries without notifications; the global Alerts switch also applies." Foreground="{DynamicResource TextSecondary}"/>
      <ListBox ItemsSource="{Binding Rules}" SelectedItem="{Binding SelectedRule}" DisplayMemberPath="FirstMetricId" Height="80" AutomationProperties.Name="Compound rules"/>
      <WrapPanel><Button Content="Add rule" Command="{Binding AddRuleCommand}"/><Button Content="Remove selected" Command="{Binding RemoveRuleCommand}"/></WrapPanel>
+     <TextBlock Text="Named rule set"/><WrapPanel><TextBox Width="160" Text="{Binding RuleSetName}" AutomationProperties.Name="Rule set name"/><Button Content="Save current rules" Command="{Binding SaveRuleSetCommand}"/></WrapPanel>
+     <ItemsControl ItemsSource="{Binding NamedRuleSets}"><ItemsControl.ItemTemplate><DataTemplate><WrapPanel><TextBlock Text="{Binding Name}" VerticalAlignment="Center"/><Button Content="Apply" Command="{Binding DataContext.ApplyRuleSetCommand, RelativeSource={RelativeSource AncestorType=Window}}" CommandParameter="{Binding Name}"/><Button Content="Delete" Command="{Binding DataContext.DeleteRuleSetCommand, RelativeSource={RelativeSource AncestorType=Window}}" CommandParameter="{Binding Name}"/></WrapPanel></DataTemplate></ItemsControl.ItemTemplate></ItemsControl>
      <StackPanel DataContext="{Binding SelectedRule}">
       <TextBlock Text="First metric"/>
       <ComboBox ItemsSource="{Binding DataContext.Metrics, RelativeSource={RelativeSource AncestorType=Window}}" DisplayMemberPath="DisplayName" SelectedValuePath="Id" SelectedValue="{Binding FirstMetricId}" AutomationProperties.Name="First metric"/>
@@ -73,6 +80,18 @@
      <Button Content="Export this preview…" Click="Export_Click" HorizontalAlignment="Left"/>
     </StackPanel></ScrollViewer>
    </TabItem>
+   <TabItem Header="Notebook"><ScrollViewer VerticalScrollBarVisibility="Auto"><StackPanel Margin="12">
+    <TextBlock Text="Local tuning notes only. These fields do not change hardware; one clean run does not prove stability." Foreground="{DynamicResource TextSecondary}"/>
+    <ListBox ItemsSource="{Binding NotebookEntries}" SelectedItem="{Binding SelectedNotebookEntry}" DisplayMemberPath="Name" Height="100" AutomationProperties.Name="Notebook entries"/>
+    <WrapPanel><Button Content="Add entry" Command="{Binding AddNotebookEntryCommand}"/><Button Content="Delete selected" Command="{Binding RemoveNotebookEntryCommand}"/><Button Content="Save notebook" Command="{Binding SaveNotebookCommand}"/><Button Content="Compare linked recordings" Command="{Binding CompareNotebookRunsCommand}"/></WrapPanel>
+    <StackPanel DataContext="{Binding SelectedNotebookEntry}"><TextBlock Text="Name"/><TextBox MaxLength="1000" AutomationProperties.Name="Notebook Name" Text="{Binding Name}"/><TextBlock Text="Workload"/><TextBox MaxLength="1000" AutomationProperties.Name="Notebook Workload" Text="{Binding Workload}"/><TextBlock Text="Graphics settings"/><TextBox MaxLength="1000" AutomationProperties.Name="Notebook GraphicsSettings" Text="{Binding GraphicsSettings}"/><TextBlock Text="Core offset (note)"/><TextBox MaxLength="1000" AutomationProperties.Name="Notebook CoreOffsetMHz" Text="{Binding CoreOffsetMHz}"/><TextBlock Text="Memory offset (note)"/><TextBox MaxLength="1000" AutomationProperties.Name="Notebook MemoryOffsetMHz" Text="{Binding MemoryOffsetMHz}"/><TextBlock Text="Voltage/power limit (notes)"/><TextBox MaxLength="1000" AutomationProperties.Name="Notebook Voltage" Text="{Binding Voltage}"/><TextBox MaxLength="1000" AutomationProperties.Name="Notebook PowerLimit" Text="{Binding PowerLimit}"/><TextBlock Text="Stability observations"/><TextBox MaxLength="1000" AutomationProperties.Name="Notebook StabilityNotes" Text="{Binding StabilityNotes}" AcceptsReturn="True"/><TextBlock Text="Recording A/B paths"/><TextBox MaxLength="260" AutomationProperties.Name="Notebook RecordingA" Text="{Binding RecordingA}"/><TextBox MaxLength="260" AutomationProperties.Name="Notebook RecordingB" Text="{Binding RecordingB}"/></StackPanel>
+   </StackPanel></ScrollViewer></TabItem>
+   <TabItem Header="Support"><ScrollViewer VerticalScrollBarVisibility="Auto"><StackPanel Margin="12">
+    <TextBlock Text="Feedback is copied only when you explicitly choose Copy. No notebook, recording path, settings, log, or diagnostic data is attached." Foreground="{DynamicResource TextSecondary}"/>
+    <TextBox Text="{Binding FeedbackText, UpdateSourceTrigger=PropertyChanged}" MaxLength="4000" AcceptsReturn="True" AutomationProperties.Name="Feedback text"/>
+    <Button Content="Copy feedback" Click="CopyFeedback_Click"/><Button Content="Release notes" Click="ReleaseNotes_Click"/><Button Content="Feedback issue" Click="FeedbackIssue_Click"/>
+    <TextBlock Text="To return to stable updates, turn off Receive beta updates in Settings. This does not downgrade an installed beta; it waits for a suitable stable release. For a manual downgrade, exit Stats normally and back up the entire Stats data folder first. See the beta testing guide." Foreground="{DynamicResource TextSecondary}"/>
+   </StackPanel></ScrollViewer></TabItem>
   </TabControl>
   <StackPanel Grid.Row="2">
    <TextBlock Text="{Binding Error}" Foreground="{DynamicResource CritBrush}"/>

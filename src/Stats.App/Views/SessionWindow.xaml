@@ -18,6 +18,21 @@
             <TextBlock Text="{Binding Error}" Foreground="{DynamicResource CritBrush}" TextWrapping="Wrap" Margin="0,4"/>
             <TextBlock Text="{Binding DatedSummary}" Foreground="{DynamicResource TextSecondary}" TextWrapping="Wrap"/>
             <TextBlock Text="Read-only replay. Bounded windows of up to 3600 samples; CSV retains the entire session." Foreground="{DynamicResource TextSecondary}" TextWrapping="Wrap" Margin="0,8"/>
+            <Border Background="{DynamicResource TileBg}" Padding="10" CornerRadius="{StaticResource RadiusPanel}" Margin="0,0,0,8"
+                    Visibility="{Binding HasReport, Converter={StaticResource BoolToVis}}">
+                <StackPanel>
+                    <TextBlock Text="Post-game report" FontWeight="SemiBold" Foreground="{DynamicResource TextPrimary}"/>
+                    <TextBlock Text="{Binding ReportText}" Foreground="{DynamicResource TextSecondary}" TextWrapping="Wrap" Margin="0,4"/>
+                    <TextBlock Text="Top sampled frame times (top 20 in current recording/window; not proven stutters)" Foreground="{DynamicResource TextPrimary}" Margin="0,8,0,2"/>
+                    <ListBox ItemsSource="{Binding Report.Spikes}" SelectionChanged="Spike_SelectionChanged" AutomationProperties.Name="Sampled slow-frame episodes" MaxHeight="130" HorizontalContentAlignment="Stretch" ScrollViewer.HorizontalScrollBarVisibility="Disabled" Background="{DynamicResource TileBg}" BorderBrush="{DynamicResource BorderDim}" Foreground="{DynamicResource TextPrimary}">
+                        <ListBox.ItemTemplate><DataTemplate><StackPanel MaxWidth="700">
+                            <TextBlock Text="{Binding TimestampUtc, StringFormat={}{0:u}}" Foreground="{DynamicResource TextPrimary}"/>
+                            <TextBlock Text="{Binding Value, StringFormat={}{0:F1} ms sampled frame time}" Foreground="{DynamicResource TextPrimary}"/>
+                            <TextBlock Text="{Binding Details}" TextWrapping="Wrap" Foreground="{DynamicResource TextSecondary}"/>
+                        </StackPanel></DataTemplate></ListBox.ItemTemplate>
+                    </ListBox>
+                </StackPanel>
+            </Border>
             <TextBlock Text="Recording library (up to 200 files; Open can select any recording)" Foreground="{DynamicResource TextSecondary}"/>
             <ComboBox ItemsSource="{Binding RecordingLibrary}" SelectionChanged="Library_SelectionChanged"
                       IsEnabled="{Binding CanOpenOrExport}" AutomationProperties.Name="Recording library" Margin="0,4,0,12"/>
@@ -52,7 +67,15 @@
             </StackPanel>
             <Expander Header="A/B and performance detective" IsExpanded="True" Foreground="{DynamicResource TextPrimary}" Margin="0,12">
                 <StackPanel Margin="8">
+                    <WrapPanel Margin="0,0,0,4" IsEnabled="{Binding CanOpenOrExport}">
+                        <TextBlock Text="A offset (s)" Foreground="{DynamicResource TextSecondary}" VerticalAlignment="Center"/><TextBox Width="58" Text="{Binding ComparisonOffsetASeconds, UpdateSourceTrigger=PropertyChanged}" AutomationProperties.Name="A offset seconds" Margin="4,0,8,0"/>
+                        <TextBlock Text="B offset (s)" Foreground="{DynamicResource TextSecondary}" VerticalAlignment="Center"/><TextBox Width="58" Text="{Binding ComparisonOffsetBSeconds, UpdateSourceTrigger=PropertyChanged}" AutomationProperties.Name="B offset seconds" Margin="4,0,8,0"/>
+                        <TextBlock Text="Duration (s)" Foreground="{DynamicResource TextSecondary}" VerticalAlignment="Center"/><TextBox Width="58" Text="{Binding ComparisonDurationSeconds, UpdateSourceTrigger=PropertyChanged}" AutomationProperties.Name="Comparison duration seconds" Margin="4,0,8,0"/>
+                        <Button Content="Add A run…" Click="AddRunA_Click" Style="{StaticResource HeaderButton}" Margin="0,0,4,0"/><Button Content="Add B run…" Click="AddRunB_Click" Style="{StaticResource HeaderButton}"/>
+                    </WrapPanel>
                     <TextBlock Text="{Binding AbText}" Foreground="{DynamicResource TextSecondary}" TextWrapping="Wrap" Margin="0,4"/>
+                    <TextBlock Text="{Binding VariationText}" Foreground="{DynamicResource TextSecondary}" TextWrapping="Wrap" Margin="0,4"/>
+                    <WrapPanel IsEnabled="{Binding CanOpenOrExport}"><Button Content="Refresh repeated runs" Command="{Binding RefreshRepeatedRunsCommand}" Style="{StaticResource HeaderButton}"/><Button Content="Clear repeated runs" Command="{Binding ClearRepeatedRunsCommand}" Style="{StaticResource HeaderButton}" Margin="8,0"/></WrapPanel>
                     <TextBlock Text="{Binding AnalysisText}" Foreground="{DynamicResource TextSecondary}" TextWrapping="Wrap" Margin="0,4"/>
                     <TextBlock Text="Tuning experiments: hold resolution, workload, duration and background apps constant. Warm up first; change one setting per run, annotate it and repeat both runs. Missing data and short captures weaken conclusions. Fan changes stay in the existing explicit manual controls; this assistant makes no hardware changes."
                                Foreground="{DynamicResource TextSecondary}" TextWrapping="Wrap" Margin="0,4"/>

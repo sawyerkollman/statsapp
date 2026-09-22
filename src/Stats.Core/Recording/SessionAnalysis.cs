@@ -10,6 +10,11 @@ public sealed record SessionComparison(string MetricId, string Unit, int PairCou
     public double BinSeconds { get; init; }
 }
 public sealed record SessionCorrelation(string FirstMetricId, string SecondMetricId, int PairCount, double Coverage, double? Pearson);
+public sealed record SessionRunVariation(string MetricId, int Runs, float? Mean, float? Minimum, float? Maximum, float? StandardDeviation, double Coverage)
+{
+    public string Unit { get; init; } = "";
+    public int TotalRuns { get; init; }
+}
 
 public static class SessionAnalysis
 {
@@ -20,12 +25,21 @@ public static class SessionAnalysis
             .Select(s => CompareElapsed(s, first.StartedUtc, other[s.Definition.Id], second.StartedUtc)).ToArray();
     }
 
-    private static SessionComparison CompareElapsed(MetricSeries first, DateTime firstStart, MetricSeries second, DateTime secondStart)
+    public static IReadOnlyList<SessionComparison> CompareWindow(SessionData first, SessionData second, double seconds)
+    {
+        if (!double.IsFinite(seconds) || seconds is < 1 or > 3600) throw new ArgumentOutOfRangeException(nameof(seconds));
+        var other = second.Series.ToDictionary(s => s.Definition.Id);
+        return first.Series.Where(s => other.TryGetValue(s.Definition.Id, out var o) && o.Definition.Unit == s.Definition.Unit)
+            .Select(s => CompareElapsed(s, first.StartedUtc, other[s.Definition.Id], second.StartedUtc, seconds)).ToArray();
+    }
+
+    private static SessionComparison CompareElapsed(MetricSeries first, DateTime firstStart, MetricSeries second, DateTime secondStart, double? requestedSeconds = null)
     {
         var empty = new SessionComparison(first.Definition.Id, first.Definition.Unit, 0, 0, null, null, null, null);
-        if (first.Values.Length == 0 || second.Values.Length == 0 || first.Definition.Unit != second.Definition.Unit) return empty;
-        var from = Math.Max((first.TimesUtc[0] - firstStart).TotalSeconds, (second.TimesUtc[0] - secondStart).TotalSeconds);
-        var to = Math.Min((first.TimesUtc[^1] - firstStart).TotalSeconds, (second.TimesUtc[^1] - secondStart).TotalSeconds);
+        if (first.Definition.Unit != second.Definition.Unit) return empty;
+        if (requestedSeconds is null && (first.Values.Length == 0 || second.Values.Length == 0)) return empty;
+        var from = requestedSeconds.HasValue ? 0 : Math.Max((first.TimesUtc[0] - firstStart).TotalSeconds, (second.TimesUtc[0] - secondStart).TotalSeconds);
+        var to = requestedSeconds ?? Math.Min((first.TimesUtc[^1] - firstStart).TotalSeconds, (second.TimesUtc[^1] - secondStart).TotalSeconds);
         if (to < from) return empty;
         var duration = to - from;
         var step = Math.Max(Math.Max(Cadence(first), Cadence(second)), Math.Max(0.001, duration / 3599));
@@ -70,5 +84,38 @@ public static class SessionAnalysis
         var mx = x.Average(); var my = y.Average(); var numerator = x.Zip(y).Sum(p => (p.First - mx) * (p.Second - my));
         var denominator = Math.Sqrt(x.Sum(v => Math.Pow(v - mx, 2)) * y.Sum(v => Math.Pow(v - my, 2)));
         return new(first.Definition.Id, second.Definition.Id, pairs.Length, (double)pairs.Length / n, denominator == 0 ? null : numerator / denominator);
+    }
+    public static IReadOnlyList<SessionRunVariation> Variation(IEnumerable<SessionData> runs, double? requestedSeconds = null)
+    {
+        if (requestedSeconds is double seconds && (!double.IsFinite(seconds) || seconds is < 1 or > 3600))
+            throw new ArgumentOutOfRangeException(nameof(requestedSeconds));
+        // Retain scalar summaries only; lazy callers load one bounded recording at a time.
+        var groups = new Dictionary<(string Id, string Unit), List<(float Mean, double Coverage)>>();
+        int total = 0;
+        foreach (var run in runs.Take(10))
+        {
+            total++;
+            foreach (var series in run.Series)
+            {
+                var key = (series.Definition.Id, series.Definition.Unit);
+                if (!groups.TryGetValue(key, out var entries)) groups[key] = entries = new();
+                double sum = 0; int count = 0;
+                foreach (var value in series.Values)
+                    if (value is float f && float.IsFinite(f)) { sum += f; count++; }
+                if (count == 0) continue;
+                var measured = requestedSeconds is double duration
+                    ? CompareElapsed(series, run.StartedUtc, series, run.StartedUtc, duration) : null;
+                if (measured is not null && measured.FirstAverage is null) continue;
+                entries.Add((measured?.FirstAverage ?? (float)(sum / count), measured?.Coverage ?? (double)count / series.Values.Length));
+            }
+        }
+        return groups.Select(group =>
+        {
+            var values = group.Value.Select(x => x.Mean).ToArray();
+            var mean = values.Length == 0 ? (float?)null : (float)values.Average();
+            var variance = values.Length < 2 ? (float?)null : (float)Math.Sqrt(values.Average(v => Math.Pow(v - mean!.Value, 2)));
+            return new SessionRunVariation(group.Key.Id, values.Length, mean, values.Length == 0 ? null : values.Min(), values.Length == 0 ? null : values.Max(), variance,
+                total == 0 ? 0 : group.Value.Sum(x => x.Coverage) / total) { Unit = group.Key.Unit, TotalRuns = total };
+        }).ToArray();
     }
 }

@@ -78,6 +78,7 @@ public sealed class SettingsService
         settings.IgnoredFanConflicts ??= new();
         ThresholdDefaults.EnsureDefaults(settings.ThresholdRules, settings.ThresholdOverrides);
         settings.OverlayHotkey ??= "";
+        settings.OverlayCanvas = OverlayCanvasLayout.Normalize(settings.OverlayCanvas);
         settings.ThemePreset = ThemePresets.SanitizePresetName(settings.ThemePreset);
         settings.ThemeAccent = ThemePresets.SanitizeAccentHex(settings.ThemeAccent);
         settings.ThemeSecondary = ThemePresets.SanitizeAccentHex(settings.ThemeSecondary);

@@ -11,6 +11,7 @@ public sealed class DashboardScene
     public double OverlayFontScale { get; set; } = 1;
     public double OverlayOpacity { get; set; } = .85;
     public OverlayGraphs OverlayGraphs { get; set; } = OverlayGraphs.Sparkline;
+    public OverlayCanvasLayout? OverlayCanvas { get; set; }
 
     public void Validate()
     {
@@ -22,6 +23,7 @@ public sealed class DashboardScene
             Layout.DashboardMetrics.Concat(Layout.OverlayMetrics).Any(id => string.IsNullOrWhiteSpace(id) || id.Length > 1024) ||
             !double.IsFinite(OverlayFontScale) || OverlayFontScale is < .8 or > 1.6 ||
             !double.IsFinite(OverlayOpacity) || OverlayOpacity is < .3 or > 1 ||
+            OverlayCanvas is not null && !OverlayCanvas.IsValid() ||
             !Enum.IsDefined(OverlayOrientation) || !Enum.IsDefined(OverlayGraphs) ||
             Layout.TilePrefs.Any(p => p.Value is null || !Enum.IsDefined(p.Value.Kind) || !Enum.IsDefined(p.Value.Size) ||
                 !ValidPosition(p.Value.X) || !ValidPosition(p.Value.Y)) ||
@@ -38,6 +40,7 @@ public sealed class DashboardScene
         settings.OverlayFontScale = OverlayFontScale;
         settings.OverlayOpacity = OverlayOpacity;
         settings.OverlayGraphs = OverlayGraphs;
+        settings.OverlayCanvas = OverlayCanvasLayout.Normalize(OverlayCanvas);
     }
 }
 

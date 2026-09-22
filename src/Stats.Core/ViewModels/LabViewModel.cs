@@ -18,21 +18,25 @@ public sealed partial class LabViewModel : ObservableObject, IDisposable
     private DateTime? _candidateSince, _idleSince;
     private string? _candidateName, _activeName;
     private bool _gaming, _ownedRecording, _pendingStart, _manualRecording, _timelineDirty;
+    private bool _notebookLoadFailed;
     public LabViewModel(string directory, IEnumerable<MetricDefinition>? definitions = null)
     {
         _directory = Path.GetFullPath(directory);
         Options = LabOptionsStore.Load(directory);
         Metrics = (definitions ?? []).ToArray();
-        Games = new(Options.Games); Rules = new(Options.Rules);
+        Games = new(Options.Games); Rules = new(Options.Rules); NamedRuleSets = new(Options.NamedCompoundRuleSets);
         Error = LabOptionsStore.Error ?? "";
         LoadTimeline();
+        try { foreach (var entry in TuningNotebook.Load(_directory).Entries) NotebookEntries.Add(entry); } catch (Exception ex) { _notebookLoadFailed = true; Error = "Notebook unavailable; fix or remove it before saving: " + ex.Message; }
     }
     public LabOptions Options { get; }
     public IReadOnlyList<MetricDefinition> Metrics { get; }
     public ObservableCollection<GameLabOption> Games { get; }
     public ObservableCollection<CompoundRule> Rules { get; }
+    public ObservableCollection<NamedCompoundRuleSet> NamedRuleSets { get; }
     public ObservableCollection<LabTimelineEvent> Timeline { get; } = new();
     public ObservableCollection<HistoryAggregate> History { get; } = new();
+    public ObservableCollection<TuningNotebookEntry> NotebookEntries { get; } = new();
     [ObservableProperty] private string _status = "Automation is off. No fan settings are changed by Beta lab.";
     [ObservableProperty] private string _error = "";
     [ObservableProperty] private string _bookmarkText = "";
@@ -40,9 +44,16 @@ public sealed partial class LabViewModel : ObservableObject, IDisposable
     [ObservableProperty] private GameLabOption? _selectedGame;
     [ObservableProperty] private CompoundRule? _selectedRule;
     [ObservableProperty] private string _diagnosticPreview = "{}";
+    [ObservableProperty] private TuningNotebookEntry? _selectedNotebookEntry;
+    [ObservableProperty] private string _feedbackText = "";
+    [ObservableProperty] private string _ruleSetName = "";
+    [ObservableProperty] private string _postGameReportText = "";
+    public bool HasPostGameReport => PostGameReportText.Length > 0;
     public event Action<bool, string?>? RecordingRequested;
     public event Action<bool, string?>? GameStateChanged;
     public event Action<LabTimelineEvent>? CompoundNotificationRequested;
+    public event Action<string, string?>? OpenNotebookRecordingsRequested;
+    public event Action? OpenPostGameReportRequested;
 
     public void SetManualRecording(bool value) => _manualRecording = value && !_ownedRecording;
     public void AcknowledgeRecording(bool started, bool owned)
@@ -144,6 +155,27 @@ public sealed partial class LabViewModel : ObservableObject, IDisposable
         var rule = new CompoundRule { TestOnly = true }; Rules.Add(rule); SelectedRule = rule;
     }
     [RelayCommand] private void RemoveRule() { if (SelectedRule is { } rule) Rules.Remove(rule); }
+    [RelayCommand] private void SaveRuleSet()
+    {
+        var name = RuleSetName.Trim(); if (name.Length == 0 || Rules.Count > 32) { Error = "Enter a rule-set name."; return; }
+        var item = new NamedCompoundRuleSet { Name = name[..Math.Min(100, name.Length)], Rules = Rules.Select(LabOptionsStore.Clone).ToList() };
+        var old = NamedRuleSets.FirstOrDefault(x => x.Name == item.Name); if (old is not null) NamedRuleSets[NamedRuleSets.IndexOf(old)] = item; else if (NamedRuleSets.Count < 16) NamedRuleSets.Add(item); else { Error = "Rule-set limit is 16."; return; }
+        Options.NamedCompoundRuleSets = NamedRuleSets.ToList(); SaveCommand.Execute(null);
+    }
+    [RelayCommand] private void ApplyRuleSet(string? name) => ApplyGameAlertSet(name);
+    [RelayCommand] private void DeleteRuleSet(string? name) { var item = NamedRuleSets.FirstOrDefault(x => x.Name == name); if (item is not null) NamedRuleSets.Remove(item); Options.NamedCompoundRuleSets = NamedRuleSets.ToList(); SaveCommand.Execute(null); }
+    public bool ApplyGameAlertSet(string? name)
+    {
+        if (string.IsNullOrWhiteSpace(name)) return false;
+        var set = NamedRuleSets.FirstOrDefault(x => x.Name == name); if (set is null) return false;
+        Rules.Clear(); foreach (var rule in set.Rules.Take(32)) Rules.Add(LabOptionsStore.Clone(rule)); _compound.Reset(); Options.Rules = Rules.ToList(); LabOptionsStore.Save(_directory, Options); Error = LabOptionsStore.Error ?? ""; return Error.Length == 0;
+    }
+    [RelayCommand] private void AddNotebookEntry() { if (NotebookEntries.Count < 100) { var entry = new TuningNotebookEntry(); NotebookEntries.Add(entry); SelectedNotebookEntry = entry; } }
+    [RelayCommand] private void RemoveNotebookEntry() { if (SelectedNotebookEntry is { } entry) NotebookEntries.Remove(entry); SelectedNotebookEntry = NotebookEntries.FirstOrDefault(); }
+    [RelayCommand] private void SaveNotebook() { if (_notebookLoadFailed) { Error = "Notebook was not loaded; refusing to overwrite it."; return; } try { TuningNotebook.Save(_directory, new TuningNotebook { Entries = NotebookEntries.ToList() }); Error = ""; } catch (Exception ex) { Error = "Notebook could not be saved: " + ex.Message; } }
+    [RelayCommand] private void CompareNotebookRuns() { if (SelectedNotebookEntry is { RecordingA: { Length: > 0 } a }) OpenNotebookRecordingsRequested?.Invoke(a, SelectedNotebookEntry.RecordingB); }
+    [RelayCommand] private void OpenPostGameReport() => OpenPostGameReportRequested?.Invoke();
+    public void SetPostGameReport(string? text) { PostGameReportText = text ?? ""; OnPropertyChanged(nameof(HasPostGameReport)); }
     [RelayCommand] private void Save()
     {
         Options.Games = Games.ToList(); Options.Rules = Rules.ToList();

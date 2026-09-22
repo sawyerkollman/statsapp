@@ -4,6 +4,7 @@ using System.Windows.Threading;
 using Microsoft.Win32;
 using Stats.App.Helpers;
 using Stats.Core.ViewModels;
+using Stats.Core.Recording;
 
 namespace Stats.App.Views;
 
@@ -72,5 +73,18 @@ public partial class SessionWindow : Window
     {
         if (e.AddedItems.Count == 1 && e.AddedItems[0] is string path && DataContext is SessionViewModel vm && path != vm.FilePath)
         { StopReplay(); await vm.OpenAsync(path); }
+    }
+    private void Spike_SelectionChanged(object sender, System.Windows.Controls.SelectionChangedEventArgs e)
+    {
+        if (e.AddedItems.Count == 1 && e.AddedItems[0] is SessionSpike spike && DataContext is SessionViewModel vm)
+        { vm.SelectedReplayMetric = vm.Rows.FirstOrDefault(row => row.Series.Definition.Id == "fps.frametime") ?? vm.SelectedReplayMetric; vm.ReplayCursorUtc = spike.TimestampUtc; }
+    }
+    private async void AddRunA_Click(object sender, RoutedEventArgs e) => await AddRunAsync(true);
+    private async void AddRunB_Click(object sender, RoutedEventArgs e) => await AddRunAsync(false);
+    private async Task AddRunAsync(bool first)
+    {
+        if (DataContext is not SessionViewModel vm) return;
+        var dialog = new OpenFileDialog { Filter = "Stats sessions (*.stats-session.jsonl)|*.stats-session.jsonl", InitialDirectory = vm.RecordingDirectory };
+        if (dialog.ShowDialog(this) == true) await vm.AddRepeatedRunAsync(first, dialog.FileName);
     }
 }

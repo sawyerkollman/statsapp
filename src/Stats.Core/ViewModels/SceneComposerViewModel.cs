@@ -39,6 +39,7 @@ public sealed partial class SceneComposerViewModel : ObservableObject
     public ObservableCollection<SceneMapping> Mappings { get; } = new();
     public ObservableCollection<SceneSectionLabel> SectionLabels { get; } = new();
     public event Action<DashboardScene, bool>? SceneApplied;
+    public event Action? EditOverlayRequested;
     [ObservableProperty] private string _name = "My scene";
     [ObservableProperty] private string _caption = "";
     [ObservableProperty] private string _error = "";
@@ -63,6 +64,7 @@ public sealed partial class SceneComposerViewModel : ObservableObject
         OverlayOrientation = OverlayVertical ? OverlayOrientation.Vertical : OverlayOrientation.Horizontal,
         OverlayFontScale = OverlayScale, OverlayOpacity = OverlayOpacity,
         OverlayGraphs = OverlaySparklines ? OverlayGraphs.Sparkline : OverlayGraphs.None,
+        OverlayCanvas = OverlayCanvasLayout.Normalize(_settings.OverlayCanvas),
     };
     [RelayCommand] private void SaveCurrent()
     {
@@ -79,6 +81,7 @@ public sealed partial class SceneComposerViewModel : ObservableObject
     }
     [RelayCommand] private void ApplySelected() => Apply(false);
     [RelayCommand] private void ApplyOverlayOnly() => Apply(true);
+    [RelayCommand] private void EditOverlay() => EditOverlayRequested?.Invoke();
     private void Apply(bool overlayOnly)
     {
         if (SelectedScene is not { } scene) return;
@@ -94,6 +97,8 @@ public sealed partial class SceneComposerViewModel : ObservableObject
     {
         var scene = SelectedScene ?? throw new InvalidDataException("Select a saved scene to export.");
         scene.Validate();
+        if (scene.OverlayCanvas is not null)
+            throw new InvalidDataException("Scenes with a custom overlay canvas cannot be exported yet.");
         if (scene.Layout.DashboardMetrics.Concat(scene.Layout.OverlayMetrics).Any(id => !_definitions.Any(d => d.Id == id)))
             throw new InvalidDataException("This scene includes unavailable sensors. Remap them before exporting.");
         var portable = new PortableScene
@@ -139,7 +144,8 @@ public sealed partial class SceneComposerViewModel : ObservableObject
                 if (slot.Overlay) layout.OverlayMetrics.Add(id);
                 layout.TilePrefs[id] = new TilePref { Kind = slot.Kind, Size = slot.Size, X = slot.X, Y = slot.Y };
             }
-            Save(Capture(layout)); Mappings.Clear(); _import = null;
+            var scene = Capture(layout); scene.OverlayCanvas = null;
+            Save(scene); Mappings.Clear(); _import = null;
         }
         catch (Exception ex) { Error = ex.Message; }
     }
