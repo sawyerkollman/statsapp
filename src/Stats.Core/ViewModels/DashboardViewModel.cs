@@ -63,9 +63,11 @@ public sealed partial class DashboardViewModel : ObservableObject
     public event Action? OpenSessionsRequested;
     public event Action? OpenThemeStudioRequested;
     public event Action? OpenLabRequested;
+    public event Action? OpenGamingRequested;
     public event Action? OpenScenesRequested;
     [RelayCommand] private void OpenThemeStudio() => OpenThemeStudioRequested?.Invoke();
     [RelayCommand] private void OpenLab() => OpenLabRequested?.Invoke();
+    [RelayCommand] private void OpenGaming() => OpenGamingRequested?.Invoke();
     [RelayCommand] private void OpenScenes() => OpenScenesRequested?.Invoke();
     [RelayCommand] private void OpenComparison() => OpenComparisonRequested?.Invoke();
     [RelayCommand] private void OpenSessions() => OpenSessionsRequested?.Invoke();

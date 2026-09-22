@@ -41,14 +41,17 @@ public sealed partial class DashboardViewModel
         MarkLayoutModified();
     }
 
-    private bool ApplyLayout(LayoutProfile profile, string? activeName)
+    public void RefreshRestoredLayout() => ApplyLayout(LayoutProfile.Capture(_settings, ""), _settings.ActiveLayoutProfile, _settings.LayoutProfileModified);
+
+    private bool ApplyLayout(LayoutProfile profile, string? activeName, bool modified = false)
     {
         _applyingLayoutProfile = true;
         try
         {
             profile!.Restore(_settings);
             _settings.ActiveLayoutProfile = activeName;
-            _settings.LayoutProfileModified = false;
+            _settings.LayoutProfileModified = modified;
+            OnPropertyChanged(nameof(IsLayoutLocked));
             LayoutMode = _settings.DashboardLayoutMode;
             OnPropertyChanged(nameof(IsAutoLayout));
             OnPropertyChanged(nameof(IsGridLayout));

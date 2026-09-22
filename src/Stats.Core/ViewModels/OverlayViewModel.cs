@@ -2,6 +2,7 @@ using System.Collections.ObjectModel;
 using CommunityToolkit.Mvvm.ComponentModel;
 using Stats.Core.Metrics;
 using Stats.Core.Settings;
+using Stats.Core.Frames;
 
 namespace Stats.Core.ViewModels;
 
@@ -19,6 +20,14 @@ public sealed partial class OverlayViewModel : ObservableObject
     }
 
     public ObservableCollection<MetricTileViewModel> Tiles { get; } = new();
+    /// <summary>Optional freeform overlay cards. Each wraps the same live tile VM as <see cref="Tiles"/>.</summary>
+    public ObservableCollection<OverlayCanvasTile> CanvasTiles { get; } = new();
+    public bool HasCustomCanvas => !IsFpsOnly && _settings.OverlayCanvas is not null && CanvasTiles.Count == Tiles.Count;
+    public bool HasAutomaticCanvas => !HasCustomCanvas;
+    public bool HasFixedNeonBorder => _settings.OverlayCanvas?.FixedNeonBorder == true;
+    public double CanvasWidth => Math.Max(1, CanvasTiles.Count == 0 ? 1 : CanvasTiles.Max(t => t.X + t.Width));
+    public double CanvasHeight => Math.Max(1, CanvasTiles.Count == 0 ? 1 : CanvasTiles.Max(t => t.Y + t.Height));
+    [ObservableProperty] private bool _isFpsOnly;
 
     [ObservableProperty] private OverlayOrientation _orientation;
     [ObservableProperty] private double _fontScale = 1.0;
@@ -37,6 +46,20 @@ public sealed partial class OverlayViewModel : ObservableObject
     [NotifyPropertyChangedFor(nameof(HasStatus))]
     [ObservableProperty] private string _statusText = "";
     [ObservableProperty] private bool _statusIsWarning;
+    [ObservableProperty] private string _frameStatusText = "";
+    [ObservableProperty] private bool _frameStatusIsWarning;
+    public void SetFrameStatus(string? reason, bool isWarning = false)
+    {
+        if (IsFpsOnly && Tiles.Count == 0) return;
+        FrameStatusText = Tiles.Any(t => FrameMetrics.IsFrameMetric(t.Definition.Id)) ? reason ?? "" : "";
+        FrameStatusIsWarning = FrameStatusText.Length > 0 && isWarning;
+    }
+    public void ToggleFpsOnly()
+    {
+        IsFpsOnly = !IsFpsOnly;
+        Rebuild();
+        if (IsFpsOnly && Tiles.Count == 0) { FrameStatusText = "Select FPS in Overlay metrics to use FPS-only mode."; FrameStatusIsWarning = false; }
+    }
 
     /// <summary>The strip's Visibility: on in settings AND something to say.</summary>
     public bool HasStatus => ShowStatusLine && StatusText.Length > 0;
@@ -63,14 +86,20 @@ public sealed partial class OverlayViewModel : ObservableObject
     public void Rebuild()
     {
         Tiles.Clear();
+        CanvasTiles.Clear();
         var thresholds = ThresholdIndex.Build(_settings);
-        var selected = _settings.OverlayMetrics.ToHashSet();
+        var selected = (IsFpsOnly ? _settings.OverlayMetrics.Where(FrameMetrics.IsFrameMetric) : _settings.OverlayMetrics).ToHashSet();
         foreach (var def in _store.Definitions.Where(d => selected.Contains(d.Id)))
         {
             var tile = new MetricTileViewModel(def, _store[def.Id], _settings);
             tile.Refresh(thresholds);
             Tiles.Add(tile);
         }
+        if (!IsFpsOnly && _settings.OverlayCanvas is { } canvas)
+            foreach (var element in canvas.Elements)
+                if (Tiles.FirstOrDefault(tile => tile.Definition.Id == element.MetricId) is { } tile)
+                    CanvasTiles.Add(new OverlayCanvasTile(tile, element));
+        OnPropertyChanged(nameof(HasCustomCanvas)); OnPropertyChanged(nameof(HasAutomaticCanvas)); OnPropertyChanged(nameof(HasFixedNeonBorder)); OnPropertyChanged(nameof(CanvasWidth)); OnPropertyChanged(nameof(CanvasHeight));
     }
 
     public void RefreshAll()
@@ -86,4 +115,15 @@ public sealed partial class OverlayViewModel : ObservableObject
     {
         foreach (var tile in Tiles) tile.RaiseSeverityRefresh();
     }
+}
+
+public sealed class OverlayCanvasTile
+{
+    public OverlayCanvasTile(MetricTileViewModel tile, OverlayCanvasElement element)
+    { Tile = tile; X = element.X; Y = element.Y; Width = element.Width; Height = element.Height; }
+    public MetricTileViewModel Tile { get; }
+    public double X { get; }
+    public double Y { get; }
+    public double Width { get; }
+    public double Height { get; }
 }

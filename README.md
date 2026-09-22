@@ -5,6 +5,10 @@ Ryzen Master, Task Manager, Core Temp, and Afterburner each show a slice of:
 CPU per-core clocks/temps/loads, package power, PPT, voltages; GPU clocks,
 temps, fan, power, VRAM; RAM; per-disk activity; per-adapter network throughput.
 
+## Gaming command centre beta
+
+The gaming command centre is under development and not published. See the [gaming command centre guide](docs/gaming-command-centre.md) for Session Lab, post-game reports, overlay editing, notebooks, and support tools. For beta feedback and returning to stable, see [testing Stats betas](docs/beta-testing.md).
+
 ## Install
 
 Grab `Stats-Setup-<version>.exe` from the

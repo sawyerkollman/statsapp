@@ -28,6 +28,8 @@ $DistDir    = Join-Path $Root 'dist'
 $IssFile    = Join-Path $Installer 'Stats.iss'
 $Csproj     = Join-Path $Root 'src\Stats.App\Stats.App.csproj'
 
+& (Join-Path $Installer 'validate-script.ps1') -ScriptPath $IssFile
+
 $PawnIoVersion = '2.2.0'
 $PawnIoUrl     = "https://github.com/namazso/PawnIO.Setup/releases/download/$PawnIoVersion/PawnIO_setup.exe"
 $PawnIoSha256  = '1F519A22E47187F70A1379A48CA604981C4FCF694F4E65B734AAA74A9FBA3032'

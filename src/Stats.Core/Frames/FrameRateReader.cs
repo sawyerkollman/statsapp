@@ -28,6 +28,8 @@ public sealed class FrameRateReader : ISensorReader
     private int _failures;           // consecutive exits without frames since last start
     private bool _sawFrames;         // frames received since last (re)start → resets backoff
     private int _generation;         // bumped on every SetActive so stale callbacks are ignored
+    private int? _foregroundPidForRecording; // updated by Read() on the poller thread; never P/Invoke from stdout
+    private FrameCaptureStatus _captureStatus = new(FrameCaptureState.Inactive, "FPS capture is off.");
 
     public FrameRateReader(string? exePath, Func<IFrameSource> sourceFactory, Func<int?> foregroundPid,
         Func<DateTime>? clock = null, Func<TimeSpan, CancellationToken, Task>? delay = null)
@@ -62,6 +64,9 @@ public sealed class FrameRateReader : ISensorReader
     /// <summary>False when the exe is missing, tracing was denied, the CSV was unreadable, or restarts were exhausted.</summary>
     public bool IsAvailable { get; private set; }
     public string? StatusMessage { get; private set; }
+    public FrameCaptureStatus CaptureStatus { get { lock (_gate) return _captureStatus; } }
+    /// <summary>Foreground-qualified raw PresentMon frames, raised on the stdout reader thread outside _gate.</summary>
+    public event Action<RecordedFrame>? FrameRecorded;
 
     public IReadOnlyList<MetricDefinition> Discover() =>
         _exePath is null ? Array.Empty<MetricDefinition>() : FrameMetrics.Definitions;
@@ -70,17 +75,20 @@ public sealed class FrameRateReader : ISensorReader
     {
         FrameStats stats = FrameStats.Empty;
         int? foreground = _foregroundPid();          // outside the lock: caller-supplied, may P/Invoke
+        var now = _clock();
         lock (_gate)
         {
+            _foregroundPidForRecording = IsActive && IsAvailable ? foreground : null;
             if (IsActive && IsAvailable && foreground is int pid)
-                stats = _aggregator.Snapshot(pid, _clock(), SamplingWindow);
+                stats = _aggregator.Snapshot(pid, now, SamplingWindow);
+            UpdateCaptureStatusLocked(foreground, stats);
         }
         return new SensorSnapshot(new Dictionary<string, float?>
         {
             [FrameMetrics.FpsId] = stats.Fps,
             [FrameMetrics.LowId] = stats.OnePercentLowFps,
             [FrameMetrics.FrameTimeId] = stats.FrameTimeMs,
-        }, _clock());
+        }, now);
     }
 
     public void SetActive(bool active)
@@ -94,17 +102,21 @@ public sealed class FrameRateReader : ISensorReader
             CancelPendingRestart();
             if (active)
             {
-                if (_exePath is null) return;
-                IsAvailable = true;
-                StatusMessage = null;
-                _failures = 0;
-                StartSourceLocked();
+                if (_exePath is not null)
+                {
+                    IsAvailable = true;
+                    StatusMessage = null;
+                    _failures = 0;
+                    StartSourceLocked();
+                }
             }
             else
             {
                 detached = DetachSourceLocked();
                 _aggregator.Clear();
+                _foregroundPidForRecording = null;
             }
+            UpdateCaptureStatusLocked(null, FrameStats.Empty);
         }
         DisposeSource(detached);          // Stop() can block for seconds; never under _gate
     }
@@ -118,6 +130,8 @@ public sealed class FrameRateReader : ISensorReader
             _generation++;
             CancelPendingRestart();
             detached = DetachSourceLocked();
+            _foregroundPidForRecording = null;
+            UpdateCaptureStatusLocked(null, FrameStats.Empty);
         }
         DisposeSource(detached);
     }
@@ -126,6 +140,7 @@ public sealed class FrameRateReader : ISensorReader
 
     private void StartSourceLocked()
     {
+        _foregroundPidForRecording = null;
         _parser = new PresentMonCsvParser();
         _sawFrames = false;
         var src = _sourceFactory();
@@ -149,6 +164,7 @@ public sealed class FrameRateReader : ISensorReader
     /// releasing <c>_gate</c> — <see cref="IFrameSource.Stop"/> can block for seconds.</summary>
     private IFrameSource? DetachSourceLocked()
     {
+        _foregroundPidForRecording = null;
         var src = _source;
         _source = null;
         return src;
@@ -172,13 +188,38 @@ public sealed class FrameRateReader : ISensorReader
     {
         IsAvailable = false;
         StatusMessage = message;
+        _captureStatus = new FrameCaptureStatus(FrameCaptureState.Unavailable, FirstSentence(message));
         Trace.WriteLine("[Stats.FrameRateReader] " + message);
+    }
+
+    private static string FirstSentence(string message)
+    {
+        int cut = message.IndexOf(". ", StringComparison.Ordinal);
+        return cut > 0 ? message[..(cut + 1)] : message;
+    }
+
+    private void UpdateCaptureStatusLocked(int? foreground, FrameStats stats)
+    {
+        if (!IsActive)
+            _captureStatus = new FrameCaptureStatus(FrameCaptureState.Inactive, "FPS capture is off.");
+        else if (!IsAvailable)
+            _captureStatus = new FrameCaptureStatus(FrameCaptureState.Unavailable, FirstSentence(StatusMessage ?? "FPS capture is unavailable."));
+        else if (foreground is null)
+            _captureStatus = new FrameCaptureStatus(FrameCaptureState.Waiting, "Waiting for a foreground app.");
+        else if (stats.Fps is null)
+            _captureStatus = new FrameCaptureStatus(FrameCaptureState.Waiting, "Waiting for foreground app frames.");
+        else if (stats.OnePercentLowFps is null)
+            _captureStatus = new FrameCaptureStatus(FrameCaptureState.Collecting, "Collecting frames for 1% low.");
+        else
+            _captureStatus = new FrameCaptureStatus(FrameCaptureState.Receiving, "Receiving foreground app frames.");
     }
 
     private void OnLine(IFrameSource src, int gen, string line)
     {
         FrameSample? sample = null;
         IFrameSource? detached = null;
+        RecordedFrame? recorded = null;
+        Action<RecordedFrame>? recordedHandler = null;
         lock (_gate)
         {
             if (gen != _generation || !ReferenceEquals(src, _source)) return;
@@ -194,12 +235,21 @@ public sealed class FrameRateReader : ISensorReader
             if (detached is null && sample is FrameSample s)
             {
                 _sawFrames = true;
-                _aggregator.Add(s, _clock());
+                var now = _clock();
+                _aggregator.Add(s, now);
+                if (_foregroundPidForRecording == s.Pid)
+                {
+                    recorded = new RecordedFrame(now, s.Pid, s.FrameTimeMs);
+                    recordedHandler = FrameRecorded;
+                }
             }
         }
         // We are on the source's reader thread; disposing it here is safe now that _gate is released,
         // and the gen/ReferenceEquals guards make any further events from it no-ops.
         DisposeSource(detached);
+        if (recorded is RecordedFrame frame)
+            try { recordedHandler?.Invoke(frame); }
+            catch (Exception ex) { Trace.WriteLine("[Stats.FrameRateReader] raw-frame subscriber failed: " + ex.Message); }
     }
 
     private void OnExited(IFrameSource src, int gen, int exitCode, string stderrTail)

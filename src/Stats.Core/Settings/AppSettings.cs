@@ -167,6 +167,8 @@ public sealed class AppSettings
     /// <summary>Optional one-line status strip (fan control state / game mode / PresentMon reason) at the
     /// overlay's bottom edge; collapses when no source has anything to say. See <see cref="ViewModels.OverlayStatusComposer"/>.</summary>
     public bool OverlayStatusLine { get; set; }
+    /// <summary>Optional freeform overlay geometry; null retains the automatic stack layout.</summary>
+    public OverlayCanvasLayout? OverlayCanvas { get; set; }
     /// <summary>Get-or-create the TilePref for a metric id.</summary>
     public TilePref PrefFor(string metricId)
     {

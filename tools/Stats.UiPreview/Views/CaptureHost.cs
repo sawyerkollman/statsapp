@@ -160,6 +160,7 @@ public static class CaptureHost
         "lab" => BuildLab(spec, c),
         "details" => BuildDetails(spec, c),
         "overlay" => new OverlayWindow { DataContext = c.Overlay, Opacity = c.Settings.OverlayOpacity },
+        "overlay-editor" => new OverlayEditorWindow { DataContext = new OverlayEditorViewModel(c.Settings, c.Store, () => { }) },
         "threshold-dialog" => BuildThresholdDialog(spec, c),
         "input-dialog" => BuildInputDialog(),
         _ => throw new ArgumentException($"Unknown --view '{spec.View}'."),
@@ -182,9 +183,17 @@ public static class CaptureHost
         vm.SelectedRule.FirstThreshold = 90; vm.SelectedRule.SecondThreshold = 80;
         vm.AddTimeline("bookmark", "Simulated warm-up complete", TimeSeries.FixedTimeUtc);
         vm.SetDiagnostics("preview", "simulated Windows", ".NET 8", true);
+        if (spec.Substate is "notebook" or "support")
+        {
+            vm.AddNotebookEntryCommand.Execute(null);
+            vm.SelectedNotebookEntry!.Name = "Simulated graphics experiment";
+            vm.SelectedNotebookEntry.Workload = "Fixed simulated benchmark";
+            vm.SelectedNotebookEntry.StabilityNotes = "Fixture note only; no hardware changes.";
+            vm.FeedbackText = "Simulated feedback text";
+        }
         var window = new LabWindow { DataContext = vm };
         window.Closed += (_, _) => vm.Dispose();
-        var index = Array.IndexOf(new[] { "gaming", "compound", "history", "timeline", "diagnostics" }, spec.Substate);
+        var index = Array.IndexOf(new[] { "gaming", "compound", "history", "timeline", "diagnostics", "notebook", "support" }, spec.Substate);
         ((TabControl)window.FindName("LabTabs")).SelectedIndex = Math.Max(0, index);
         return window;
     }
@@ -282,6 +291,7 @@ public static class CaptureHost
         }
         if (spec.View == "alerts" && window is PeaksWindow pw) SelectAlertsTab(pw);
         if (spec.View == "processes" && window is PeaksWindow processWindow) SelectProcessesTab(processWindow);
+        if (spec.View == "sessions" && spec.Substate == "analysis" && window is SessionWindow sessionWindow) ScrollToAnalysis(sessionWindow);
     }
 
     private static void SelectSettingsCategory(Window window, string category)
@@ -376,6 +386,13 @@ public static class CaptureHost
     {
         var tabs = VisualTreeUtil.FirstDescendant<TabControl>(window);
         if (tabs is not null && tabs.Items.Count > 2) tabs.SelectedIndex = 2;
+        DispatcherUtil.WaitFrames();
+    }
+    private static void ScrollToAnalysis(Window window)
+    {
+        var expander = VisualTreeUtil.FirstDescendant<Expander>(window, e => e.Header?.ToString()?.Contains("A/B", StringComparison.Ordinal) == true);
+        expander?.BringIntoView();
+        if (expander is not null) expander.IsExpanded = true;
         DispatcherUtil.WaitFrames();
     }
 

@@ -780,6 +780,7 @@ public partial class DashboardWindow : Window
         var menu = new ContextMenu { PlacementTarget = target, Placement = PlacementMode.Bottom };
 
         menu.Items.Add(new MenuItem { Header = "Compare metrics…", Command = vm.OpenComparisonCommand });
+        menu.Items.Add(new MenuItem { Header = "Gaming…", Command = vm.OpenGamingCommand });
         menu.Items.Add(new MenuItem { Header = "Beta lab…", Command = vm.OpenLabCommand });
         menu.Items.Add(new MenuItem { Header = "Theme studio…", Command = vm.OpenThemeStudioCommand });
         menu.Items.Add(new MenuItem { Header = "Scene builder / overlays…", Command = vm.OpenScenesCommand });

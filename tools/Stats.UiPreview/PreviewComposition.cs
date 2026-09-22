@@ -277,6 +277,8 @@ public sealed class PreviewComposition
             case "captured": c.Comparison.SetCaptured("Preview session", c.Sessions.Rows.Take(4).Select(row => row.Series)); break;
             case "live": c.Comparison.SwitchToLive(); break;
             case "recorded": break; // fixture is opened during Build
+            case "analysis": if (c.Sessions.FilePath is { } analysisPath) c.Sessions.OpenComparison(analysisPath); break;
+            case "slow-frames": CreateSlowFrameFixture(c); break;
             case "alert-context": AddAlertContextFixture(c); break;
             case "layout-resize-grip": break; // visual-tree substate — applied in CaptureHost (focuses the first Free container so the grip renders); pair with "layout-free" to reach Free mode first
 
@@ -458,6 +460,20 @@ public sealed class PreviewComposition
             default:
                 throw new ArgumentException($"Unknown substate '{substate}'.", nameof(substate));
         }
+    }
+
+    private static void CreateSlowFrameFixture(PreviewComposition c)
+    {
+        var defs = c.Definitions.Where(d => d.Id is FrameMetrics.FpsId or FrameMetrics.LowId or FrameMetrics.FrameTimeId || d.Unit is "°C" or "W").Take(8).ToArray();
+        if (defs.All(d => d.Id != FrameMetrics.FrameTimeId)) return;
+        using var recorder = new SessionRecorder(Path.Combine(c.TempRoot, "slow-frames"), () => TimeSeries.FixedTimeUtc.AddSeconds(20));
+        var start = TimeSeries.FixedTimeUtc; recorder.Start(defs, start);
+        for (var i = 0; i < 20; i++)
+        {
+            var values = defs.ToDictionary(d => d.Id, d => d.Id == FrameMetrics.FrameTimeId ? (float?)(i is 5 or 14 ? 33 : 7) : d.Id == FrameMetrics.FpsId ? 144f : d.Id == FrameMetrics.LowId ? 92f : 60f + i);
+            recorder.Record(new SensorSnapshot(values, start.AddSeconds(i)));
+        }
+        recorder.StopAsync().GetAwaiter().GetResult(); if (recorder.FilePath is { } path) c.Sessions.Open(path);
     }
 
     /// <summary>"game-tiles" substate (docs/superpowers/specs/2026-09-11-game-tiles-design.md): sets the FPS

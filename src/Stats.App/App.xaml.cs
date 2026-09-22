@@ -29,6 +29,9 @@ namespace Stats.App;
 
 public partial class App : Application
 {
+    private SingleInstance? _singleInstance;
+    private bool _exiting;
+    private string? _installerFailure;
     private SettingsService? _settingsService;
     private AppSettings? _settings;
 
@@ -48,6 +51,7 @@ public partial class App : Application
     private MenuItem? _moveOverlayMenuItem;
     private SettingsViewModel? _settingsVm;
     private GlobalHotkey? _hotkey;
+    private GlobalHotkey? _fpsOnlyHotkey;
     private PeaksWindow? _peaks;
     private PeaksViewModel? _peaksVm;
     private AlertEngine? _alertEngine;
@@ -117,6 +121,28 @@ public partial class App : Application
         base.OnStartup(e);
 
         bool startMinimized = StartupArgs.HasMinimizedFlag(e.Args); // case-insensitive: installer/shortcuts may pass any casing
+        _currentInformationalVersion = Assembly.GetEntryAssembly()?.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion;
+        var installerOutcome = StartupArgs.InstallerOutcome(e.Args, _currentInformationalVersion);
+        try { _singleInstance = new SingleInstance(); }
+        catch (Exception ex) when (ex is UnauthorizedAccessException or System.Threading.WaitHandleCannotBeOpenedException or IOException)
+        {
+            Trace.WriteLine($"[Stats] Ownership guard unavailable: {ex}");
+            if (!startMinimized) MessageBox.Show("Stats could not safely acquire hardware ownership. Exit other copies of Stats in all Windows sessions, then retry. If this persists, restart Windows.", "Stats", MessageBoxButton.OK, MessageBoxImage.Warning);
+            Shutdown();
+            return;
+        }
+        if (!_singleInstance.IsOwner)
+        {
+            if (!SingleInstance.NotifyPrimary(!startMinimized, installerOutcome))
+            {
+                Trace.WriteLine("[Stats] Another Windows session owns Stats, or its control window is not ready. Exit that copy before retrying.");
+                if (!startMinimized) MessageBox.Show("Stats is already running in another Windows session, or is still starting. Exit that copy from its tray menu before retrying.", "Stats", MessageBoxButton.OK, MessageBoxImage.Information);
+            }
+            Shutdown();
+            return;
+        }
+        _singleInstance.Listen(ExitApp, ShowDashboard, ShowInstallerOutcome);
+        _installerFailure = StartupArgs.InstallerFailure(installerOutcome);
         _currentVersion = Assembly.GetEntryAssembly()?.GetName().Version ?? new Version(0, 0, 0, 0);
         _currentInformationalVersion = Assembly.GetEntryAssembly()?.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion;
 
@@ -209,6 +235,7 @@ public partial class App : Application
         _settingsVm.CheckForUpdatesRequested += OnManualCheckForUpdatesRequested;
         _settingsVm.RestartRequested += OnRestartNowRequested;
         _settingsVm.SetVersionInfo(UpdateChecker.FormatVersionDisplay(_currentVersion, _currentInformationalVersion), UpdateChecker.IsDevBuild(_currentVersion));
+        if (installerOutcome is int outcome) ShowInstallerOutcome(outcome);
         _dashboardVm.SettingsOpened += () => _ = RefreshStartupTaskStateAsync();
         _startupTaskService = new StartupTaskService();
 
@@ -217,6 +244,10 @@ public partial class App : Application
         _hotkey = new GlobalHotkey();
         _hotkey.Pressed += ToggleOverlay;
         ApplyHotkey();
+        _fpsOnlyHotkey = new GlobalHotkey();
+        _fpsOnlyHotkey.Pressed += ToggleFpsOnlyOverlay;
+        if (!_fpsOnlyHotkey.Register(HotkeyParser.Parse("Ctrl+Shift+F")))
+            Trace.WriteLine("[Stats] FPS-only hotkey unavailable; use the tray menu.");
 
         _store.ResizeAll(HistoryCapacity.Compute(_settings.HistoryWindowMinutes, _settings.PollIntervalSeconds));
 
@@ -225,6 +256,7 @@ public partial class App : Application
         _dashboardVm.OpenSessionsRequested += ShowSessions;
         _dashboardVm.OpenThemeStudioRequested += ShowThemeStudio;
         _dashboardVm.OpenLabRequested += ShowBetaLab;
+        _dashboardVm.OpenGamingRequested += ShowGaming;
         _dashboardVm.OpenScenesRequested += ShowScenes;
         _dashboardVm.OpenFansRequested += ShowFans;
         _dashboardVm.OpenTileDetailRequested += ShowMetricDetail;
@@ -297,6 +329,7 @@ public partial class App : Application
         _manualCheckCts?.Dispose();
         _updateService?.Dispose();
         _hotkey?.Dispose();
+        _fpsOnlyHotkey?.Dispose();
         _fansVisible = false;
         _processScan?.Dispose();
         bool stopped = _poller?.Stop() ?? true;   // stop the poll thread first …
@@ -308,6 +341,7 @@ public partial class App : Application
         SaveSettings();
         _trayRenderer?.Dispose();
         _appIcon?.Dispose();
+        _singleInstance?.Dispose(); // release ownership only after hardware and recording cleanup
         base.OnExit(e);
     }
 
@@ -372,6 +406,7 @@ public partial class App : Application
     private void SaveSettings()
     {
         if (_settings is null || _settingsService is null) return;
+        ObserveGameAppearanceChanges();
         try
         {
             string json;
@@ -437,10 +472,9 @@ public partial class App : Application
 
     private string? FrameStatus()
     {
-        if (_frameReader is null || !_frameReader.IsActive || _frameReader.IsAvailable) return null;
-        var msg = _frameReader.StatusMessage ?? "";
-        int cut = msg.IndexOf(". ", StringComparison.Ordinal);
-        return cut > 0 ? msg[..(cut + 1)] : msg;
+        if (_frameReader is null) return null;
+        var status = _frameReader.CaptureStatus;
+        return status.State is FrameCaptureState.Inactive or FrameCaptureState.Receiving ? null : status.Reason;
     }
 
     /// <summary>Composes the overlay status strip from already-published state and pushes it (no-op when
@@ -448,14 +482,16 @@ public partial class App : Application
     /// SetMode, ApplyProfile or Enabled's setter (rule 6).</summary>
     private void PushOverlayStatus()
     {
-        if (_overlayVm is null || _settings is null || !_settings.OverlayStatusLine) return;
+        if (_overlayVm is null || _settings is null) return;
+        _overlayVm.SetFrameStatus(FrameStatus(), _frameReader?.CaptureStatus.State == FrameCaptureState.Unavailable);
+        if (!_settings.OverlayStatusLine) return;
         bool fanEnabled = _fanController is { } fc && fc.Enabled;                 // getter only: brief lock on AppSettings.SyncRoot
         string? profile = fanEnabled ? _fanController!.ActiveProfile : null;
         IReadOnlyList<FanChannelStatus> statuses = fanEnabled
             ? _fanController!.Statuses()                                           // status-only read: no per-channel view allocation each tick
             : Array.Empty<FanChannelStatus>();
         string? game = _settings.GameModeEnabled ? _gameMode?.StatusText : null;   // volatile string composed on the poll thread
-        _overlayVm.SetStatus(OverlayStatusComposer.Compose(fanEnabled, profile, statuses, game, FrameStatus()));
+        _overlayVm.SetStatus(OverlayStatusComposer.Compose(fanEnabled, profile, statuses, game, null));
     }
 
     private void RestoreWindowBounds()
@@ -505,6 +541,14 @@ public partial class App : Application
         var moveOverlay = new MenuItem { Header = "Move overlay" };
         moveOverlay.Click += (_, _) => ToggleMoveMode();
         _moveOverlayMenuItem = moveOverlay;
+        var fpsOnly = new MenuItem { Header = "Toggle FPS-only overlay (Ctrl+Shift+F)" };
+        fpsOnly.Click += (_, _) => ToggleFpsOnlyOverlay();
+        var editOverlay = new MenuItem { Header = "Edit overlay…" };
+        editOverlay.Click += (_, _) => ShowOverlayEditor();
+        var reports = new MenuItem { Header = "Recordings / post-game report…" };
+        reports.Click += (_, _) => ShowSessions();
+        var gaming = new MenuItem { Header = "Gaming…" };
+        gaming.Click += (_, _) => ShowGaming();
         var peaks = new MenuItem { Header = "Session peaks" };
         peaks.Click += (_, _) => ShowPeaks();
         var fans = new MenuItem { Header = "Fans…" };
@@ -515,8 +559,12 @@ public partial class App : Application
         exit.Click += (_, _) => ExitApp();
 
         menu.Items.Add(open);
+        menu.Items.Add(gaming);
         menu.Items.Add(overlay);
         menu.Items.Add(moveOverlay);
+        menu.Items.Add(fpsOnly);
+        menu.Items.Add(editOverlay);
+        menu.Items.Add(reports);
         menu.Items.Add(peaks);
         menu.Items.Add(fans);
         menu.Items.Add(settings);
@@ -577,6 +625,7 @@ public partial class App : Application
 
         _store.Apply(snapshot);
         RefreshMonitoring(snapshot);
+        if (_overlayEditor is { IsVisible: true }) _overlayEditorVm?.Refresh();
         if (_dashboard.IsVisible)
         {
             _dashboardVm.RefreshAll();
@@ -1064,6 +1113,8 @@ public partial class App : Application
 
     private void ExitApp()
     {
+        if (_exiting) return;
+        _exiting = true;
         if (_dashboard is not null) _dashboard.AllowClose = true;
         if (_peaks is not null) _peaks.AllowClose = true;
         if (_fans is not null) _fans.AllowClose = true;
@@ -1073,6 +1124,16 @@ public partial class App : Application
         _tray?.Dispose();
         SaveWindowBounds();
         Shutdown();
+    }
+
+    private void ShowInstallerOutcome(int code)
+    {
+        _installerFailure = StartupArgs.InstallerFailure(code);
+        _settingsVm?.ApplyManualCheckResult(_installerFailure ?? "Update installed successfully.", failed: _installerFailure is not null);
+        if (_installerFailure is null || _dashboardVm is null) return;
+        _dashboardVm.FlyoutTabIndex = 1;
+        _dashboardVm.IsPickerOpen = true;
+        if (_dashboardVm.UpdateAvailable) _dashboardVm.SetUpdateError(_installerFailure);
     }
 
     /// <summary>Settings Hardware "Restart now". Starts a hidden helper that waits for this process to exit,
@@ -1170,7 +1231,11 @@ public partial class App : Application
             if (info is null) return;
             _ = Dispatcher.BeginInvoke(() =>
             {
-                if (!ct.IsCancellationRequested && generation == _updateChannelGeneration) _dashboardVm?.OfferUpdate(info);
+                if (!ct.IsCancellationRequested && generation == _updateChannelGeneration)
+                {
+                    _dashboardVm?.OfferUpdate(info);
+                    if (_installerFailure is not null) _dashboardVm?.SetUpdateError(_installerFailure);
+                }
             });
         }
         catch (OperationCanceledException) { /* app exiting, or the setting was turned off */ }
@@ -1255,6 +1320,7 @@ public partial class App : Application
     private async void OnInstallUpdateRequested(UpdateInfo info)
     {
         if (_updateService is null || _dashboardVm is null) return;
+        _installerFailure = null;
         _dashboardVm.SetUpdateProgress(0);
 
         _installCts?.Dispose();
@@ -1280,7 +1346,7 @@ public partial class App : Application
                 return; // a newer channel/offer owns the UI now
             }
             Trace.WriteLine("[Stats] update download failed: " + ex.Message);
-            _dashboardVm.SetUpdateError("Download failed — retry");
+            _dashboardVm.SetUpdateError("Download failed — retry. See the Stats log for details.");
             return;
         }
 
@@ -1293,12 +1359,12 @@ public partial class App : Application
 
         try
         {
-            LaunchUpdateHelper(destPath);
+            LaunchUpdateHelper(destPath, info.TagName);
         }
         catch (Exception ex)
         {
             Trace.WriteLine("[Stats] update helper launch failed: " + ex.Message);
-            _dashboardVm.SetUpdateError("Download failed — retry");
+            _dashboardVm.SetUpdateError("Could not start the installer helper — retry. See the Stats log for details.");
             return;
         }
 
@@ -1352,7 +1418,7 @@ public partial class App : Application
     /// out via ExitApp() by the time the helper's wait loop can observe this PID gone. FileMode.CreateNew: this
     /// directory is fresh per install (see CreateSecureStagingDirectory) — a file already there would mean
     /// something pre-planted it, so fail loudly instead of silently overwriting it.</summary>
-    private static void LaunchUpdateHelper(string installerPath)
+    private static void LaunchUpdateHelper(string installerPath, string expectedVersion)
     {
         var exePath = Environment.ProcessPath;
         if (string.IsNullOrEmpty(exePath))
@@ -1360,7 +1426,7 @@ public partial class App : Application
 
         var pid = Environment.ProcessId;
         var scriptPath = Path.Combine(Path.GetDirectoryName(installerPath)!, "stats-update.cmd");
-        var scriptBytes = System.Text.Encoding.ASCII.GetBytes(BuildUpdateScript(pid, installerPath, exePath));
+        var scriptBytes = System.Text.Encoding.ASCII.GetBytes(BuildUpdateScript(pid, installerPath, exePath, expectedVersion));
         using (var scriptStream = new FileStream(scriptPath, FileMode.CreateNew, FileAccess.Write, FileShare.None))
             scriptStream.Write(scriptBytes, 0, scriptBytes.Length);
 
@@ -1377,7 +1443,7 @@ public partial class App : Application
     /// so a wedged app can't leave cmd.exe polling forever. `ping -n 2 127.0.0.1` is used instead of
     /// `timeout /t 1` because timeout fails outright when its stdin is redirected (as it is here, launched
     /// hidden/detached with UseShellExecute=false).</summary>
-    private static string BuildUpdateScript(int pid, string installerPath, string exePath) =>
+    private static string BuildUpdateScript(int pid, string installerPath, string exePath, string expectedVersion) =>
         "@echo off\r\n" +
         "set n=0\r\n" +
         ":wait\r\n" +
@@ -1388,8 +1454,9 @@ public partial class App : Application
         "ping -n 2 127.0.0.1 >nul\r\n" +
         "goto wait\r\n" +
         ":run\r\n" +
-        $"\"{installerPath}\" /SILENT /NOCANCEL\r\n" +
-        $"start \"\" \"{exePath}\"\r\n";
+        $"\"{installerPath}\" /SILENT /NOCANCEL /NORESTART /RESTARTEXITCODE=3010 /LOG=\"{Path.Combine(Path.GetDirectoryName(installerPath)!, "setup.log")}\"\r\n" +
+        "set installResult=%errorlevel%\r\n" +
+        $"start \"\" \"{exePath}\" --update-exit-code %installResult% --update-expected \"{expectedVersion}\"\r\n";
 
     private static string BuildRestartScript(int pid, string exePath) =>
         "@echo off\r\n" +

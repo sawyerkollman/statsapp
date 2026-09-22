@@ -35,28 +35,38 @@ public sealed partial class SessionViewModel : ObservableObject
     private readonly SessionRecorder _recorder;
     private readonly Func<IReadOnlyList<MetricDefinition>> _selectedDefinitions;
     private readonly Func<DateTime> _clock;
+    private readonly Func<bool> _rawCaptureAvailable;
     private bool _syncingSelection;
     private bool _recordingPending;
+    private bool _recordingStoppingAnnounced;
     private SessionData? _loaded;
     private SessionData? _comparison;
+    private SessionData? _abFirst;
     private int _loadGeneration;
     private string? _loadedPath;
     private IReadOnlyList<SessionBookmark> _comparisonNotes = [];
     private bool _settingCursor;
 
-    public SessionViewModel(SessionRecorder recorder, Func<IReadOnlyList<MetricDefinition>> selectedDefinitions, Func<DateTime>? clock = null, string? recordingDirectory = null)
-    { _recorder = recorder; _selectedDefinitions = selectedDefinitions; _clock = clock ?? (() => DateTime.UtcNow); RecordingDirectory = recordingDirectory; }
+    public SessionViewModel(SessionRecorder recorder, Func<IReadOnlyList<MetricDefinition>> selectedDefinitions, Func<DateTime>? clock = null, string? recordingDirectory = null, Func<bool>? rawCaptureAvailable = null)
+    { _recorder = recorder; _selectedDefinitions = selectedDefinitions; _clock = clock ?? (() => DateTime.UtcNow); _rawCaptureAvailable = rawCaptureAvailable ?? (() => false); RecordingDirectory = recordingDirectory; }
 
     public ObservableCollection<SessionSeriesViewModel> Rows { get; } = new();
     public ObservableCollection<SessionBookmark> Bookmarks { get; } = new();
     public ObservableCollection<string> RecordingLibrary { get; } = new();
+    public ObservableCollection<string> RepeatedRunA { get; } = new();
+    public ObservableCollection<string> RepeatedRunB { get; } = new();
     public event Action<IReadOnlyList<MetricSeries>>? OpenComparisonRequested;
     public event Action? RecordingStarted;
+    public event Action? RecordingStopping;
+    public event Action? ReportReady;
     [ObservableProperty] private string _status = "Not recording";
     [ObservableProperty] private string _error = "";
     [ObservableProperty] private string? _filePath;
     [ObservableProperty] private bool _isBusy;
     [ObservableProperty] private bool _isRecording;
+    [ObservableProperty] private bool _includeRawFrames;
+    [ObservableProperty] private bool _recordingIncludesRawFrames;
+    [ObservableProperty] private string _recordingGameName = "";
     [ObservableProperty] private string? _recordingDirectory;
     [ObservableProperty] private DateTime? _startedUtc;
     [ObservableProperty] private DateTime? _endedUtc;
@@ -71,6 +81,13 @@ public sealed partial class SessionViewModel : ObservableObject
     [ObservableProperty] private string _bookmarkNote = "";
     [ObservableProperty] private string _analysisText = "Detective reports measured association only; correlation does not prove a bottleneck.";
     [ObservableProperty] private string _abText = "Open a second recording to compare aligned elapsed-time bins. No interpolation or causal claims.";
+    [ObservableProperty] private string _reportText = "Open a recording to view its sampled post-game report.";
+    [ObservableProperty] private bool _hasReport;
+    [ObservableProperty] private SessionReport? _report;
+    [ObservableProperty] private double _comparisonOffsetASeconds;
+    [ObservableProperty] private double _comparisonOffsetBSeconds;
+    [ObservableProperty] private double _comparisonDurationSeconds = 60;
+    [ObservableProperty] private string _variationText = "Add at least two A and B runs for descriptive variation.";
     [ObservableProperty] private SessionSeriesViewModel? _selectedReplayMetric;
     [ObservableProperty] private DateTime? _replayCursorUtc;
     public DateTime? ReplayStartUtc => ReplayTimesUtc.Count == 0 ? null : ReplayTimesUtc[0];
@@ -80,18 +97,42 @@ public sealed partial class SessionViewModel : ObservableObject
     public bool CanStart => !IsBusy && !_recordingPending;
     public bool CanStop => !IsBusy && _recordingPending;
     public bool CanOpenOrExport => !IsBusy && !_recordingPending;
+    public bool CanConfigureRawFrames => CanStart;
     public bool HasNextWindow => _loaded is not null && ReplayWindowStart + ReplayMaximum + 1 < _loaded.SampleCount;
     public string DatedSummary => StartedUtc is null ? "" : $"Started {StartedUtc.Value.ToLocalTime():g}" + (EndedUtc is { } end ? $" · ended {end.ToLocalTime():g}" : "");
     partial void OnIsBusyChanged(bool value) => RaiseFlags();
     partial void OnIsRecordingChanged(bool value) => RaiseFlags();
     partial void OnStartedUtcChanged(DateTime? value) => OnPropertyChanged(nameof(DatedSummary));
     partial void OnEndedUtcChanged(DateTime? value) => OnPropertyChanged(nameof(DatedSummary));
+    partial void OnComparisonOffsetASecondsChanged(double value) => InvalidateComparison();
+    partial void OnComparisonOffsetBSecondsChanged(double value) => InvalidateComparison();
+    partial void OnComparisonDurationSecondsChanged(double value) => InvalidateComparison();
+    private void InvalidateComparison()
+    {
+        _abFirst = null; _comparison = null;
+        AbText = "Window changed. Open the comparison recording again to recalculate.";
+        VariationText = "Window changed. Refresh repeated runs to recalculate.";
+    }
+    [RelayCommand] private void ClearRepeatedRuns()
+    {
+        if (!CanOpenOrExport) return;
+        RepeatedRunA.Clear(); RepeatedRunB.Clear();
+        VariationText = "Add at least two A and B runs for descriptive variation.";
+    }
+    [RelayCommand] private async Task RefreshRepeatedRunsAsync()
+    {
+        if (!CanOpenOrExport || !ValidComparisonWindow()) return;
+        IsBusy = true;
+        try { await RefreshVariationAsync(); }
+        finally { IsBusy = false; }
+    }
 
     public void RefreshRecorderState()
     {
         if (!_recordingPending) return;
         IsRecording = _recorder.IsRecording; FilePath = _recorder.FilePath; Error = _recorder.Error ?? "";
         if (!IsRecording && FilePath is not null && Error.Length > 0) Status = "Recording ended with an error";
+        if (!IsRecording && Error.Length > 0) AnnounceRecordingStopping();
         RaiseFlags();
     }
 
@@ -101,19 +142,24 @@ public sealed partial class SessionViewModel : ObservableObject
         if (!CanStart) return;
         var definitions = _selectedDefinitions();
         if (definitions.Count == 0) { Error = "Select at least one dashboard or overlay metric before recording."; return; }
+        if (IncludeRawFrames && !_rawCaptureAvailable()) { Error = "Raw frame timing requires active FPS capture. It does not start capture automatically."; return; }
+        var gameName = RecordingGameName.Trim();
+        if (gameName.Length > 128) { Error = "Game label must be 128 characters or fewer."; return; }
         try
         {
             var started = _clock();
-            _recorder.Start(definitions, started);
+            var includeRawFrames = IncludeRawFrames;
+            _recorder.Start(definitions, started, includeRawFrames, gameName);
             ResetReplay();
             _recordingPending = true;
+            _recordingStoppingAnnounced = false;
             RaiseFlags();
             IsRecording = _recorder.IsRecording;
             StartedUtc = started; EndedUtc = null; Rows.Clear();
             FilePath = _recorder.FilePath;
             Error = _recorder.Error ?? "";
             Status = IsRecording ? "Recording" : "Recording could not start";
-            if (IsRecording) RecordingStarted?.Invoke();
+            if (IsRecording) { RecordingIncludesRawFrames = includeRawFrames; IncludeRawFrames = false; RecordingStarted?.Invoke(); }
         }
         catch (Exception ex) { Error = ex.Message; Status = "Recording could not start"; }
     }
@@ -125,6 +171,7 @@ public sealed partial class SessionViewModel : ObservableObject
         IsBusy = true;
         try
         {
+            AnnounceRecordingStopping();
             await _recorder.StopAsync();
             IsRecording = _recorder.IsRecording;
             FilePath = _recorder.FilePath;
@@ -138,6 +185,7 @@ public sealed partial class SessionViewModel : ObservableObject
                 var path = FilePath;
                 var data = await Task.Run(() => SessionFile.Load(path));
                 ApplyLoaded(path, data);
+                ReportReady?.Invoke();
             }
             if (!string.IsNullOrEmpty(recorderError)) Error = recorderError;
             RaiseFlags();
@@ -162,25 +210,10 @@ public sealed partial class SessionViewModel : ObservableObject
     }
 
     public void RefreshLibrary()
-    {
-        RecordingLibrary.Clear();
-        if (string.IsNullOrWhiteSpace(RecordingDirectory) || !Directory.Exists(RecordingDirectory)) return;
-        try { foreach (var file in Directory.EnumerateFiles(RecordingDirectory, "*.stats-session.jsonl").Take(200).OrderByDescending(File.GetLastWriteTimeUtc)) RecordingLibrary.Add(file); }
-        catch (Exception ex) { Error = "Library unavailable: " + ex.Message; }
-    }
+        => RefreshLibraryCore();
 
     public async Task RefreshLibraryAsync()
-    {
-        var directory = RecordingDirectory;
-        if (string.IsNullOrWhiteSpace(directory)) return;
-        try
-        {
-            var files = await Task.Run(() => Directory.Exists(directory)
-                ? Directory.EnumerateFiles(directory, "*.stats-session.jsonl").Take(200).OrderByDescending(File.GetLastWriteTimeUtc).ToArray() : []);
-            RecordingLibrary.Clear(); foreach (var file in files) RecordingLibrary.Add(file);
-        }
-        catch (Exception ex) { Error = "Library unavailable: " + ex.Message; }
-    }
+        => await RefreshLibraryCoreAsync();
 
     private bool LoadFile(string path)
     {
@@ -209,13 +242,17 @@ public sealed partial class SessionViewModel : ObservableObject
             LoadAnnotations(path);
             SelectedReplayMetric = Rows.FirstOrDefault();
             RefreshDetective();
+            Report = SessionReports.Build(data, ReplayWindowStart);
+            ReportText = Report.Text;
+            HasReport = true;
     }
 
     private void ResetReplay()
     {
-        _loadedPath = null; _loaded = null; _comparison = null; _comparisonNotes = []; SelectedReplayMetric = null;
+        _loadedPath = null; _loaded = null; _comparison = null; _abFirst = null; _comparisonNotes = []; SelectedReplayMetric = null;
         Rows.Clear(); Bookmarks.Clear(); ReplayValues = []; ReplayTimesUtc = []; ReplayCursorUtc = null;
         ReplayMaximum = 0; ReplayIndex = 0; ReplayWindowStart = 0; ReplayText = "Open a recording to replay it.";
+        Report = null; HasReport = false; ReportText = "Open a recording to view its sampled post-game report.";
         AnalysisText = "Select two or more recorded metrics for association analysis.";
         AbText = "Open a second recording for aligned elapsed-time comparison.";
     }
@@ -223,6 +260,8 @@ public sealed partial class SessionViewModel : ObservableObject
     public bool OpenComparison(string path)
     {
         if (!CanOpenOrExport) return false;
+        _abFirst = null; _comparison = null; _comparisonNotes = [];
+        AbText = "Comparison unavailable until both recordings load successfully.";
         try { _comparison = SessionFile.Load(path); _comparisonNotes = SessionAnnotationStore.Load(path).Bookmarks; RefreshAb(); return true; }
         catch (Exception ex) { Error = ex.Message; AbText = "Could not load comparison recording."; return false; }
     }
@@ -230,17 +269,47 @@ public sealed partial class SessionViewModel : ObservableObject
     public async Task<bool> OpenComparisonAsync(string path)
     {
         if (!CanOpenOrExport || _loadedPath is null) return false;
+        _abFirst = null; _comparison = null; _comparisonNotes = [];
+        AbText = "Comparison unavailable until both recordings load successfully.";
         IsBusy = true;
         try
         {
-            var firstPath = _loadedPath;
-            var pair = await Task.Run(() => (SessionFile.LoadWindow(firstPath, 0, SessionFile.ChartSampleLimit), SessionFile.LoadWindow(path, 0, SessionFile.ChartSampleLimit), SessionAnnotationStore.Load(path).Bookmarks));
-            ApplyLoaded(firstPath, pair.Item1); ReplayWindowStart = 0; SummaryScope = "First replay window summary";
-            _comparison = pair.Item2; _comparisonNotes = pair.Item3; RefreshAb(); return true;
+            if (!ValidComparisonWindow()) return false;
+            var firstPath = _loadedPath; var oa = ComparisonOffsetASeconds; var ob = ComparisonOffsetBSeconds; var duration = ComparisonDurationSeconds;
+            var pair = await Task.Run(() => (SessionFile.LoadElapsedWindow(firstPath, oa, duration), SessionFile.LoadElapsedWindow(path, ob, duration), SessionAnnotationStore.Load(path).Bookmarks));
+            if (oa != ComparisonOffsetASeconds || ob != ComparisonOffsetBSeconds || duration != ComparisonDurationSeconds) return false;
+            _abFirst = Rebase(pair.Item1); _comparison = Rebase(pair.Item2); _comparisonNotes = pair.Item3; RefreshAb();
+            AbText += $"\nRequested {duration:0.##}s windows. Retained rows: A {pair.Item1.Coverage:P0}{(pair.Item1.IsTruncated ? " (truncated)" : "")}; B {pair.Item2.Coverage:P0}{(pair.Item2.IsTruncated ? " (truncated)" : "")}. Metric coverage above includes missing time bins."; return true;
         }
         catch (Exception ex) { Error = ex.Message; return false; }
         finally { IsBusy = false; }
     }
+
+    public async Task<bool> AddRepeatedRunAsync(bool first, string path)
+    {
+        var list = first ? RepeatedRunA : RepeatedRunB;
+        if (!CanOpenOrExport || list.Count >= 10 || list.Contains(path, StringComparer.OrdinalIgnoreCase) || !ValidComparisonWindow()) return false;
+        IsBusy = true;
+        try { await Task.Run(() => SessionFile.LoadElapsedWindow(path, first ? ComparisonOffsetASeconds : ComparisonOffsetBSeconds, ComparisonDurationSeconds)); list.Add(path); await RefreshVariationAsync(); return true; }
+        catch (Exception ex) { Error = ex.Message; return false; }
+        finally { IsBusy = false; }
+    }
+    private bool ValidComparisonWindow()
+    {
+        if (!double.IsFinite(ComparisonOffsetASeconds) || !double.IsFinite(ComparisonOffsetBSeconds) || !double.IsFinite(ComparisonDurationSeconds) || ComparisonOffsetASeconds is < 0 or > 86400 || ComparisonOffsetBSeconds is < 0 or > 86400 || ComparisonDurationSeconds is < 1 or > 3600)
+        { Error = "Offsets must be 0–86400 seconds and duration 1–3600 seconds."; return false; }
+        return true;
+    }
+    private static SessionData Rebase(SessionFile.ElapsedWindow window) => window.Data with { StartedUtc = window.WindowStartedUtc };
+    private async Task RefreshVariationAsync()
+    {
+        VariationText = "Repeated-run results unavailable until every selected recording loads successfully.";
+        if (RepeatedRunA.Count < 2 || RepeatedRunB.Count < 2) { VariationText = "Add at least two A and B runs for descriptive variation."; return; }
+        try { var aPaths = RepeatedRunA.ToArray(); var bPaths = RepeatedRunB.ToArray(); var oa = ComparisonOffsetASeconds; var ob = ComparisonOffsetBSeconds; var d = ComparisonDurationSeconds;
+            var result = await Task.Run(() => "Repeated-run variation (descriptive, not causal): A " + VariationTextFor(SessionAnalysis.Variation(aPaths.Select(p => Rebase(SessionFile.LoadElapsedWindow(p, oa, d))), d)) + "; B " + VariationTextFor(SessionAnalysis.Variation(bPaths.Select(p => Rebase(SessionFile.LoadElapsedWindow(p, ob, d))), d))); if (oa == ComparisonOffsetASeconds && ob == ComparisonOffsetBSeconds && d == ComparisonDurationSeconds) VariationText = result; }
+        catch (Exception ex) { Error = ex.Message; }
+    }
+    private static string VariationTextFor(IEnumerable<SessionRunVariation> runs) => string.Join("; ", runs.OrderBy(r => Stats.Core.Frames.FrameMetrics.IsFrameMetric(r.MetricId) ? 0 : 1).Take(12).Select(r => $"{ShortId(r.MetricId)} n={r.Runs}/{r.TotalRuns}, mean {r.Mean:0.##} {r.Unit}, range {r.Minimum:0.##}–{r.Maximum:0.##}, sd {r.StandardDeviation:0.##}, coverage {r.Coverage:P0}")) + " (up to 12 metrics shown)";
 
     public async Task<bool> LoadReplayWindowAsync(long firstSample, int maximumSamples)
     {
@@ -254,6 +323,7 @@ public sealed partial class SessionViewModel : ObservableObject
             if (generation != _loadGeneration || path != _loadedPath) return false;
             var metricId = SelectedReplayMetric?.Series.Definition.Id;
             ApplyLoaded(path, loaded); ReplayWindowStart = firstSample; ReplayWindowSize = maximumSamples;
+            Report = SessionReports.Build(loaded, firstSample, windowSummaries: true); ReportText = Report.Text; HasReport = true;
             SummaryScope = "Current replay window summary";
             ReplayMaximum = Math.Max(0, _loaded.Series.FirstOrDefault()?.Values.Length - 1 ?? 0); ReplayIndex = 0;
             SelectedReplayMetric = Rows.FirstOrDefault(row => row.Series.Definition.Id == metricId) ?? Rows.FirstOrDefault();
@@ -321,11 +391,13 @@ public sealed partial class SessionViewModel : ObservableObject
     }
     private void RefreshAb()
     {
-        if (_loaded is null || _comparison is null) return;
-        var rows = SessionAnalysis.Compare(_loaded, _comparison);
-        AbText = rows.Count == 0 ? "No compatible metrics." : "First bounded windows, aligned elapsed-time bin means; no interpolation. " + string.Join("; ", rows.Take(4).Select(r => $"{r.MetricId}: Δ {r.Delta?.ToString("F2") ?? "—"} {r.Unit}, relative {r.RelativeDelta?.ToString("P1") ?? "n/a"}, {r.DurationSeconds:F1}s, {r.FirstCount}/{r.SecondCount} samples, {r.PairCount} paired {r.BinSeconds:F1}s bins, coverage {r.Coverage:P0} (A {r.FirstCoverage:P0}, B {r.SecondCoverage:P0})"));
-        AbText += "\nA experiment notes: " + Notes(Bookmarks, _loaded.SampleCount) + "\nB experiment notes: " + Notes(_comparisonNotes, _comparison.SampleCount);
+        if ((_abFirst ?? _loaded) is not { } first || _comparison is null) return;
+        var rows = _abFirst is null ? SessionAnalysis.Compare(first, _comparison) : SessionAnalysis.CompareWindow(first, _comparison, ComparisonDurationSeconds);
+        AbText = rows.Count == 0 ? "No compatible metrics." : "Selected bounded windows, aligned elapsed-time bin means; no interpolation. " + string.Join("; ", rows.OrderBy(r => Stats.Core.Frames.FrameMetrics.IsFrameMetric(r.MetricId) ? 0 : 1).Take(12).Select(r => $"{ShortId(r.MetricId)}: Δ {r.Delta?.ToString("F2") ?? "—"} {r.Unit}, relative {r.RelativeDelta?.ToString("P1") ?? "n/a"}, {r.DurationSeconds:F1}s, {r.FirstCount}/{r.SecondCount} samples, {r.PairCount} paired {r.BinSeconds:F1}s bins, coverage {r.Coverage:P0} (A {r.FirstCoverage:P0}, B {r.SecondCoverage:P0})"));
+        AbText += "\nA experiment notes: " + Notes(Bookmarks, first.SampleCount) + "\nB experiment notes: " + Notes(_comparisonNotes, _comparison.SampleCount);
+        if (rows.Count > 12) AbText += $"\n{rows.Count - 12} additional metrics not shown.";
     }
+    private static string ShortId(string id) => id.Length <= 80 ? id : id[..77] + "...";
     private static string Notes(IEnumerable<SessionBookmark> notes, long count) =>
         string.Join("; ", notes.Where(n => n.SampleIndex >= 0 && n.SampleIndex < count).Select(n => $"Sample {n.SampleIndex + 1}: {n.Note}").DefaultIfEmpty("None recorded."));
     private void RefreshDetective()
@@ -368,5 +440,10 @@ public sealed partial class SessionViewModel : ObservableObject
         try { row.IsSelected = false; }
         finally { _syncingSelection = false; }
     }
-    private void RaiseFlags() { OnPropertyChanged(nameof(CanStart)); OnPropertyChanged(nameof(CanStop)); OnPropertyChanged(nameof(CanOpenOrExport)); }
+    private void AnnounceRecordingStopping()
+    {
+        if (_recordingStoppingAnnounced || !_recordingPending) return;
+        _recordingStoppingAnnounced = true; RecordingStopping?.Invoke();
+    }
+    private void RaiseFlags() { OnPropertyChanged(nameof(CanStart)); OnPropertyChanged(nameof(CanStop)); OnPropertyChanged(nameof(CanOpenOrExport)); OnPropertyChanged(nameof(CanConfigureRawFrames)); }
 }

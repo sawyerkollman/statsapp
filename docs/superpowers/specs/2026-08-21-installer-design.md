@@ -76,3 +76,35 @@ Version: CI derives it from the tag (`v1.1.0` → `1.1.0`). Local default `0.0.0
 ## Out of scope
 
 Code signing, auto-update, ARM64 build, MSI/MSIX, per-user install, uninstalling PawnIO.
+
+## Upgrade repair — 2026-09-21
+
+The beta.5 in-app updater log records `PrepareToInstall: taskkill could not be started: The system
+cannot find the file specified`, followed by Restart Manager finding Stats and PresentMon still
+using installation files. The setup script contains a literal tab followed by `askkill.exe` in
+the upgrade command's executable path; the uninstaller's `taskkill.exe` path is correct.
+
+Repair the upgrade executable path and fail with an actionable close/retry message if the shutdown
+command cannot launch. Preserve the existing command scope, Restart Manager behavior, and app-owned
+clean shutdown/fan restoration. Add a read-only packaging preflight that resolves installer system
+executable references and rejects control characters/missing executables before an installer is built.
+Prove the check rejects the original malformed script and accepts the repair, compile the installer,
+and run the required zero-warning solution build/tests. Do not run an installer, kill production
+processes, or take desktop focus during this validation.
+
+The workaround for the already-published beta.5 installer is to exit Stats using its
+tray Exit command before running the downloaded installer. Closing the dashboard alone hides it.
+Replacing beta.5's published tag or installer is outside this repair; a corrected package should use
+a new beta version.
+
+Repair validation: the read-only preflight accepts both corrected `ExpandConstant('{sys}...exe')`
+calls and rejects a temporary copy of the original script at its literal-tab path. Packaging with
+`installer/build.ps1 -Version 1.11.0-beta.6` succeeds using Inno Setup 6.7.3, producing
+`dist/Stats-Setup-1.11.0-beta.6.exe` without running it. The full Release solution build has zero
+warnings/errors; all 1392 tests pass (1022 Core + 370 UiPreview), zero failed/skipped.
+An actual upgrade over the running installed app remains untested, to preserve the user's running
+game and desktop focus. The in-app helper waits for its own launching PID; the log does not prove
+why a Stats process remained, so this repair does not change the updater or app lifecycle.
+Independent Sol review confirmed the malformed path and accepted the bounded repair with no remaining
+material findings. Terra implemented the script fix/check; Sol validated build/tests. Effective model
+metadata remains unobservable; the existing explicitly configured roles were reused.

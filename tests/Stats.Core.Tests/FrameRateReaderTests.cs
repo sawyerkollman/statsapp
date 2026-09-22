@@ -100,6 +100,7 @@ public class FrameRateReaderTests
         Assert.Contains("fps.low1", s.Values.Keys);
         Assert.Contains("fps.frametime", s.Values.Keys);
         Assert.All(s.Values.Values, v => Assert.Null(v));
+        Assert.Equal(FrameCaptureState.Inactive, h.Reader.CaptureStatus.State);
     }
 
     [Fact]
@@ -113,6 +114,39 @@ public class FrameRateReaderTests
         Assert.Equal(30f, s.Values["fps.avg"]);
         Assert.Equal(16.6f, s.Values["fps.frametime"]!.Value, 2);
         Assert.Null(s.Values["fps.low1"]); // < 100 frames
+        Assert.Equal(FrameCaptureState.Collecting, h.Reader.CaptureStatus.State);
+    }
+
+    [Fact]
+    public void FrameRecorded_PublishesOnlyFramesMatchingThePidLastReadAsForeground()
+    {
+        var h = new Harness();
+        var received = new List<RecordedFrame>();
+        h.Reader.FrameRecorded += received.Add;
+        h.Reader.SetActive(true);
+        h.Reader.Read(); // establishes the foreground PID on the poller path
+        h.Source.Emit(Header);
+        h.EmitFrames(999, 1, 25);
+        h.EmitFrames(1234, 1, 16.6);
+
+        var frame = Assert.Single(received);
+        Assert.Equal(1234, frame.Pid);
+        Assert.Equal(16.6, frame.FrameTimeMs, 2);
+        Assert.Equal(h.Now, frame.TimestampUtc);
+    }
+
+    [Fact]
+    public void FrameRecorded_DoesNotUseStaleForegroundAfterInactiveRead()
+    {
+        var h = new Harness();
+        var count = 0;
+        h.Reader.FrameRecorded += _ => count++;
+        h.Reader.SetActive(true);
+        h.Reader.Read();
+        h.Reader.SetActive(false);
+        h.Source.Emit(Header);
+        h.Source.Emit("game.exe,1234,16.6");
+        Assert.Equal(0, count);
     }
 
     [Fact]
@@ -124,8 +158,11 @@ public class FrameRateReaderTests
         h.EmitFrames(1234, 60, 16.6);
         h.ForegroundPid = 999;
         Assert.Null(h.Reader.Read().Values["fps.avg"]);
+        Assert.Equal(FrameCaptureState.Waiting, h.Reader.CaptureStatus.State);
+        Assert.Equal("Waiting for foreground app frames.", h.Reader.CaptureStatus.Reason);
         h.ForegroundPid = null;
         Assert.Null(h.Reader.Read().Values["fps.avg"]);
+        Assert.Equal("Waiting for a foreground app.", h.Reader.CaptureStatus.Reason);
     }
 
     [Fact]
@@ -147,6 +184,7 @@ public class FrameRateReaderTests
         h.Now = h.Now.AddSeconds(.5);
         h.EmitFrames(1234, 120, 16.6);
         Assert.Equal(60f, h.Reader.Read().Values["fps.avg"]);
+        Assert.Equal(FrameCaptureState.Receiving, h.Reader.CaptureStatus.State);
     }
 
     [Fact]
@@ -161,6 +199,7 @@ public class FrameRateReaderTests
         var values = h.Reader.Read().Values;
         Assert.Null(values["fps.avg"]);
         Assert.Null(values["fps.frametime"]);
+        Assert.Equal(FrameCaptureState.Waiting, h.Reader.CaptureStatus.State);
     }
 
     [Fact]
@@ -220,6 +259,7 @@ public class FrameRateReaderTests
         Assert.False(h.Reader.IsAvailable);
         Assert.Contains("access denied", h.Reader.StatusMessage, StringComparison.OrdinalIgnoreCase);
         Assert.Null(h.Reader.Read().Values["fps.avg"]);
+        Assert.Equal(FrameCaptureState.Unavailable, h.Reader.CaptureStatus.State);
     }
 
     [Fact]
@@ -308,6 +348,26 @@ public class FrameRateReaderTests
         Assert.Null(h.Reader.Read().Values["fps.avg"]);     // none of its frames reached the aggregator
         Assert.True(second.IsRunning);
         Assert.True(h.Reader.IsAvailable);
+    }
+
+    [Fact]
+    public void RestartRequiresFreshForegroundQualificationBeforePublishingRawFrames()
+    {
+        var h = new Harness();
+        using var reader = h.Reader;
+        var frames = new List<RecordedFrame>();
+        reader.FrameRecorded += frames.Add;
+        reader.SetActive(true);
+        reader.Read();
+        h.Source.Die(1, "restart");
+        h.ElapseBackoff();
+        h.Source.Emit(Header);
+        h.EmitFrames(1234, 1, 16);
+        Assert.Empty(frames);
+        h.ForegroundPid = 5678;
+        reader.Read();
+        h.EmitFrames(5678, 1, 16);
+        Assert.Equal(5678, Assert.Single(frames).Pid);
     }
 
     [Fact]
