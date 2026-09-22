@@ -1,6 +1,7 @@
 # Gaming command centre
 
-Development branch: `feature/gaming-command-centre`. These changes are not yet published.
+The command-centre features shipped in beta 5; beta 6 repaired the installer launch path.
+The next development pass is documented in [Gaming workflow depth](gaming-workflow-depth.md).
 
 ## Where to find it
 
@@ -25,11 +26,11 @@ Development branch: `feature/gaming-command-centre`. These changes are not yet p
 
 ## Important limits
 
-Game profile choices persist after leaving the game, including theme and active alert rules. Another
-profile or a manual change replaces them; automatic restoration is not implemented. Reports appear
+In beta 6, game profile choices persist after leaving the game, including theme and active alert rules.
+The next development pass adds optional restoration that preserves manual edits. Reports appear
 without taking focus away from a game.
 
-Recordings contain poll-sampled metrics, not an exhaustive per-frame trace. Slow-frame entries are
+Beta 6 recordings contain poll-sampled metrics, not an exhaustive per-frame trace. Slow-frame entries are
 the largest sampled frame times in the retained replay window, not proven hitch events. Concurrent
 sensor changes and correlation do not establish a cause. Reports identify full-recording totals and
 window-only results. Comparing like-for-like workloads and repeating both runs remains essential.
@@ -39,8 +40,8 @@ Output prioritizes frame metrics and displays up to twelve metrics. Notebook lim
 1000 characters per text field and 512 KB total. A notebook that fails to load is not overwritten;
 back it up and repair/move it aside while Stats is closed, then restart before saving a new notebook.
 
-Custom overlays support 32 cards on a 1920×1080 logical canvas. Scenes save geometry locally; portable
-export of custom-canvas scenes currently reports an explicit unsupported message. If metric selection
+Custom overlays support 32 cards on a 1920×1080 logical canvas. Scenes save geometry locally; in beta 6,
+portable export of custom-canvas scenes reports an explicit unsupported message. If metric selection
 adds a card without saved geometry, the overlay uses automatic layout so the new metric stays visible;
 saved geometry is retained. Reopen the editor to arrange the selection.
 

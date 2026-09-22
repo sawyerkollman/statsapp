@@ -6,6 +6,7 @@ using Stats.Core.Alerts;
 using Stats.Core.Recording;
 using Stats.Core.Sensors;
 using Stats.Core.ViewModels;
+using Stats.Core.Frames;
 
 namespace Stats.App;
 
@@ -22,6 +23,7 @@ public partial class App
     private bool _alertsDirty;
     private bool _alertTransitionPending;
     private string _recordingDirectory = "";
+    private Action<RecordedFrame>? _recordingFrameSink;
 
     private void InitializeMonitoring(string directory)
     {
@@ -72,6 +74,7 @@ public partial class App
     private void StopMonitoring()
     {
         _alertSaveTimer?.Stop();
+        DetachRecordingFrames();
         _recorder?.Dispose(); // drain after the existing poller-stop/fan-restore sequence
         _labVm?.Dispose();
         _alertSave?.GetAwaiter().GetResult(); // writer never awaits the Dispatcher
@@ -111,22 +114,44 @@ public partial class App
                 var byId = _definitions.ToDictionary(definition => definition.Id);
                 return _settings.DashboardMetrics.Concat(_settings.OverlayMetrics).Distinct()
                     .Where(byId.ContainsKey).Select(id => byId[id]).ToArray();
-            }, recordingDirectory: _recordingDirectory);
+            }, recordingDirectory: _recordingDirectory,
+                rawCaptureAvailable: () => _frameReader is { IsActive: true, IsAvailable: true });
             _sessionVm.OpenComparisonRequested += series => ShowCapturedComparison(
                 $"Recorded comparison - {_sessionVm.StartedUtc?.ToLocalTime():g}", series);
             _sessionVm.RecordingStarted += () =>
             {
+                DetachRecordingFrames();
+                if (_sessionVm.RecordingIncludesRawFrames && _frameReader is not null)
+                {
+                    _recordingFrameSink = _recorder.CreateFrameSink();
+                    _frameReader.FrameRecorded += _recordingFrameSink;
+                }
                 if (_startingAutoRecording) return;
                 _autoRecordingOwned = false;
                 _labVm?.AcknowledgeRecording(false, false);
             };
+            _sessionVm.RecordingStopping += DetachRecordingFrames;
+            _sessionVm.ReportReady += () =>
+            {
+                _postGameRecordingPath = _sessionVm.HasReport ? _sessionVm.FilePath : null;
+                _labVm?.SetPostGameReport(_sessionVm.HasReport ? _sessionVm.ReportText : null);
+            };
         }
+    }
+
+    private void DetachRecordingFrames()
+    {
+        if (_recordingFrameSink is not null && _frameReader is not null)
+            _frameReader.FrameRecorded -= _recordingFrameSink;
+        _recordingFrameSink = null;
     }
 
     private void ShowSessions()
     {
         EnsureSessionViewModel();
         if (_sessionVm is null) return;
+        if (_sessionVm.CanStart && string.IsNullOrWhiteSpace(_sessionVm.RecordingGameName))
+            _sessionVm.RecordingGameName = _recordingGameName ?? "";
         _sessions ??= new SessionWindow { DataContext = _sessionVm };
         _sessionVm!.RefreshRecorderState();
         ShowMonitoringWindow(_sessions);

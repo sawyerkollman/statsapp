@@ -4,7 +4,7 @@ param([string]$ScriptPath)
 if ([string]::IsNullOrWhiteSpace($ScriptPath)) { $ScriptPath = Join-Path $PSScriptRoot 'Stats.iss' }
 
 $text = Get-Content -LiteralPath $ScriptPath -Raw
-$references = [regex]::Matches($text, "ExpandConstant\('\{sys\}([^']+?\.exe)'\)")
+$references = [regex]::Matches($text, '\{sys\}([^''"\r\n]+?\.exe)')
 if ($references.Count -eq 0) { throw 'No {sys} executable references found.' }
 
 $systemDirectory = [Environment]::SystemDirectory

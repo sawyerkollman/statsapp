@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Text;
 using System.Text.Json;
+using Stats.Core.Frames;
 using Stats.Core.Metrics;
 
 namespace Stats.Core.Recording;
@@ -8,6 +9,7 @@ namespace Stats.Core.Recording;
 public static class SessionFile
 {
     public const int ChartSampleLimit = 3600;
+    public const int MaxRawFramesForExactSummary = 5_000_000;
 
     public sealed record ElapsedWindow(SessionData Data, double OffsetSeconds, double DurationSeconds,
         int AvailableSamples, bool IsTruncated)
@@ -32,6 +34,8 @@ public static class SessionFile
         double[] sums = [];
         long[] counts = [];
         float?[] mins = [], maxs = [];
+        var frames = new List<double>();
+        long hitchCount = 0;
         var result = Read(path, definitions =>
         {
             values = definitions.Select(_ => new Queue<float?>()).ToArray();
@@ -56,14 +60,26 @@ public static class SessionFile
                 mins[i] = mins[i] is float min ? Math.Min(min, number) : number;
                 maxs[i] = maxs[i] is float max ? Math.Max(max, number) : number;
             }
-        }, cancellationToken);
+        }, cancellationToken, frame =>
+        {
+            if (frames.Count == MaxRawFramesForExactSummary)
+                throw new InvalidDataException($"Raw-frame summary exceeds the {MaxRawFramesForExactSummary:N0}-frame exact-analysis limit.");
+            frames.Add(frame.FrameTimeMs);
+            if (frame.FrameTimeMs > 50) hitchCount++;
+        });
         var timestamps = times.ToArray();
         var series = result.Definitions.Select((definition, i) =>
             new MetricSeries(definition, timestamps, values[i].ToArray())).ToArray();
         var summaries = result.Definitions.Select((definition, i) => new SessionMetricSummary(
             definition.Id, mins[i], counts[i] == 0 ? null : (float)(sums[i] / counts[i]), maxs[i])).ToArray();
         return new(result.StartedUtc, result.EndedUtc, result.EndedUtc is not null,
-            result.SampleCount, series, summaries);
+            result.SampleCount, series, summaries)
+        {
+            GameName = result.GameName,
+            IncludesRawFrames = result.IncludesRawFrames,
+            LastObservedUtc = result.LastObservedUtc,
+            FrameSummary = frames.Count == 0 ? null : FrameSummary(frames, hitchCount),
+        };
     }
 
     /// <summary>Loads a bounded sample-index window without changing the legacy newest-window Load contract.</summary>
@@ -87,7 +103,7 @@ public static class SessionFile
         }, cancellationToken);
         var series = definitions.Select((definition, i) => new MetricSeries(definition, times.ToArray(), values[i].ToArray())).ToArray();
         var summaries = series.Select(series => Summary(series)).ToArray();
-        return new(result.StartedUtc, result.EndedUtc, result.EndedUtc is not null, result.SampleCount, series, summaries);
+        return new(result.StartedUtc, result.EndedUtc, result.EndedUtc is not null, result.SampleCount, series, summaries) { GameName = result.GameName, IncludesRawFrames = result.IncludesRawFrames, LastObservedUtc = result.LastObservedUtc };
     }
 
     /// <summary>Streams an elapsed-time window without retaining samples outside it.</summary>
@@ -108,7 +124,7 @@ public static class SessionFile
             times.Add(at); for (var i = 0; i < row.Length; i++) values[i].Add(row[i]);
         }, cancellationToken, out resultStart);
         var series = definitions.Select((definition, i) => new MetricSeries(definition, times.ToArray(), values[i].ToArray())).ToArray();
-        var data = new SessionData(result.StartedUtc, result.EndedUtc, result.EndedUtc is not null, result.SampleCount, series, series.Select(Summary).ToArray());
+        var data = new SessionData(result.StartedUtc, result.EndedUtc, result.EndedUtc is not null, result.SampleCount, series, series.Select(Summary).ToArray()) { GameName = result.GameName, IncludesRawFrames = result.IncludesRawFrames, LastObservedUtc = result.LastObservedUtc };
         return new(data, offsetSeconds, durationSeconds, available, truncated);
     }
 
@@ -117,6 +133,15 @@ public static class SessionFile
         var finite = series.Values.Where(v => v is float).Select(v => v!.Value).ToArray();
         return new(series.Definition.Id, finite.Length == 0 ? null : finite.Min(), finite.Length == 0 ? null : finite.Average(), finite.Length == 0 ? null : finite.Max());
     }
+
+    private static SessionFrameSummary FrameSummary(List<double> frames, long hitchCount)
+    {
+        frames.Sort();
+        return new(frames.Count, frames.Average(), frames[^1], Percentile(frames, .50), Percentile(frames, .95), Percentile(frames, .99), hitchCount);
+    }
+
+    private static double Percentile(IReadOnlyList<double> sorted, double quantile) =>
+        sorted[(int)Math.Ceiling(quantile * sorted.Count) - 1];
 
     public static void ExportCsv(string source, string destination)
     {
@@ -138,25 +163,31 @@ public static class SessionFile
         finally { if (File.Exists(temporary)) File.Delete(temporary); }
     }
 
-    private sealed record ReadResult(MetricDefinition[] Definitions, DateTime StartedUtc, DateTime? EndedUtc, long SampleCount);
+    private sealed record ReadResult(MetricDefinition[] Definitions, DateTime StartedUtc, DateTime? EndedUtc, long SampleCount, string? GameName, bool IncludesRawFrames, DateTime LastObservedUtc);
 
-    private static ReadResult Read(string path, Action<MetricDefinition[]> header, Action<DateTime, float?[]> sample, CancellationToken cancellationToken = default)
-        => Read(path, header, sample, cancellationToken, out _);
-    private static ReadResult Read(string path, Action<MetricDefinition[]> header, Action<DateTime, float?[]> sample, CancellationToken cancellationToken, out DateTime resultStart)
+    private static ReadResult Read(string path, Action<MetricDefinition[]> header, Action<DateTime, float?[]> sample, CancellationToken cancellationToken = default, Action<RecordedFrame>? frame = null)
+        => Read(path, header, sample, cancellationToken, out _, frame);
+    private static ReadResult Read(string path, Action<MetricDefinition[]> header, Action<DateTime, float?[]> sample, CancellationToken cancellationToken, out DateTime resultStart, Action<RecordedFrame>? frame = null)
     {
         using var reader = new StreamReader(new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite));
         var first = ReadLine(reader, out _) ?? throw new InvalidDataException("Missing session header.");
         using var document = JsonDocument.Parse(first);
         var root = document.RootElement;
-        if (root.GetProperty("type").GetString() != "header" || root.GetProperty("version").GetInt32() != 1)
+        if (root.GetProperty("type").GetString() != "header" || root.GetProperty("version").GetInt32() is not (1 or 2))
             throw new InvalidDataException("Unsupported session format.");
+        var version = root.GetProperty("version").GetInt32();
+        var includesFrames = version == 2 && root.TryGetProperty("includeFrames", out var includeFrames) && includeFrames.GetBoolean();
         var started = root.GetProperty("startedUtc").GetDateTime().ToUniversalTime();
         resultStart = started;
         var definitions = root.GetProperty("metrics").Deserialize<MetricDefinition[]>()
             ?? throw new InvalidDataException("Missing session metrics.");
         ValidateDefinitions(definitions);
         header(definitions);
+        var gameName = version == 2 && root.TryGetProperty("gameName", out var gameNameElement) && gameNameElement.ValueKind != JsonValueKind.Null
+            ? gameNameElement.GetString() : null;
+        if (gameName?.Length > 1024) throw new InvalidDataException("Session game name is too long.");
         DateTime previous = started;
+        DateTime latest = started;
         DateTime? end = null;
         long count = 0;
         for (string? line; (line = ReadLine(reader, out var terminated)) is not null;)
@@ -177,7 +208,21 @@ public static class SessionFile
                 if (type == "end")
                 {
                     end = row.GetProperty("endedUtc").GetDateTime().ToUniversalTime();
-                    if (end < previous) throw new InvalidDataException("Session end precedes its samples.");
+                    if (end < latest) throw new InvalidDataException("Session end precedes its samples or frames.");
+                    continue;
+                }
+                if (type == "frame")
+                {
+                    includesFrames = true;
+                    if (version != 2) throw new InvalidDataException("Raw frames require session format version 2.");
+                    var frameAt = row.GetProperty("timestampUtc").GetDateTime().ToUniversalTime();
+                    if (frameAt < started) throw new InvalidDataException("Raw frame precedes the session start.");
+                    if (frameAt > latest) latest = frameAt;
+                    var pid = row.GetProperty("pid").GetInt32();
+                    var milliseconds = row.GetProperty("frameTimeMs").GetDouble();
+                    if (pid <= 0 || !double.IsFinite(milliseconds) || milliseconds <= 0)
+                        throw new InvalidDataException("Invalid raw frame.");
+                    frame?.Invoke(new RecordedFrame(frameAt, pid, milliseconds));
                     continue;
                 }
                 if (type != "sample") throw new InvalidDataException("Unknown session row.");
@@ -196,9 +241,10 @@ public static class SessionFile
                 sample(at, values);
                 count++;
                 previous = at;
+                if (at > latest) latest = at;
             }
         }
-        return new(definitions, started, end, count);
+        return new(definitions, started, end, count, gameName, includesFrames, latest);
     }
 
     private static string? ReadLine(StreamReader reader, out bool terminated)

@@ -70,4 +70,45 @@ public sealed class OverlayEditorTests
         Assert.Equal("Select FPS in Overlay metrics to use FPS-only mode.", vm.FrameStatusText);
         Assert.Equal(new[] { cpu.Id }, settings.OverlayMetrics);
     }
+
+    [Fact]
+    public void Editor_GroupMoveUndoAndPortableImportRequireExplicitMapping()
+    {
+        var first = new MetricDefinition("cpu.a", "CPU A", MetricGroup.Cpu, "CPU", "%");
+        var second = new MetricDefinition("cpu.b", "CPU B", MetricGroup.Cpu, "CPU", "%");
+        var settings = new AppSettings { OverlayMetrics = [first.Id, second.Id] };
+        var vm = new OverlayEditorViewModel(settings, new MetricStore([first, second]), () => { });
+        vm.Select(vm.Slots[0], false); vm.Select(vm.Slots[1], true);
+        var gap = vm.Slots[1].X - vm.Slots[0].X;
+        vm.Nudge(vm.Slots[0], 8, 0);
+        Assert.Equal(gap, vm.Slots[1].X - vm.Slots[0].X);
+        vm.UndoCommand.Execute(null);
+        Assert.Equal(24, vm.Slots[0].X);
+
+        var json = vm.ExportDraft();
+        vm.ImportDraft(json);
+        Assert.Equal(2, vm.ImportMappings.Count);
+        vm.ImportMappings[0].Selected = first;
+        vm.ImportMappings[1].Selected = second;
+        vm.ImportMappedCommand.Execute(null);
+        Assert.Empty(vm.Error);
+        Assert.Equal(2, vm.Slots.Count);
+    }
+
+    [Fact]
+    public void Editor_FitAndBorderUndoAndInvalidImportAreDraftOnly()
+    {
+        var metric = new MetricDefinition("cpu", "CPU", MetricGroup.Cpu, "CPU", "%");
+        var settings = new AppSettings { OverlayMetrics = [metric.Id] };
+        var vm = new OverlayEditorViewModel(settings, new MetricStore([metric]), () => { });
+        vm.FitToViewport(80, 80);
+        Assert.Equal(.1, vm.Zoom);
+        vm.ToggleNeonBorderCommand.Execute(null);
+        Assert.True(vm.FixedNeonBorder);
+        vm.UndoCommand.Execute(null);
+        Assert.False(vm.FixedNeonBorder);
+        vm.ImportDraft("{");
+        Assert.Empty(vm.ImportMappings);
+        Assert.Null(settings.OverlayCanvas);
+    }
 }

@@ -1,3 +1,5 @@
+using Stats.Core.Metrics;
+
 namespace Stats.Core.Settings;
 
 /// <summary>Optional, bounded overlay geometry. Null keeps the original automatic overlay.</summary>
@@ -35,4 +37,28 @@ public sealed class OverlayCanvasElement
         double.IsFinite(Width) && Width is >= OverlayCanvasLayout.MinWidth and <= OverlayCanvasLayout.MaxWidth &&
         double.IsFinite(Height) && Height is >= OverlayCanvasLayout.MinHeight and <= OverlayCanvasLayout.MaxHeight &&
         X + Width <= OverlayCanvasLayout.MaxX && Y + Height <= OverlayCanvasLayout.MaxY;
+}
+
+/// <summary>Portable draft-only canvas. Metric ids are intentionally replaced by explicit compatible references.</summary>
+public sealed class PortableOverlayCanvas
+{
+    public int Version { get; set; } = 1;
+    public bool FixedNeonBorder { get; set; }
+    public List<PortableOverlayCanvasElement> Elements { get; set; } = new();
+    public void Validate()
+    {
+        if (Version != 1 || Elements is null || Elements.Count is 0 or > OverlayCanvasLayout.MaxElements ||
+            Elements.Any(e => e is null || !Enum.IsDefined(e.Group) || e.Unit is null || e.Unit.Length > 100 || !e.ToElement("x").IsValid()))
+            throw new InvalidDataException("Invalid portable overlay canvas.");
+    }
+}
+public sealed class PortableOverlayCanvasElement
+{
+    public MetricGroup Group { get; set; }
+    public string Unit { get; set; } = "";
+    public double X { get; set; }
+    public double Y { get; set; }
+    public double Width { get; set; } = 180;
+    public double Height { get; set; } = 90;
+    public OverlayCanvasElement ToElement(string metricId) => new() { MetricId = metricId, X = X, Y = Y, Width = Width, Height = Height };
 }

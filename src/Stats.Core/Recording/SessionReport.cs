@@ -12,7 +12,7 @@ public static class SessionReports
 {
     public static SessionReport Build(SessionData data, long sampleOffset = 0, bool windowSummaries = false)
     {
-        var duration = (data.EndedUtc ?? data.Series.SelectMany(s => s.TimesUtc).DefaultIfEmpty(data.StartedUtc).Max()) - data.StartedUtc;
+        var duration = (data.EndedUtc ?? data.LastObservedUtc ?? data.Series.SelectMany(s => s.TimesUtc).DefaultIfEmpty(data.StartedUtc).Max()) - data.StartedUtc;
         var frame = data.Series.FirstOrDefault(s => s.Definition.Id == FrameMetrics.FrameTimeId);
         var spikes = frame is null ? [] : frame.Values.Select((value, index) => (value, index)).Where(x => x.value is float)
             .OrderByDescending(x => x.value).Take(20).Select(x => new SessionSpike(sampleOffset + x.index, frame.TimesUtc[x.index], x.value!.Value,
@@ -22,6 +22,13 @@ public static class SessionReports
                         return $"{x.s.Definition.DisplayName}: {ValueFormatter.Format(x.s.Definition, value)} (Δ {(value - baseline):+0.##;-0.##;0} {x.s.Definition.Unit} vs window mean)"; }).ToArray())).ToArray();
         var text = $"Full recording: duration {duration:g}; {(data.IsComplete ? "complete" : "incomplete")}; {data.SampleCount} sampled snapshots. " +
             "Top sampled frame times are not proven stutters. FPS and rolling 1% low are poll-sampled summaries, not true per-frame statistics.";
+        text += data.FrameSummary is { } raw
+            ? $"\nRaw frame timing (session opt-in, exact whole-file summary): {raw.Count:N0} frames; p50 {raw.P50FrameTimeMs:0.##} ms, p95 {raw.P95FrameTimeMs:0.##} ms, p99 {raw.P99FrameTimeMs:0.##} ms; mean {raw.MeanFrameTimeMs:0.##} ms, max {raw.MaxFrameTimeMs:0.##} ms; {raw.HitchFrameCount:N0} frames above 50 ms. This descriptive threshold does not identify a cause."
+            : data.IncludesRawFrames && windowSummaries
+                ? "\nRaw frame timing was opted in. Reopen the full recording for its exact whole-file raw-frame summary; replay windows do not recalculate it."
+            : data.IncludesRawFrames
+                ? "\nRaw frame timing was opted in, but this session contains no foreground-qualified raw frames."
+                : "\nRaw frame timing was not opted in for this session; all frame metrics above are poll-sampled.";
         var windowCount = data.Series.FirstOrDefault()?.Values.Length ?? 0;
         text += $"\nSlow-frame list covers only {windowCount} retained snapshots starting at sample {sampleOffset + 1}. " +
             (windowSummaries ? "Highlights cover this replay window only." : "Highlights summarize the full recording.");

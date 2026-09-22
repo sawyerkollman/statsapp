@@ -35,8 +35,10 @@ public sealed partial class SessionViewModel : ObservableObject
     private readonly SessionRecorder _recorder;
     private readonly Func<IReadOnlyList<MetricDefinition>> _selectedDefinitions;
     private readonly Func<DateTime> _clock;
+    private readonly Func<bool> _rawCaptureAvailable;
     private bool _syncingSelection;
     private bool _recordingPending;
+    private bool _recordingStoppingAnnounced;
     private SessionData? _loaded;
     private SessionData? _comparison;
     private SessionData? _abFirst;
@@ -45,8 +47,8 @@ public sealed partial class SessionViewModel : ObservableObject
     private IReadOnlyList<SessionBookmark> _comparisonNotes = [];
     private bool _settingCursor;
 
-    public SessionViewModel(SessionRecorder recorder, Func<IReadOnlyList<MetricDefinition>> selectedDefinitions, Func<DateTime>? clock = null, string? recordingDirectory = null)
-    { _recorder = recorder; _selectedDefinitions = selectedDefinitions; _clock = clock ?? (() => DateTime.UtcNow); RecordingDirectory = recordingDirectory; }
+    public SessionViewModel(SessionRecorder recorder, Func<IReadOnlyList<MetricDefinition>> selectedDefinitions, Func<DateTime>? clock = null, string? recordingDirectory = null, Func<bool>? rawCaptureAvailable = null)
+    { _recorder = recorder; _selectedDefinitions = selectedDefinitions; _clock = clock ?? (() => DateTime.UtcNow); _rawCaptureAvailable = rawCaptureAvailable ?? (() => false); RecordingDirectory = recordingDirectory; }
 
     public ObservableCollection<SessionSeriesViewModel> Rows { get; } = new();
     public ObservableCollection<SessionBookmark> Bookmarks { get; } = new();
@@ -55,12 +57,16 @@ public sealed partial class SessionViewModel : ObservableObject
     public ObservableCollection<string> RepeatedRunB { get; } = new();
     public event Action<IReadOnlyList<MetricSeries>>? OpenComparisonRequested;
     public event Action? RecordingStarted;
+    public event Action? RecordingStopping;
     public event Action? ReportReady;
     [ObservableProperty] private string _status = "Not recording";
     [ObservableProperty] private string _error = "";
     [ObservableProperty] private string? _filePath;
     [ObservableProperty] private bool _isBusy;
     [ObservableProperty] private bool _isRecording;
+    [ObservableProperty] private bool _includeRawFrames;
+    [ObservableProperty] private bool _recordingIncludesRawFrames;
+    [ObservableProperty] private string _recordingGameName = "";
     [ObservableProperty] private string? _recordingDirectory;
     [ObservableProperty] private DateTime? _startedUtc;
     [ObservableProperty] private DateTime? _endedUtc;
@@ -91,6 +97,7 @@ public sealed partial class SessionViewModel : ObservableObject
     public bool CanStart => !IsBusy && !_recordingPending;
     public bool CanStop => !IsBusy && _recordingPending;
     public bool CanOpenOrExport => !IsBusy && !_recordingPending;
+    public bool CanConfigureRawFrames => CanStart;
     public bool HasNextWindow => _loaded is not null && ReplayWindowStart + ReplayMaximum + 1 < _loaded.SampleCount;
     public string DatedSummary => StartedUtc is null ? "" : $"Started {StartedUtc.Value.ToLocalTime():g}" + (EndedUtc is { } end ? $" · ended {end.ToLocalTime():g}" : "");
     partial void OnIsBusyChanged(bool value) => RaiseFlags();
@@ -125,6 +132,7 @@ public sealed partial class SessionViewModel : ObservableObject
         if (!_recordingPending) return;
         IsRecording = _recorder.IsRecording; FilePath = _recorder.FilePath; Error = _recorder.Error ?? "";
         if (!IsRecording && FilePath is not null && Error.Length > 0) Status = "Recording ended with an error";
+        if (!IsRecording && Error.Length > 0) AnnounceRecordingStopping();
         RaiseFlags();
     }
 
@@ -134,19 +142,24 @@ public sealed partial class SessionViewModel : ObservableObject
         if (!CanStart) return;
         var definitions = _selectedDefinitions();
         if (definitions.Count == 0) { Error = "Select at least one dashboard or overlay metric before recording."; return; }
+        if (IncludeRawFrames && !_rawCaptureAvailable()) { Error = "Raw frame timing requires active FPS capture. It does not start capture automatically."; return; }
+        var gameName = RecordingGameName.Trim();
+        if (gameName.Length > 128) { Error = "Game label must be 128 characters or fewer."; return; }
         try
         {
             var started = _clock();
-            _recorder.Start(definitions, started);
+            var includeRawFrames = IncludeRawFrames;
+            _recorder.Start(definitions, started, includeRawFrames, gameName);
             ResetReplay();
             _recordingPending = true;
+            _recordingStoppingAnnounced = false;
             RaiseFlags();
             IsRecording = _recorder.IsRecording;
             StartedUtc = started; EndedUtc = null; Rows.Clear();
             FilePath = _recorder.FilePath;
             Error = _recorder.Error ?? "";
             Status = IsRecording ? "Recording" : "Recording could not start";
-            if (IsRecording) RecordingStarted?.Invoke();
+            if (IsRecording) { RecordingIncludesRawFrames = includeRawFrames; IncludeRawFrames = false; RecordingStarted?.Invoke(); }
         }
         catch (Exception ex) { Error = ex.Message; Status = "Recording could not start"; }
     }
@@ -158,6 +171,7 @@ public sealed partial class SessionViewModel : ObservableObject
         IsBusy = true;
         try
         {
+            AnnounceRecordingStopping();
             await _recorder.StopAsync();
             IsRecording = _recorder.IsRecording;
             FilePath = _recorder.FilePath;
@@ -196,25 +210,10 @@ public sealed partial class SessionViewModel : ObservableObject
     }
 
     public void RefreshLibrary()
-    {
-        RecordingLibrary.Clear();
-        if (string.IsNullOrWhiteSpace(RecordingDirectory) || !Directory.Exists(RecordingDirectory)) return;
-        try { foreach (var file in Directory.EnumerateFiles(RecordingDirectory, "*.stats-session.jsonl").Take(200).OrderByDescending(File.GetLastWriteTimeUtc)) RecordingLibrary.Add(file); }
-        catch (Exception ex) { Error = "Library unavailable: " + ex.Message; }
-    }
+        => RefreshLibraryCore();
 
     public async Task RefreshLibraryAsync()
-    {
-        var directory = RecordingDirectory;
-        if (string.IsNullOrWhiteSpace(directory)) return;
-        try
-        {
-            var files = await Task.Run(() => Directory.Exists(directory)
-                ? Directory.EnumerateFiles(directory, "*.stats-session.jsonl").Take(200).OrderByDescending(File.GetLastWriteTimeUtc).ToArray() : []);
-            RecordingLibrary.Clear(); foreach (var file in files) RecordingLibrary.Add(file);
-        }
-        catch (Exception ex) { Error = "Library unavailable: " + ex.Message; }
-    }
+        => await RefreshLibraryCoreAsync();
 
     private bool LoadFile(string path)
     {
@@ -441,5 +440,10 @@ public sealed partial class SessionViewModel : ObservableObject
         try { row.IsSelected = false; }
         finally { _syncingSelection = false; }
     }
-    private void RaiseFlags() { OnPropertyChanged(nameof(CanStart)); OnPropertyChanged(nameof(CanStop)); OnPropertyChanged(nameof(CanOpenOrExport)); }
+    private void AnnounceRecordingStopping()
+    {
+        if (_recordingStoppingAnnounced || !_recordingPending) return;
+        _recordingStoppingAnnounced = true; RecordingStopping?.Invoke();
+    }
+    private void RaiseFlags() { OnPropertyChanged(nameof(CanStart)); OnPropertyChanged(nameof(CanStop)); OnPropertyChanged(nameof(CanOpenOrExport)); OnPropertyChanged(nameof(CanConfigureRawFrames)); }
 }

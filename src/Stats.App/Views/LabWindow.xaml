@@ -21,6 +21,7 @@
       <TextBlock Text="Saved layout profile (blank leaves it unchanged)"/><TextBox Text="{Binding LayoutName}" MaxLength="100" AutomationProperties.Name="Gaming layout profile"/>
       <TextBlock Text="Saved overlay scene (blank leaves it unchanged)"/><TextBox Text="{Binding OverlaySceneName}" MaxLength="100" AutomationProperties.Name="Gaming overlay scene"/>
       <CheckBox Content="Automatically record this game (never takes over a manual recording)" IsChecked="{Binding AutoRecord}"/>
+      <CheckBox Content="Restore desktop appearance after this game (only unchanged automatic values)" IsChecked="{Binding RestoreDesktopAfterGame}"/>
       <TextBlock Text="Saved theme or preset (blank leaves it unchanged)"/><TextBox Text="{Binding ThemeName}" MaxLength="100" AutomationProperties.Name="Game theme"/>
       <TextBlock Text="Named alert set (blank leaves it unchanged)"/><TextBox Text="{Binding AlertSetName}" MaxLength="100" AutomationProperties.Name="Game alert set"/>
      </StackPanel>

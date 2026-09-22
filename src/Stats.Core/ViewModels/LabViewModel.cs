@@ -4,6 +4,7 @@ using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Stats.Core.Lab;
 using Stats.Core.Metrics;
+using Stats.Core.Frames;
 
 namespace Stats.Core.ViewModels;
 
@@ -48,17 +49,30 @@ public sealed partial class LabViewModel : ObservableObject, IDisposable
     [ObservableProperty] private string _feedbackText = "";
     [ObservableProperty] private string _ruleSetName = "";
     [ObservableProperty] private string _postGameReportText = "";
+    [ObservableProperty] private string _gamingActiveGame = "No active game";
+    [ObservableProperty] private string _gamingCaptureStatus = "FPS capture is off.";
+    [ObservableProperty] private string _gamingFpsText = "Unavailable";
+    [ObservableProperty] private string _gamingProfile = "No active profile";
+    [ObservableProperty] private bool _gamingRecording;
+    [ObservableProperty] private string _gamingRecordingStatus = "Not recording";
+    [ObservableProperty] private string _gamingRecordingError = "";
+    [ObservableProperty] private bool _gamingCanStart = true;
+    [ObservableProperty] private bool _gamingCanStop;
     public bool HasPostGameReport => PostGameReportText.Length > 0;
     public event Action<bool, string?>? RecordingRequested;
     public event Action<bool, string?>? GameStateChanged;
     public event Action<LabTimelineEvent>? CompoundNotificationRequested;
     public event Action<string, string?>? OpenNotebookRecordingsRequested;
     public event Action? OpenPostGameReportRequested;
+    public event Action? OpenGamingSessionsRequested;
+    public event Action? OpenLabOptionsRequested;
+    public event Action<bool>? GamingRecordingRequested;
+    public event Action? AppearanceOptionsSaved;
 
     public void SetManualRecording(bool value) => _manualRecording = value && !_ownedRecording;
     public void AcknowledgeRecording(bool started, bool owned)
     {
-        _pendingStart = false; _ownedRecording = started && owned;
+        _pendingStart = false; _ownedRecording = started && owned; GamingRecording = started;
         if (_ownedRecording && !Options.AutoGamingEnabled) StopOwnedRecording();
     }
     public void ObserveGaming(string? name, float? fps, DateTime utc)
@@ -101,6 +115,17 @@ public sealed partial class LabViewModel : ObservableObject, IDisposable
         _gaming = false; Status = "Desktop · post-game recording available in Session lab.";
         AddTimeline("game", "Left " + _activeName, utc);
         GameStateChanged?.Invoke(false, _activeName); _activeName = null;
+        GamingActiveGame = "No active game";
+    }
+    public void RefreshGamingStatus(FrameCaptureStatus captureStatus, float? fps, string? currentProfile, bool recording) =>
+        RefreshGamingStatus(_activeName, captureStatus, fps, currentProfile, recording);
+    public void RefreshGamingStatus(string? activeGame, FrameCaptureStatus captureStatus, float? fps, string? currentProfile, bool recording)
+    {
+        GamingActiveGame = string.IsNullOrWhiteSpace(activeGame) ? "No active game" : activeGame;
+        GamingCaptureStatus = captureStatus.Reason;
+        GamingFpsText = fps is float value && float.IsFinite(value) ? value.ToString("N1") + " FPS" : "Unavailable";
+        GamingProfile = string.IsNullOrWhiteSpace(currentProfile) ? "No active profile" : currentProfile;
+        GamingRecording = recording;
     }
     public void ObserveSnapshot(IReadOnlyDictionary<string, float?> values, DateTime utc, bool alertsEnabled = true,
         IReadOnlyDictionary<string, float?>? ruleValues = null, double pollSeconds = 1)
@@ -168,17 +193,31 @@ public sealed partial class LabViewModel : ObservableObject, IDisposable
     {
         if (string.IsNullOrWhiteSpace(name)) return false;
         var set = NamedRuleSets.FirstOrDefault(x => x.Name == name); if (set is null) return false;
-        Rules.Clear(); foreach (var rule in set.Rules.Take(32)) Rules.Add(LabOptionsStore.Clone(rule)); _compound.Reset(); Options.Rules = Rules.ToList(); LabOptionsStore.Save(_directory, Options); Error = LabOptionsStore.Error ?? ""; return Error.Length == 0;
+        Rules.Clear(); foreach (var rule in set.Rules.Take(32)) Rules.Add(LabOptionsStore.Clone(rule)); _compound.Reset(); Options.Rules = Rules.ToList(); LabOptionsStore.Save(_directory, Options); Error = LabOptionsStore.Error ?? ""; AppearanceOptionsSaved?.Invoke();
+        return true; // Live rules changed even when persistence failed; restoration must still track them.
     }
     [RelayCommand] private void AddNotebookEntry() { if (NotebookEntries.Count < 100) { var entry = new TuningNotebookEntry(); NotebookEntries.Add(entry); SelectedNotebookEntry = entry; } }
     [RelayCommand] private void RemoveNotebookEntry() { if (SelectedNotebookEntry is { } entry) NotebookEntries.Remove(entry); SelectedNotebookEntry = NotebookEntries.FirstOrDefault(); }
     [RelayCommand] private void SaveNotebook() { if (_notebookLoadFailed) { Error = "Notebook was not loaded; refusing to overwrite it."; return; } try { TuningNotebook.Save(_directory, new TuningNotebook { Entries = NotebookEntries.ToList() }); Error = ""; } catch (Exception ex) { Error = "Notebook could not be saved: " + ex.Message; } }
     [RelayCommand] private void CompareNotebookRuns() { if (SelectedNotebookEntry is { RecordingA: { Length: > 0 } a }) OpenNotebookRecordingsRequested?.Invoke(a, SelectedNotebookEntry.RecordingB); }
     [RelayCommand] private void OpenPostGameReport() => OpenPostGameReportRequested?.Invoke();
+    [RelayCommand] private void OpenGamingSessions() => OpenGamingSessionsRequested?.Invoke();
+    [RelayCommand] private void OpenLabOptions() => OpenLabOptionsRequested?.Invoke();
+    [RelayCommand] private void StartGamingRecording()
+    {
+        if (!GamingCanStart || _pendingStart) return;
+        GamingRecordingRequested?.Invoke(true);
+    }
+    [RelayCommand] private void StopGamingRecording()
+    {
+        if (!GamingCanStop) return;
+        GamingRecordingRequested?.Invoke(false);
+    }
     public void SetPostGameReport(string? text) { PostGameReportText = text ?? ""; OnPropertyChanged(nameof(HasPostGameReport)); }
     [RelayCommand] private void Save()
     {
         Options.Games = Games.ToList(); Options.Rules = Rules.ToList();
+        AppearanceOptionsSaved?.Invoke();
         LabOptionsStore.Save(_directory, Options); Error = LabOptionsStore.Error ?? "";
         OnPropertyChanged(nameof(Options)); OnPropertyChanged(nameof(SelectedRule));
         if (!Options.AutoGamingEnabled) ObserveGaming(null, null, DateTime.UtcNow);

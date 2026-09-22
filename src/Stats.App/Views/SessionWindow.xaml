@@ -14,10 +14,15 @@
                 <Button Content="Export CSV…" Click="Export_Click" IsEnabled="{Binding CanOpenOrExport}" Style="{StaticResource HeaderButton}" Margin="0,0,6,6"/>
                 <Button Content="A/B recording…" Click="OpenComparison_Click" IsEnabled="{Binding CanOpenOrExport}" Style="{StaticResource HeaderButton}" Margin="0,0,6,6"/>
             </WrapPanel>
+            <WrapPanel Margin="0,0,0,6" IsEnabled="{Binding CanConfigureRawFrames}">
+                <CheckBox Content="Include raw frame timing for this session" IsChecked="{Binding IncludeRawFrames}" VerticalAlignment="Center" Margin="0,0,8,0" AutomationProperties.Name="Include raw frame timing"/>
+                <TextBlock Text="Requires active FPS capture; never starts capture." Foreground="{DynamicResource TextSecondary}" VerticalAlignment="Center"/>
+            </WrapPanel>
+            <WrapPanel Margin="0,0,0,6"><TextBlock Text="Game label (optional)" Foreground="{DynamicResource TextSecondary}" VerticalAlignment="Center"/><TextBox Width="180" MaxLength="128" Text="{Binding RecordingGameName, UpdateSourceTrigger=PropertyChanged}" Margin="8,0,0,0" AutomationProperties.Name="Recording game label"/></WrapPanel>
             <TextBlock Text="{Binding Status}" Foreground="{DynamicResource TextPrimary}" TextWrapping="Wrap"/>
             <TextBlock Text="{Binding Error}" Foreground="{DynamicResource CritBrush}" TextWrapping="Wrap" Margin="0,4"/>
             <TextBlock Text="{Binding DatedSummary}" Foreground="{DynamicResource TextSecondary}" TextWrapping="Wrap"/>
-            <TextBlock Text="Read-only replay. Bounded windows of up to 3600 samples; CSV retains the entire session." Foreground="{DynamicResource TextSecondary}" TextWrapping="Wrap" Margin="0,8"/>
+            <TextBlock Text="Read-only replay. Bounded windows of up to 3600 samples; CSV exports poll snapshots only, never raw frame timing." Foreground="{DynamicResource TextSecondary}" TextWrapping="Wrap" Margin="0,8"/>
             <Border Background="{DynamicResource TileBg}" Padding="10" CornerRadius="{StaticResource RadiusPanel}" Margin="0,0,0,8"
                     Visibility="{Binding HasReport, Converter={StaticResource BoolToVis}}">
                 <StackPanel>
@@ -33,9 +38,16 @@
                     </ListBox>
                 </StackPanel>
             </Border>
-            <TextBlock Text="Recording library (up to 200 files; Open can select any recording)" Foreground="{DynamicResource TextSecondary}"/>
-            <ComboBox ItemsSource="{Binding RecordingLibrary}" SelectionChanged="Library_SelectionChanged"
-                      IsEnabled="{Binding CanOpenOrExport}" AutomationProperties.Name="Recording library" Margin="0,4,0,12"/>
+            <TextBlock Text="Recording library (newest 200 headers; old recordings are Unassigned)" Foreground="{DynamicResource TextSecondary}"/>
+            <TextBox Text="{Binding LibraryFilter, UpdateSourceTrigger=PropertyChanged}" MaxLength="100" AutomationProperties.Name="Recording library filter" Margin="0,4" ToolTip="Filter by game or file"/>
+            <TextBlock Text="Pinned baseline is used only when you choose Compare; no recording is changed." Foreground="{DynamicResource TextSecondary}" Margin="0,2"/>
+            <TextBlock Text="{Binding BaselineLabel}" ToolTip="{Binding PinnedBaselinePath}" Foreground="{DynamicResource TextPrimary}" TextTrimming="CharacterEllipsis"/>
+            <Button Content="Unpin baseline" Command="{Binding UnpinBaselineCommand}" IsEnabled="{Binding HasPinnedBaseline}" Style="{StaticResource HeaderButton}" HorizontalAlignment="Left" Margin="0,2"/>
+            <ScrollViewer MaxHeight="240" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+            <ItemsControl ItemsSource="{Binding LibraryGroups}" IsEnabled="{Binding CanOpenOrExport}" Margin="0,4,0,12">
+                <ItemsControl.ItemTemplate><DataTemplate><StackPanel Margin="0,4"><TextBlock Text="{Binding GameName}" FontWeight="SemiBold" Foreground="{DynamicResource TextPrimary}"/><ItemsControl ItemsSource="{Binding Entries}"><ItemsControl.ItemTemplate><DataTemplate><Border Background="{DynamicResource TileBg}" CornerRadius="4" Padding="6" Margin="0,2"><DockPanel><WrapPanel DockPanel.Dock="Right"><Button Content="Open" Click="LibraryEntry_Open_Click" CommandParameter="{Binding}" Style="{StaticResource HeaderButton}" IsEnabled="{Binding CanOpen}"/><Button Content="Pin" Command="{Binding DataContext.PinBaselineCommand, RelativeSource={RelativeSource AncestorType=Window}}" CommandParameter="{Binding}" Style="{StaticResource HeaderButton}" IsEnabled="{Binding CanOpen}" Margin="4,0,0,0"/><Button Content="Compare" Command="{Binding DataContext.CompareWithBaselineCommand, RelativeSource={RelativeSource AncestorType=Window}}" CommandParameter="{Binding}" Style="{StaticResource HeaderButton}" Margin="4,0,0,0"/></WrapPanel><TextBlock Text="{Binding DisplayName}" Foreground="{DynamicResource TextPrimary}" TextTrimming="CharacterEllipsis" ToolTip="{Binding Path}"/></DockPanel></Border></DataTemplate></ItemsControl.ItemTemplate></ItemsControl></StackPanel></DataTemplate></ItemsControl.ItemTemplate>
+            </ItemsControl>
+            </ScrollViewer>
             <StackPanel IsEnabled="{Binding CanOpenOrExport}">
                 <TextBlock Text="Replay metric" Foreground="{DynamicResource TextPrimary}"/>
                 <ComboBox ItemsSource="{Binding Rows}" SelectedItem="{Binding SelectedReplayMetric}" DisplayMemberPath="Metric" AutomationProperties.Name="Replay metric" Margin="0,4"/>

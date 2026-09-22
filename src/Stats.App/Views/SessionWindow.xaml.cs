@@ -74,6 +74,11 @@ public partial class SessionWindow : Window
         if (e.AddedItems.Count == 1 && e.AddedItems[0] is string path && DataContext is SessionViewModel vm && path != vm.FilePath)
         { StopReplay(); await vm.OpenAsync(path); }
     }
+    private async void LibraryEntry_Open_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is not System.Windows.Controls.Button { CommandParameter: SessionLibraryEntry entry } || DataContext is not SessionViewModel vm || !entry.CanOpen) return;
+        StopReplay(); await vm.OpenAsync(entry.Path);
+    }
     private void Spike_SelectionChanged(object sender, System.Windows.Controls.SelectionChangedEventArgs e)
     {
         if (e.AddedItems.Count == 1 && e.AddedItems[0] is SessionSpike spike && DataContext is SessionViewModel vm)

@@ -87,6 +87,17 @@ Filename: "{app}\{#AppExe}"; Description: "{cm:LaunchProgram,{#AppName}}"; Flags
 Filename: "{sys}\schtasks.exe"; Parameters: "/Delete /F /TN ""{#AppName}"""; Flags: runhidden waituntilterminated; RunOnceId: "RemoveStatsTask"
 
 [Code]
+function GetWindowThreadProcessId(Wnd: HWND; var ProcessId: Cardinal): Cardinal;
+  external 'GetWindowThreadProcessId@user32.dll stdcall';
+function OpenProcess(Access: Cardinal; Inherit: Boolean; ProcessId: Cardinal): THandle;
+  external 'OpenProcess@kernel32.dll stdcall';
+function WaitForSingleObject(Handle: THandle; Milliseconds: Cardinal): Cardinal;
+  external 'WaitForSingleObject@kernel32.dll stdcall';
+function CloseHandle(Handle: THandle): Boolean;
+  external 'CloseHandle@kernel32.dll stdcall';
+function QueryFullProcessImageName(Process: THandle; Flags: Cardinal; ExeName: String; var Size: Cardinal): Boolean;
+  external 'QueryFullProcessImageNameW@kernel32.dll stdcall';
+
 const
   PawnIoUninstallKey = 'SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\PawnIO';
   PawnIoHint = 'Stats will still be installed, but CPU temperature, clock and power readings will be unavailable until PawnIO is installed (https://pawnio.eu).';
@@ -131,40 +142,71 @@ begin
     InstallPawnIo;
 end;
 
-// Runs after the Ready page and BEFORE Setup's in-use-files check. A running Stats hides to the tray
-// instead of closing (DashboardWindow cancels Close), so Restart Manager's CloseApplications request
-// never ends the process and every upgrade stopped at "Setup was unable to automatically close all
-// applications". Kill it here like the uninstaller does; the fans-armed marker restores device control
-// on the next launch if fan control was active (see FanController.RecoverFromUncleanShutdown).
-function PrepareToInstall(var NeedsRestart: Boolean): String;
+// v1 control endpoint queues the same Exit path as the tray: stop poller, restore Auto,
+// dispose reader and drain recordings. Hold a process handle so HWND disappearance is
+// not mistaken for process termination or a reused PID. Never force-kill hardware owners.
+function CloseStatsGracefully: Boolean;
 var
-  ResultCode: Integer;
+  Wnd: HWND;
+  ProcessId: Cardinal;
+  ProcessHandle: THandle;
+  WaitResult: Cardinal;
+  ExeName: String;
+  NameSize: Cardinal;
+begin
+  Result := True;
+  Wnd := FindWindowByWindowName('Stats.Control.v1');
+  if Wnd = 0 then
+  begin
+    if CheckForMutexes('Global\Stats.Native.v1') then
+    begin
+      Log('Stats ownership guard exists without a local endpoint. Exit Stats in every Windows session before retrying.');
+      Result := False;
+      exit;
+    end;
+    Log('No v1 Stats endpoint. Older copies must be closed using tray > Exit; file-in-use checks remain enabled.');
+    exit;
+  end;
+  Result := False;
+  GetWindowThreadProcessId(Wnd, ProcessId);
+  ProcessHandle := OpenProcess($00101000, False, ProcessId);
+  if ProcessHandle = 0 then exit;
+  try
+    NameSize := 32768;
+    ExeName := StringOfChar(#0, NameSize);
+    if not QueryFullProcessImageName(ProcessHandle, 0, ExeName, NameSize) then exit;
+    if CompareText(Copy(ExeName, 1, NameSize), ExpandConstant('{app}\{#AppExe}')) <> 0 then
+    begin
+      Log('Stats endpoint belongs to a different executable; close it manually.');
+      exit;
+    end;
+    if not PostMessage(Wnd, $8001, 0, 0) then exit;
+    WaitResult := WaitForSingleObject(ProcessHandle, 30000);
+    Result := WaitResult = 0;
+    Log(Format('Graceful Stats shutdown wait result: %d', [WaitResult]));
+  finally
+    CloseHandle(ProcessHandle);
+  end;
+end;
+
+function PrepareToInstall(var NeedsRestart: Boolean): String;
 begin
   Result := '';
-  if Exec(ExpandConstant('{sys}\taskkill.exe'), '/F /T /IM {#AppExe}', '', SW_HIDE, ewWaitUntilTerminated, ResultCode) then
-    Log(Format('PrepareToInstall: taskkill {#AppExe} exit code %d (128 = not running)', [ResultCode]))
-  else
-  begin
-    Log('PrepareToInstall: taskkill could not be started: ' + SysErrorMessage(ResultCode));
-    Result := 'Setup could not start Windows taskkill.exe to close Stats.' + #13#10 +
-      'Close Stats manually, then run setup again.' + #13#10 +
-      'Details: ' + SysErrorMessage(ResultCode);
-  end;
+  if not CloseStatsGracefully then
+    Result := 'Stats has not finished shutting down. Use Stats tray > Exit in every Windows session, wait for it to close, then retry setup. No process was forcibly terminated.';
 end;
 
 procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
 var
   SettingsDir: String;
-  ResultCode: Integer;
 begin
   if CurUninstallStep = usUninstall then
   begin
-    // The uninstaller has no CloseApplications equivalent: stop a running Stats so {app} can be
-    // removed. This runs after the "completely remove Stats?" confirmation, before file deletion.
-    if Exec(ExpandConstant('{sys}\taskkill.exe'), '/F /T /IM {#AppExe}', '', SW_HIDE, ewWaitUntilTerminated, ResultCode) then
-      Log(Format('taskkill {#AppExe} exit code %d (128 = not running)', [ResultCode]))
-    else
-      Log('taskkill could not be started: ' + SysErrorMessage(ResultCode));
+    if not CloseStatsGracefully then
+    begin
+      SuppressibleMsgBox('Stats has not finished shutting down. Use Stats tray > Exit in every Windows session and retry uninstall.', mbError, MB_OK, IDOK);
+      Abort;
+    end;
   end;
   if CurUninstallStep = usPostUninstall then
   begin

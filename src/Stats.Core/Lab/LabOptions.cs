@@ -19,6 +19,7 @@ public sealed class GameLabOption
     public string LayoutName { get; set; } = "";
     public string OverlaySceneName { get; set; } = "";
     public bool AutoRecord { get; set; }
+    public bool RestoreDesktopAfterGame { get; set; }
     public string ThemeName { get; set; } = "";
     public string AlertSetName { get; set; } = "";
 }
