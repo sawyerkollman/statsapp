@@ -53,16 +53,21 @@ public sealed class UpdateService : IDisposable
     }
 
     /// <summary>Downloads the release asset to <paramref name="destPath"/>, reporting 0..1 progress. Throws on any
-    /// failure (non-HTTPS URL, HTTP error, a final size mismatch against <see cref="UpdateInfo.AssetSize"/>, or —
-    /// when <see cref="UpdateInfo.Sha256"/> is present — a SHA-256 mismatch) — the caller is expected to catch and
-    /// show "download failed — retry". Any failure, including cancellation mid-download, deletes whatever partial
-    /// or fully-written file is at <paramref name="destPath"/> first, so a retry never has to contend with a
-    /// leftover file for the <c>FileMode.CreateNew</c> staging check below, and nothing that looks like a
-    /// successfully verified installer is ever left on disk.</summary>
+    /// failure (non-HTTPS URL, HTTP error, a declared or streamed size above <see cref="UpdateInfo.AssetSize"/>,
+    /// a final size mismatch, a missing SHA-256 on a release that <see cref="UpdateChecker.RequiresSha256"/>
+    /// requires, or a SHA-256 mismatch) — the caller is expected to catch and show "download failed — retry".
+    /// Any failure, including cancellation mid-download, deletes whatever partial or fully-written file is at
+    /// <paramref name="destPath"/> first, so a retry never has to contend with a leftover file for the
+    /// <c>FileMode.CreateNew</c> staging check below, and nothing that looks like a successfully verified
+    /// installer is ever left on disk.</summary>
     public async Task DownloadAsync(UpdateInfo info, string destPath, IProgress<double>? progress, CancellationToken cancellationToken)
     {
         if (!Uri.TryCreate(info.AssetUrl, UriKind.Absolute, out var uri) || uri.Scheme != Uri.UriSchemeHttps)
             throw new InvalidOperationException("Update asset URL must be HTTPS.");
+        if (info.AssetSize <= 0)
+            throw new InvalidOperationException("Update asset size is missing.");
+        if (UpdateChecker.RequiresSha256(info.Version) && string.IsNullOrWhiteSpace(info.Sha256))
+            throw new InvalidOperationException("This release is missing a SHA-256 hash.");
 
         var createdDestination = false;
         try
@@ -70,7 +75,10 @@ public sealed class UpdateService : IDisposable
             using (var response = await _http.GetAsync(uri, HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false))
             {
                 response.EnsureSuccessStatusCode();
-                var total = response.Content.Headers.ContentLength ?? info.AssetSize;
+                var advertised = response.Content.Headers.ContentLength;
+                if (advertised is long declared && declared > info.AssetSize)
+                    throw new InvalidOperationException($"Download size {declared} exceeds the expected {info.AssetSize} bytes.");
+                var total = advertised ?? info.AssetSize;
 
                 await using var httpStream = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
                 // CreateNew: destPath lives in a fresh admin-only staging directory (see App.xaml.cs) — a file
@@ -83,6 +91,10 @@ public sealed class UpdateService : IDisposable
                     int read;
                     while ((read = await httpStream.ReadAsync(buffer, cancellationToken).ConfigureAwait(false)) > 0)
                     {
+                        // Stop before writing a chunk that would pass the release's advertised size. A hostile
+                        // or truncated Content-Length must not be able to fill the disk before the final check.
+                        if (readTotal + read > info.AssetSize)
+                            throw new InvalidOperationException($"Download exceeded the expected size of {info.AssetSize} bytes.");
                         await fileStream.WriteAsync(buffer.AsMemory(0, read), cancellationToken).ConfigureAwait(false);
                         readTotal += read;
                         if (total > 0) progress?.Report(Math.Min(1.0, (double)readTotal / total));

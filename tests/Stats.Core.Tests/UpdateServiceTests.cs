@@ -183,6 +183,105 @@ public class UpdateServiceTests
     }
 
     [Fact]
+    public async Task DownloadAsync_HashRequiredRelease_MissingHash_ThrowsBeforeDownload()
+    {
+        var called = false;
+        var service = MakeService(_ =>
+        {
+            called = true;
+            return new HttpResponseMessage(HttpStatusCode.OK);
+        });
+        var info = new UpdateInfo(new Version(1, 11, 0), "v1.11.0",
+            "https://github.com/sawyerkollman/statsapp/releases/download/v1.11.0/Stats-Setup-1.11.0.exe",
+            AssetSize: 10, ReleasePageUrl: "");
+        var destPath = Path.Combine(Path.GetTempPath(), $"stats-updateservice-test-{Guid.NewGuid():N}.exe");
+
+        try
+        {
+            await Assert.ThrowsAsync<InvalidOperationException>(() =>
+                service.DownloadAsync(info, destPath, progress: null, CancellationToken.None));
+            Assert.False(called);
+            Assert.False(File.Exists(destPath));
+        }
+        finally
+        {
+            if (File.Exists(destPath)) File.Delete(destPath);
+        }
+    }
+
+    [Fact]
+    public async Task DownloadAsync_ContentLengthAboveAssetSize_ThrowsAndWritesNothing()
+    {
+        var bytes = new byte[100];
+        var service = MakeService(_ => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new ByteArrayContent(bytes),
+        });
+        var info = new UpdateInfo(new Version(1, 4, 2), "v1.4.2",
+            "https://github.com/sawyerkollman/statsapp/releases/download/v1.4.2/Stats-Setup-1.4.2.exe",
+            AssetSize: 10, ReleasePageUrl: "");
+        var destPath = Path.Combine(Path.GetTempPath(), $"stats-updateservice-test-{Guid.NewGuid():N}.exe");
+
+        try
+        {
+            await Assert.ThrowsAsync<InvalidOperationException>(() =>
+                service.DownloadAsync(info, destPath, progress: null, CancellationToken.None));
+            Assert.False(File.Exists(destPath));
+        }
+        finally
+        {
+            if (File.Exists(destPath)) File.Delete(destPath);
+        }
+    }
+
+    private sealed class FixedLengthStream : Stream
+    {
+        private int _remaining;
+        public FixedLengthStream(int length) => _remaining = length;
+        public override bool CanRead => true;
+        public override bool CanSeek => false;
+        public override bool CanWrite => false;
+        public override long Length => throw new NotSupportedException();
+        public override long Position { get => throw new NotSupportedException(); set => throw new NotSupportedException(); }
+        public override void Flush() { }
+        public override int Read(byte[] buffer, int offset, int count) => throw new NotSupportedException();
+        public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
+        public override void SetLength(long value) => throw new NotSupportedException();
+        public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
+        public override ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken cancellationToken = default)
+        {
+            if (_remaining == 0) return ValueTask.FromResult(0);
+            int n = Math.Min(buffer.Length, _remaining);
+            _remaining -= n;
+            return ValueTask.FromResult(n);
+        }
+    }
+
+    [Fact]
+    public async Task DownloadAsync_StreamExceedsAssetSize_DeletesPartialAndThrows()
+    {
+        var service = MakeService(_ => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StreamContent(new FixedLengthStream(50_000)),
+        });
+        var info = new UpdateInfo(new Version(1, 4, 2), "v1.4.2",
+            "https://github.com/sawyerkollman/statsapp/releases/download/v1.4.2/Stats-Setup-1.4.2.exe",
+            AssetSize: 1000, ReleasePageUrl: "");
+        var destPath = Path.Combine(Path.GetTempPath(), $"stats-updateservice-test-{Guid.NewGuid():N}.exe");
+
+        try
+        {
+            await Assert.ThrowsAsync<InvalidOperationException>(() =>
+                service.DownloadAsync(info, destPath, progress: null, CancellationToken.None));
+            Assert.False(File.Exists(destPath));
+        }
+        finally
+        {
+            if (File.Exists(destPath)) File.Delete(destPath);
+        }
+    }
+
+    [Fact]
     public async Task DownloadAsync_NoSha256Present_SkipsHashVerificationAndSucceeds()
     {
         var bytes = new byte[1024];

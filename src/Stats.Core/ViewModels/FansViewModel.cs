@@ -66,6 +66,7 @@ public sealed partial class FanChannelViewModel : ObservableObject
     [ObservableProperty] private FanMode _mode;
     [ObservableProperty] private float _manualPercent;
     [ObservableProperty] private string? _sourceMetricId;
+    [ObservableProperty] private bool _treatAsPump;
     [ObservableProperty] private string _rpmText = "—";
     [ObservableProperty] private string _percentText = "—";
     [ObservableProperty] private string _targetText = "—";
@@ -88,6 +89,7 @@ public sealed partial class FanChannelViewModel : ObservableObject
         if (!_refreshing) _controller.SetMode(Id, value);
     }
     partial void OnManualPercentChanged(float value) { if (!_refreshing) _controller.SetManualPercent(Id, value); }
+    partial void OnTreatAsPumpChanged(bool value) { if (!_refreshing) _controller.SetTreatAsPump(Id, value); }
 
     /// <summary>Called by any FanSourceSelection.IsSelected setter. SourceMetricId itself is a read-only mirror
     /// of the first id now (set only from Apply) — the controller push happens here instead.</summary>
@@ -126,6 +128,7 @@ public sealed partial class FanChannelViewModel : ObservableObject
             if (Mode != v.Mode) Mode = v.Mode;
             if (ManualPercent != v.ManualPercent) ManualPercent = v.ManualPercent;
             if (SourceMetricId != v.SourceMetricId) SourceMetricId = v.SourceMetricId;
+            if (TreatAsPump != v.TreatAsPump) TreatAsPump = v.TreatAsPump;
             foreach (var sel in SourceSelections)
             {
                 bool want = v.SourceMetricIds.Contains(sel.Id);

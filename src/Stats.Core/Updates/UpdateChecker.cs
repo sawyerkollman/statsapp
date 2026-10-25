@@ -6,9 +6,9 @@ namespace Stats.Core.Updates;
 /// <summary>A newer release, ready to offer. <see cref="Version"/> is the parsed numeric version (first three
 /// fields); <see cref="TagName"/> retains the full GitHub tag, including any beta suffix, for display.
 /// <see cref="Sha256"/> is the lowercase hex SHA-256 of the installer asset when the release body carries a
-/// machine-readable "SHA256: &lt;64 hex chars&gt;" line (see <see cref="UpdateChecker.Parse"/>); null for older
-/// releases published before integrity verification, in which case <see cref="UpdateService.DownloadAsync"/>
-/// falls back to size-only verification.</summary>
+/// machine-readable "SHA256: &lt;64 hex chars&gt;" line (see <see cref="UpdateChecker.Parse"/>). Releases at or
+/// above <see cref="UpdateChecker.Sha256RequiredSince"/> are not offered without that line.
+/// Earlier releases predate the hash and stay on a size check.</summary>
 public sealed record UpdateInfo(Version Version, string TagName, string AssetUrl, long AssetSize, string ReleasePageUrl, string? Sha256 = null);
 
 /// <summary>Pure parsing of GitHub release objects/lists — no I/O, no WPF. Kept separate from
@@ -17,6 +17,14 @@ public static class UpdateChecker
 {
     private const string AssetPrefix = "Stats-Setup-";
     private const string AssetSuffix = ".exe";
+
+    /// <summary>First release line whose bodies carry a machine-readable SHA-256 (v1.7 update integrity).
+    /// A release at or above this version is not offered, and <see cref="UpdateService.DownloadAsync"/> will
+    /// not fetch it, unless the body has a well-formed hash. Missing hashes used to fall through to a size
+    /// check; that fallback is closed for this line and everything after it, including the current release.</summary>
+    public static readonly Version Sha256RequiredSince = new(1, 7, 0);
+
+    public static bool RequiresSha256(Version release) => NormalizeToThree(release) >= Sha256RequiredSince;
 
     /// <summary>Matches a standalone release-body line of the form "SHA256: &lt;64 hex chars&gt;" (label
     /// case-insensitive, optional surrounding whitespace). The hex group is fixed at exactly 64 characters, so
@@ -90,6 +98,7 @@ public static class UpdateChecker
                 if (string.IsNullOrEmpty(assetUrl) || !IsAllowedAssetHost(assetUrl)) continue;
 
                 if (!sizeProp.TryGetInt64(out var size) || size <= 0) continue;
+                if (RequiresSha256(latest) && string.IsNullOrEmpty(sha256)) return null;
                 return new UpdateInfo(latest, tag, assetUrl, size, releasePageUrl, sha256);
             }
             return null; // no asset with the expected exact name (and an allowed host)
@@ -123,8 +132,8 @@ public static class UpdateChecker
     /// <summary>Reads the release "body" (markdown text), looking for a single machine-readable
     /// "SHA256: &lt;64 hex chars&gt;" line (see <see cref="Sha256LinePattern"/>). Returns the hash normalized to
     /// lowercase, or null when the body is absent/not a string, has no such line, or the line is malformed
-    /// (wrong length, extra trailing characters, etc.) — old releases without the line simply return null and
-    /// <see cref="UpdateService.DownloadAsync"/> continues with size-only verification.</summary>
+    /// (wrong length, extra trailing characters, etc.). A null result on a release at or above
+    /// <see cref="Sha256RequiredSince"/> means <see cref="Parse"/> will not offer it.</summary>
     private static string? ParseSha256(JsonElement root)
     {
         if (!root.TryGetProperty("body", out var bodyProp) || bodyProp.ValueKind != JsonValueKind.String) return null;

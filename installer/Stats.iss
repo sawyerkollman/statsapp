@@ -90,6 +90,20 @@ Filename: "{sys}\schtasks.exe"; Parameters: "/Delete /F /TN ""{#AppName}"""; Fla
 const
   PawnIoUninstallKey = 'SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\PawnIO';
   PawnIoHint = 'Stats will still be installed, but CPU temperature, clock and power readings will be unavailable until PawnIO is installed (https://pawnio.eu).';
+  { Keep in sync with Stats.Core.Startup.StartupArgs.ExitEventName / RestoreFansFlag. }
+  ExitEventName = 'Local\Stats.RequestExit';
+  RestoreFansArg = '--restore-fans';
+  EVENT_MODIFY_STATE = $0002;
+
+var
+  FansNeedRestore: Boolean;
+
+function OpenEventW(dwDesiredAccess: Cardinal; bInheritHandle: Integer; lpName: String): THandle;
+  external 'OpenEventW@kernel32.dll stdcall';
+function SetEvent(hEvent: THandle): Integer;
+  external 'SetEvent@kernel32.dll stdcall';
+function CloseHandle(hObject: THandle): Integer;
+  external 'CloseHandle@kernel32.dll stdcall';
 
 function PawnIoInstalled: Boolean;
 begin
@@ -128,43 +142,164 @@ end;
 procedure CurStepChanged(CurStep: TSetupStep);
 begin
   if CurStep = ssPostInstall then
+  begin
+    { New exe is on disk. Only needed when we had to force-close a build that did not exit cleanly
+      (an older Stats has no exit event). A clean exit already restored fans. }
+    if FansNeedRestore then
+      RestoreFans;
     InstallPawnIo;
+  end;
 end;
 
-// Runs after the Ready page and BEFORE Setup's in-use-files check. A running Stats hides to the tray
-// instead of closing (DashboardWindow cancels Close), so Restart Manager's CloseApplications request
-// never ends the process and every upgrade stopped at "Setup was unable to automatically close all
-// applications". Kill it here like the uninstaller does; the fans-armed marker restores device control
-// on the next launch if fan control was active (see FanController.RecoverFromUncleanShutdown).
-function PrepareToInstall(var NeedsRestart: Boolean): String;
+{ True when this session's Stats process is listening for a clean exit. False when Stats is not running
+  or this install predates the named event — callers then skip the wait and fall through to taskkill. }
+function RequestCleanExit: Boolean;
 var
+  EventHandle: THandle;
+begin
+  Result := False;
+  EventHandle := OpenEventW(EVENT_MODIFY_STATE, 0, ExitEventName);
+  if EventHandle = 0 then
+  begin
+    Log('Stats exit event is not open; this process is not listening for a clean exit');
+    exit;
+  end;
+  if SetEvent(EventHandle) <> 0 then
+  begin
+    Log('Signaled Stats to exit cleanly');
+    Result := True;
+  end
+  else
+    Log('SetEvent failed: ' + SysErrorMessage(DLLGetLastError));
+  CloseHandle(EventHandle);
+end;
+
+function QueryStatsRunning(out Running: Boolean): Boolean;
+var
+  Locator, Service, Processes: Variant;
+begin
+  Result := False;
+  Running := False;
+  try
+    Locator := CreateOleObject('WbemScripting.SWbemLocator');
+    Service := Locator.ConnectServer('.', 'root\CIMV2');
+    Processes := Service.ExecQuery('SELECT Name FROM Win32_Process WHERE Name=''{#AppExe}''');
+    Running := Processes.Count > 0;
+    Result := True;
+  except
+    Log('Could not query running processes: ' + GetExceptionMessage);
+  end;
+end;
+
+function WaitUntilStatsStopped(TimeoutMs: Cardinal): Boolean;
+var
+  Started: Cardinal;
+  Known, Running: Boolean;
+begin
+  Started := GetTickCount;
+  while True do
+  begin
+    Known := QueryStatsRunning(Running);
+    if Known and (not Running) then
+    begin
+      Result := True;
+      exit;
+    end;
+    if (GetTickCount - Started) >= TimeoutMs then
+    begin
+      Result := False;
+      exit;
+    end;
+    Sleep(250);
+  end;
+end;
+
+{ Prefer the named-event clean exit (ExitApp restores fans). taskkill is only the fallback, and only
+  after a timeout, because a force-kill skips FanController.RestoreAll and can leave PWM stuck.
+  ForceKilled is true when that fallback ran, so the caller can invoke --restore-fans afterwards.
+  Returns a non-empty string only when taskkill.exe itself could not be started and Stats may still
+  be running — same failure the old PrepareToInstall surfaced. }
+function StopRunningStats(out ForceKilled: Boolean): String;
+var
+  Known, Running: Boolean;
   ResultCode: Integer;
 begin
   Result := '';
+  ForceKilled := False;
+  Known := QueryStatsRunning(Running);
+  if Known and (not Running) then
+  begin
+    Log('{#AppExe} is not running');
+    exit;
+  end;
+
+  if RequestCleanExit then
+  begin
+    if WaitUntilStatsStopped(10000) then
+    begin
+      Log('{#AppExe} exited cleanly');
+      exit;
+    end;
+    Log('{#AppExe} did not exit within 10 seconds of the clean-exit signal');
+  end;
+
+  ForceKilled := True;
   if Exec(ExpandConstant('{sys}\taskkill.exe'), '/F /T /IM {#AppExe}', '', SW_HIDE, ewWaitUntilTerminated, ResultCode) then
-    Log(Format('PrepareToInstall: taskkill {#AppExe} exit code %d (128 = not running)', [ResultCode]))
+    Log(Format('taskkill {#AppExe} exit code %d (128 = not running)', [ResultCode]))
   else
   begin
-    Log('PrepareToInstall: taskkill could not be started: ' + SysErrorMessage(ResultCode));
+    Log('taskkill could not be started: ' + SysErrorMessage(ResultCode));
     Result := 'Setup could not start Windows taskkill.exe to close Stats.' + #13#10 +
       'Close Stats manually, then run setup again.' + #13#10 +
       'Details: ' + SysErrorMessage(ResultCode);
   end;
+  WaitUntilStatsStopped(5000);
+end;
+
+procedure RestoreFans;
+var
+  ExePath: String;
+  ResultCode: Integer;
+begin
+  ExePath := ExpandConstant('{app}\{#AppExe}');
+  if not FileExists(ExePath) then
+  begin
+    Log('--restore-fans skipped; {#AppExe} is not on disk');
+    exit;
+  end;
+  Log('Running --restore-fans');
+  if Exec(ExePath, RestoreFansArg, '', SW_HIDE, ewWaitUntilTerminated, ResultCode) then
+    Log(Format('--restore-fans exit code %d', [ResultCode]))
+  else
+    Log('--restore-fans could not be started: ' + SysErrorMessage(ResultCode));
+end;
+
+{ Runs after the Ready page and BEFORE Setup's in-use-files check. A running Stats hides to the tray
+  instead of closing (DashboardWindow cancels Close), so Restart Manager's CloseApplications request
+  never ends the process. Ask it to exit cleanly first; taskkill is the fallback. }
+function PrepareToInstall(var NeedsRestart: Boolean): String;
+var
+  ForceKilled: Boolean;
+begin
+  Result := StopRunningStats(ForceKilled);
+  if ForceKilled then
+    FansNeedRestore := True;
 end;
 
 procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
 var
-  SettingsDir: String;
-  ResultCode: Integer;
+  SettingsDir, StopError: String;
+  ForceKilled: Boolean;
 begin
   if CurUninstallStep = usUninstall then
   begin
-    // The uninstaller has no CloseApplications equivalent: stop a running Stats so {app} can be
-    // removed. This runs after the "completely remove Stats?" confirmation, before file deletion.
-    if Exec(ExpandConstant('{sys}\taskkill.exe'), '/F /T /IM {#AppExe}', '', SW_HIDE, ewWaitUntilTerminated, ResultCode) then
-      Log(Format('taskkill {#AppExe} exit code %d (128 = not running)', [ResultCode]))
-    else
-      Log('taskkill could not be started: ' + SysErrorMessage(ResultCode));
+    // Stop a running Stats before files are removed, then restore fans while the exe is still on disk.
+    // A clean exit already restored them; --restore-fans is then a no-op. A taskkill, or a previous
+    // crash that left the armed marker, is repaired here. Nothing launches Stats after uninstall.
+    StopError := StopRunningStats(ForceKilled);
+    if StopError <> '' then
+      Log(StopError);
+    RestoreFans;
   end;
   if CurUninstallStep = usPostUninstall then
   begin
