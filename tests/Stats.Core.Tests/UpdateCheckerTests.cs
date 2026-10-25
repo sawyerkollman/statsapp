@@ -114,14 +114,14 @@ public class UpdateCheckerTests
     [Fact]
     public void Parse_1_10_0_vs_1_9_9_IsOffered()
     {
-        var json = Release("v1.10.0", "Stats-Setup-1.10.0.exe", 1);
+        var json = ReleaseWithBody("v1.10.0", "Stats-Setup-1.10.0.exe", 1, "SHA256: " + ValidHash);
         Assert.NotNull(UpdateChecker.Parse(json, new Version(1, 9, 9)));
     }
 
     [Fact]
     public void Parse_2_0_0_vs_1_99_99_IsOffered()
     {
-        var json = Release("v2.0.0", "Stats-Setup-2.0.0.exe", 1);
+        var json = ReleaseWithBody("v2.0.0", "Stats-Setup-2.0.0.exe", 1, "SHA256: " + ValidHash);
         Assert.NotNull(UpdateChecker.Parse(json, new Version(1, 99, 99)));
     }
 
@@ -296,6 +296,36 @@ public class UpdateCheckerTests
     {
         var json = ReleaseWithBody("v1.4.2", "Stats-Setup-1.4.2.exe", 1, $"## Install\n{malformedLine}\n---");
         var info = UpdateChecker.Parse(json, Current141);
+        Assert.NotNull(info);
+        Assert.Null(info!.Sha256);
+    }
+
+    [Fact]
+    public void Parse_ReleaseAtOrAboveSha256RequiredSince_WithoutHash_IsNotOffered()
+    {
+        var json = ReleaseWithBody("v1.11.0", "Stats-Setup-1.11.0.exe", 10, "## Install\n\nNo hash here.\n");
+        Assert.Null(UpdateChecker.Parse(json, new Version(1, 10, 0)));
+        Assert.Null(UpdateChecker.Parse(ReleaseWithBody("v1.7.0", "Stats-Setup-1.7.0.exe", 10, "SHA256: not-a-hash"), new Version(1, 6, 0)));
+        Assert.True(UpdateChecker.RequiresSha256(new Version(1, 7, 0)));
+        Assert.True(UpdateChecker.RequiresSha256(new Version(1, 11, 0)));
+        Assert.False(UpdateChecker.RequiresSha256(new Version(1, 6, 9)));
+    }
+
+    [Fact]
+    public void Parse_ReleaseAtOrAboveSha256RequiredSince_WithHash_IsOffered()
+    {
+        var json = ReleaseWithBody("v1.11.0", "Stats-Setup-1.11.0.exe", 10, "SHA256: " + ValidHash);
+        var info = UpdateChecker.Parse(json, new Version(1, 10, 0));
+        Assert.NotNull(info);
+        Assert.Equal(ValidHash, info!.Sha256);
+        Assert.Equal(new Version(1, 11, 0), info.Version);
+    }
+
+    [Fact]
+    public void Parse_ReleaseBeforeSha256RequiredSince_WithoutHash_IsStillOffered()
+    {
+        var json = ReleaseWithBody("v1.6.9", "Stats-Setup-1.6.9.exe", 10, "no hash line");
+        var info = UpdateChecker.Parse(json, new Version(1, 6, 0));
         Assert.NotNull(info);
         Assert.Null(info!.Sha256);
     }

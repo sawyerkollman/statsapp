@@ -103,6 +103,10 @@ public partial class App : Application
     /// AppDomain.UnhandledException so a race between the two (or a repeated fault) only restores fans and
     /// flushes the log once.</summary>
     private int _fatalCleanupDone;
+    /// <summary>Signaled by the installer (<see cref="StartupArgs.ExitEventName"/>) so setup and uninstall can
+    /// ask for a clean exit instead of taskkill. Held for the process lifetime; disposing it would wake the
+    /// waiter with an exception during shutdown.</summary>
+    private EventWaitHandle? _exitRequested;
     /// <summary>Shared debounce for Dashboard/Peaks/Fans window-bounds persistence: coalesces bursts of drag/resize
     /// events (each of which already mutated the in-memory AppSettings) into one SaveSettings() call about five
     /// seconds after the last change. The explicit exit-time SaveSettings() in OnExit remains the final backstop
@@ -116,6 +120,18 @@ public partial class App : Application
         AppDomain.CurrentDomain.UnhandledException += OnAppDomainUnhandledException;
         TaskScheduler.UnobservedTaskException += OnUnobservedTaskException;
         base.OnStartup(e);
+
+        // Installer path: restore fans and leave. No windows, no poller, no exit-event listener (a signaled
+        // event from the installer that just killed an older build must not bounce this short-lived process).
+        if (StartupArgs.HasRestoreFansFlag(e.Args))
+        {
+            // OnExplicitShutdown: there is no window to close. Queue Shutdown so it runs after OnStartup
+            // returns; calling it inline is ignored until the dispatcher is up.
+            ShutdownMode = ShutdownMode.OnExplicitShutdown;
+            RestoreFansForInstaller();
+            Dispatcher.BeginInvoke(Shutdown);
+            return;
+        }
 
         bool startMinimized = StartupArgs.HasMinimizedFlag(e.Args); // case-insensitive: installer/shortcuts may pass any casing
         _currentVersion = Assembly.GetEntryAssembly()?.GetName().Version ?? new Version(0, 0, 0, 0);
@@ -288,6 +304,7 @@ public partial class App : Application
         SessionEnding += (_, _) => ExitApp();
         if (!startMinimized) _dashboard.Show(); // --minimized: dashboard/tray/services/poller are still fully constructed above, just not shown
         _poller.Start();
+        StartExitRequestListener();
         StartUpdateChecks();
         _ = RefreshStartupTaskStateAsync(); // settings load: reflect the actual "Stats" logon task state, not a persisted setting
     }
@@ -306,7 +323,9 @@ public partial class App : Application
         _fansVisible = false;
         _processScan?.Dispose();
         bool stopped = _poller?.Stop() ?? true;   // stop the poll thread first …
-        _fanController?.RestoreAll();             // … then hand every fan back to device control, always
+        _fanController?.RestoreAll();             // … then hand every fan back to device control, always.
+                                                  // RestoreAll shares a hardware I/O lock with Tick and waits briefly
+                                                  // so it does not call LibreHardwareMonitor while a poll is still inside one.
         if (stopped) _reader?.Dispose();
         else System.Diagnostics.Trace.WriteLine("[Stats] poll loop did not stop in time; skipping reader dispose to avoid concurrent LHM access");
         _processSampler?.Dispose();
@@ -1122,19 +1141,30 @@ public partial class App : Application
 
         var stagingDir = CreateSecureStagingDirectory();
         var scriptPath = Path.Combine(stagingDir, "stats-restart.cmd");
-        var scriptBytes = System.Text.Encoding.ASCII.GetBytes(BuildRestartScript(
+        var scriptBytes = HelperCmdScript.GetBytes(HelperCmdScript.BuildRestartScript(
             Environment.ProcessId,
             exePath));
         using (var scriptStream = new FileStream(scriptPath, FileMode.CreateNew, FileAccess.Write, FileShare.None))
             scriptStream.Write(scriptBytes, 0, scriptBytes.Length);
 
-        var psi = new ProcessStartInfo("cmd.exe", $"/c \"{scriptPath}\"")
+        Process.Start(HiddenCmd(scriptPath));
+    }
+
+    /// <summary>cmd.exe /d /c with ArgumentList so the script path is not re-parsed by a shell and AutoRun
+    /// registry commands are not injected in front of the helper.</summary>
+    private static ProcessStartInfo HiddenCmd(string scriptPath)
+    {
+        var psi = new ProcessStartInfo
         {
+            FileName = "cmd.exe",
             CreateNoWindow = true,
             UseShellExecute = false,
             WindowStyle = ProcessWindowStyle.Hidden,
         };
-        Process.Start(psi);
+        psi.ArgumentList.Add("/d");
+        psi.ArgumentList.Add("/c");
+        psi.ArgumentList.Add(scriptPath);
+        return psi;
     }
 
     // ---- updater ----
@@ -1377,47 +1407,73 @@ public partial class App : Application
 
         var pid = Environment.ProcessId;
         var scriptPath = Path.Combine(Path.GetDirectoryName(installerPath)!, "stats-update.cmd");
-        var scriptBytes = System.Text.Encoding.ASCII.GetBytes(BuildUpdateScript(pid, installerPath, exePath));
+        var scriptBytes = HelperCmdScript.GetBytes(HelperCmdScript.BuildUpdateScript(pid, installerPath, exePath));
         using (var scriptStream = new FileStream(scriptPath, FileMode.CreateNew, FileAccess.Write, FileShare.None))
             scriptStream.Write(scriptBytes, 0, scriptBytes.Length);
 
-        var psi = new ProcessStartInfo("cmd.exe", $"/c \"{scriptPath}\"")
-        {
-            CreateNoWindow = true,
-            UseShellExecute = false,
-            WindowStyle = ProcessWindowStyle.Hidden,
-        };
-        Process.Start(psi);
+        Process.Start(HiddenCmd(scriptPath));
     }
 
-    /// <summary>Waits up to 2 minutes (120 * ~1 s ping) for this PID to exit before giving up — bounds the loop
-    /// so a wedged app can't leave cmd.exe polling forever. `ping -n 2 127.0.0.1` is used instead of
-    /// `timeout /t 1` because timeout fails outright when its stdin is redirected (as it is here, launched
-    /// hidden/detached with UseShellExecute=false).</summary>
-    private static string BuildUpdateScript(int pid, string installerPath, string exePath) =>
-        "@echo off\r\n" +
-        "set n=0\r\n" +
-        ":wait\r\n" +
-        $"tasklist /FI \"PID eq {pid}\" | find \"{pid}\" >nul\r\n" +
-        "if errorlevel 1 goto run\r\n" +
-        "set /a n+=1\r\n" +
-        "if %n% gtr 120 exit /b\r\n" +
-        "ping -n 2 127.0.0.1 >nul\r\n" +
-        "goto wait\r\n" +
-        ":run\r\n" +
-        $"\"{installerPath}\" /SILENT /NOCANCEL\r\n" +
-        $"start \"\" \"{exePath}\"\r\n";
+    /// <summary>Opens the hardware backend, returns every channel the armed marker still tracks to device
+    /// control, and returns. No UI. The installer runs this after a forced close and again on uninstall, while
+    /// the exe is still on disk, so a taskkill cannot be the last thing that touched PWM.</summary>
+    private static void RestoreFansForInstaller()
+    {
+        var settingsDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Stats");
+        var settings = new SettingsService(settingsDir).Load();
+        LhmSensorReader? reader = null;
+        try
+        {
+            reader = new LhmSensorReader(settings.ReadMotherboardAndCoolers);
+            reader.Discover();
+            var fans = new FanController(reader, settings, static () => { }, new FileFanArmedMarker(settingsDir));
+            fans.RecoverFromUncleanShutdown();
+            fans.RestoreAll();
+            Trace.WriteLine("[Stats] --restore-fans finished");
+        }
+        catch (Exception ex)
+        {
+            Trace.WriteLine("[Stats] --restore-fans failed: " + ex.Message);
+        }
+        finally
+        {
+            try { reader?.Dispose(); }
+            catch (Exception ex) { Trace.WriteLine("[Stats] --restore-fans dispose failed: " + ex.Message); }
+        }
+    }
 
-    private static string BuildRestartScript(int pid, string exePath) =>
-        "@echo off\r\n" +
-        "set n=0\r\n" +
-        ":wait\r\n" +
-        $"tasklist /FI \"PID eq {pid}\" | find \"{pid}\" >nul\r\n" +
-        "if errorlevel 1 goto run\r\n" +
-        "set /a n+=1\r\n" +
-        "if %n% gtr 120 exit /b\r\n" +
-        "ping -n 2 127.0.0.1 >nul\r\n" +
-        "goto wait\r\n" +
-        ":run\r\n" +
-        $"start \"\" \"{exePath}\"\r\n";
+    /// <summary>Background wait on <see cref="StartupArgs.ExitEventName"/>. The DACL is Administrators and
+    /// SYSTEM only, so a standard user in the same session cannot signal an admin Stats into exiting. The
+    /// installer (also elevated) opens the event and sets it; we then take the normal <see cref="ExitApp"/>
+    /// path, which stops the poller and restores fans before the process ends.</summary>
+    private void StartExitRequestListener()
+    {
+        try
+        {
+            var security = new EventWaitHandleSecurity();
+            security.SetAccessRuleProtection(true, false);
+            var admins = new SecurityIdentifier(WellKnownSidType.BuiltinAdministratorsSid, null);
+            var system = new SecurityIdentifier(WellKnownSidType.LocalSystemSid, null);
+            security.AddAccessRule(new EventWaitHandleAccessRule(admins, EventWaitHandleRights.FullControl, AccessControlType.Allow));
+            security.AddAccessRule(new EventWaitHandleAccessRule(system, EventWaitHandleRights.FullControl, AccessControlType.Allow));
+            _exitRequested = EventWaitHandleAcl.Create(false, EventResetMode.AutoReset, StartupArgs.ExitEventName, out _, security);
+            var handle = _exitRequested;
+            _ = Task.Run(() =>
+            {
+                try
+                {
+                    handle.WaitOne();
+                    Dispatcher.BeginInvoke(ExitApp);
+                }
+                catch (Exception ex)
+                {
+                    Trace.WriteLine("[Stats] exit-request wait failed: " + ex.Message);
+                }
+            });
+        }
+        catch (Exception ex)
+        {
+            Trace.WriteLine("[Stats] exit-request event unavailable: " + ex.Message);
+        }
+    }
 }

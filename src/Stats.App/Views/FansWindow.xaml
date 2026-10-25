@@ -228,6 +228,8 @@
                                                         </StackPanel>
                                                     </WrapPanel>
                                                     <TextBlock Text="{Binding StatusText}" Foreground="{DynamicResource TextSecondary}" FontSize="{StaticResource FontSizeDense}" Margin="0,4,0,0"/>
+                                                    <CheckBox Content="Pump" IsChecked="{Binding TreatAsPump}" Margin="0,6,0,0"
+                                                              ToolTip="Treat this header as a pump. Software control will not drop it below 50%, even when the hardware name does not say pump."/>
                                                     <DockPanel Margin="0,6,0,0" Visibility="{Binding IsManual, Converter={StaticResource BoolToVis}}">
                                                         <TextBlock DockPanel.Dock="Right" Text="{Binding TargetText, StringFormat='&#8594; {0}'}" Margin="8,0"
                                                                    Foreground="{DynamicResource TextSecondary}" VerticalAlignment="Center"/>

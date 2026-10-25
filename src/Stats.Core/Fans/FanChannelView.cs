@@ -10,4 +10,4 @@ public sealed record FanChannelView(
     float? Rpm, float? Percent, float? TargetPercent, float? SourceTemp,
     FanChannelStatus Status, float MinPercent, float MaxPercent,
     string? SourceMetricId, float ManualPercent, IReadOnlyList<FanPoint> Points,
-    IReadOnlyList<string> SourceMetricIds);
+    IReadOnlyList<string> SourceMetricIds, bool TreatAsPump = false);

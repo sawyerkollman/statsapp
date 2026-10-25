@@ -21,4 +21,7 @@ public sealed class FanChannelPref
     public List<FanPoint> Points { get; set; } = FanCurve.DefaultPoints.ToList();
     /// <summary>Friendly display-name override; null/blank = hardware name.</summary>
     public string? Name { get; set; }
+    /// <summary>When true, this control id is a pump even if the hardware name does not contain "pump".
+    /// Software control will not drop it below <see cref="Fans.FanController.PumpFloorPercent"/>.</summary>
+    public bool TreatAsPump { get; set; }
 }

@@ -42,4 +42,25 @@ public class StartupArgsTests
     {
         Assert.False(StartupArgs.HasMinimizedFlag(new[] { "--minimized2", "notminimized", "-minimized" }));
     }
+
+    [Theory]
+    [InlineData("--restore-fans")]
+    [InlineData("--RESTORE-FANS")]
+    public void HasRestoreFansFlag_AnyCase_True(string arg)
+    {
+        Assert.True(StartupArgs.HasRestoreFansFlag(new[] { "--minimized", arg }));
+    }
+
+    [Fact]
+    public void HasRestoreFansFlag_Absent_False()
+    {
+        Assert.False(StartupArgs.HasRestoreFansFlag(new[] { "--minimized", "--restore-fans-now" }));
+    }
+
+    [Fact]
+    public void ExitEventName_MatchesInstaller()
+    {
+        Assert.Equal(@"Local\Stats.RequestExit", StartupArgs.ExitEventName);
+        Assert.Equal("--restore-fans", StartupArgs.RestoreFansFlag);
+    }
 }

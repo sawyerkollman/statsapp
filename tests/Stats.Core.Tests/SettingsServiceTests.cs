@@ -48,12 +48,30 @@ public class SettingsServiceTests : IDisposable
     }
 
     [Fact]
-    public void Load_CorruptJson_ReturnsDefaults()
+    public void Load_CorruptJson_ReturnsDefaults_AndKeepsATimestampedCopy()
     {
         Directory.CreateDirectory(_dir);
-        File.WriteAllText(Path.Combine(_dir, "settings.json"), "{ not valid json !!!");
+        const string original = "{ not valid json !!!";
+        var path = Path.Combine(_dir, "settings.json");
+        File.WriteAllText(path, original);
         var s = new SettingsService(_dir).Load();
         Assert.Equal(1.0, s.PollIntervalSeconds);
+        Assert.Equal(original, File.ReadAllText(path)); // the bad file stays until a later save replaces it
+        var copies = Directory.GetFiles(_dir, "settings.json.corrupt-*");
+        var copy = Assert.Single(copies);
+        Assert.Equal(original, File.ReadAllText(copy));
+    }
+
+    [Fact]
+    public void Load_UndefinedFanModeInteger_ResetsToAuto()
+    {
+        Directory.CreateDirectory(_dir);
+        File.WriteAllText(Path.Combine(_dir, "settings.json"),
+            """{ "FanChannels": { "hdr": { "Mode": 99, "ManualPercent": 40, "TreatAsPump": true } } }""");
+        var pref = new SettingsService(_dir).Load().FanChannels["hdr"];
+        Assert.Equal(FanMode.Auto, pref.Mode);
+        Assert.Equal(40f, pref.ManualPercent);
+        Assert.True(pref.TreatAsPump);
     }
 
     [Theory]

@@ -47,6 +47,17 @@ public sealed class FanController
     /// queued <see cref="Work"/> item captures the generation in phase 1; phase 2 and phase 3 compare against
     /// the live value to detect a <see cref="RestoreAll"/> that ran mid-Tick — see the note on <see cref="Tick"/>.</summary>
     private int _restoreGeneration;
+    /// <summary>Serializes LibreHardwareMonitor calls between <see cref="ExecuteWork"/> (poller thread) and
+    /// <see cref="RestoreAll"/> (exit thread). Phase 2 does not hold <see cref="_gate"/>, so without this a
+    /// shutdown that gives up on a stuck tick can call SetAuto while SetPercent is still inside LHM.
+    /// <see cref="RestoreAll"/> waits at most <see cref="HardwareIoTimeout"/> and then leaves channels tracked
+    /// rather than touching the hardware concurrently. The same-thread re-entry from a test hook (RestoreAll
+    /// called inside SetPercent) is safe: <see cref="Monitor"/> is reentrant.</summary>
+    private readonly object _hardwareIo = new();
+    private static readonly TimeSpan HardwareIoTimeout = TimeSpan.FromSeconds(2);
+    /// <summary>Previous tick forced every channel to max because a CPU or GPU temperature was critical.
+    /// Held until the reading drops by <see cref="HysteresisC"/>.</summary>
+    private bool _thermalOverride;
 
     public FanController(IFanControlBackend backend, AppSettings settings, Action saveSettings, IFanArmedMarker? marker = null)
     {
@@ -69,7 +80,14 @@ public sealed class FanController
 
     // ---- desired-state setters (any thread) ----
 
-    public void SetMode(string id, FanMode mode) => Mutate(id, p => p.Mode = mode);
+    public void SetMode(string id, FanMode mode)
+    {
+        if (!Enum.IsDefined(mode)) mode = FanMode.Auto;
+        Mutate(id, p => p.Mode = mode);
+    }
+    /// <summary>Mark this control id as a pump (or clear that mark). The 50% floor then applies even when the
+    /// hardware name does not contain "pump" — an AIO pump on a generic header.</summary>
+    public void SetTreatAsPump(string id, bool treatAsPump) => Mutate(id, p => p.TreatAsPump = treatAsPump);
     public void SetManualPercent(string id, float percent) => Mutate(id, p => p.ManualPercent = Math.Clamp(percent, 0f, 100f));
     public void SetSources(string id, IEnumerable<string> metricIds) => Mutate(id, p =>
     {
@@ -115,8 +133,10 @@ public sealed class FanController
 
     private static FanChannelPref Clone(FanChannelPref p) => new()
     {
-        Mode = p.Mode, ManualPercent = p.ManualPercent, SourceMetricId = p.SourceMetricId,
+        Mode = Enum.IsDefined(p.Mode) ? p.Mode : FanMode.Auto,
+        ManualPercent = p.ManualPercent, SourceMetricId = p.SourceMetricId,
         SourceMetricIds = p.SourceMetricIds.ToList(), Points = p.Points.ToList(), Name = p.Name,
+        TreatAsPump = p.TreatAsPump,
     };
 
     public FanProfile SnapshotProfile(string name)
@@ -295,6 +315,18 @@ public sealed class FanController
         {
             _firstTick ??= nowUtc;
             int gen = _restoreGeneration;
+            var (cpuCrit, gpuCrit) = ThermalOverride.CriticalTemperatures(_settings.ThresholdRules);
+            bool thermal;
+            if (_settings.FanControlEnabled)
+            {
+                thermal = ThermalOverride.ShouldForceFullSpeed(snapshot, _thermalOverride, cpuCrit, gpuCrit, HysteresisC);
+                _thermalOverride = thermal;
+            }
+            else
+            {
+                thermal = false;
+                _thermalOverride = false;
+            }
             foreach (var ch in _backend.Channels)
             {
                 var rt = Rt(ch.Id);
@@ -329,10 +361,16 @@ public sealed class FanController
                     // An unexpired Identify pulse overrides the channel's own mode entirely: MaxPercent, ramp
                     // limit skipped (below) so the pulse is visible right away. Once it expires we fall straight
                     // through to the channel's own mode this same tick — Auto releases, Manual/Curve ramp back.
+                    // A critical CPU/GPU temperature outranks both Identify and the saved mode: every controllable
+                    // channel goes to its max immediately (slew skipped) until the reading falls by HysteresisC.
                     bool identifying = rt.IdentifyUntil is DateTime identifyUntil && nowUtc < identifyUntil;
                     if (rt.IdentifyUntil is not null && !identifying) rt.IdentifyUntil = null;
 
-                    if (identifying)
+                    if (thermal)
+                    {
+                        target = ch.MaxPercent;
+                    }
+                    else if (identifying)
                     {
                         target = ch.MaxPercent;
                     }
@@ -370,15 +408,23 @@ public sealed class FanController
                             if (!FanCurve.TryCreate(pref!.Points, out var curve)) curve = FanCurve.Default;
                             target = curve!.Evaluate(useTemp);
                             break;
+
+                        default:
+                            // A hand-edited mode that is not Auto/Manual/Curve must not leave a channel InSoftware
+                            // with no release path. Hand it back and persist Auto so the next tick stays there.
+                            if (pref is not null) { pref.Mode = FanMode.Auto; _pendingSave = true; }
+                            DecideRelease(work, ch, rt, rt.FailedOver ? FanChannelStatus.WriteFailed : FanChannelStatus.Idle);
+                            break;
                     }
 
                     if (target is float want)
                     {
                         float min = ch.MinPercent;
-                        if (ch.Name.Contains("pump", StringComparison.OrdinalIgnoreCase)) min = MathF.Max(min, PumpFloorPercent);
+                        if ((pref?.TreatAsPump ?? false) || ch.Name.Contains("pump", StringComparison.OrdinalIgnoreCase))
+                            min = MathF.Max(min, PumpFloorPercent);
                         min = MathF.Min(min, ch.MaxPercent); // a floor above the ceiling would make Math.Clamp throw
                         want = Math.Clamp(want, min, ch.MaxPercent);
-                        if (!identifying && rt.LastWritten is float last)
+                        if (!identifying && !thermal && rt.LastWritten is float last)
                             want = last + Math.Clamp(want - last, -MaxStepPerTick, MaxStepPerTick);
                         want = MathF.Round(want);
                         rt.Target = want;
@@ -447,25 +493,31 @@ public sealed class FanController
         work.Add(new Work { Kind = WorkKind.Write, Ch = ch, Rt = rt, Percent = percent, Pref = pref, Gen = gen });
     }
 
-    /// <summary>Phase 2: the only place Tick touches the backend. Runs on the poller thread with no lock held.</summary>
+    /// <summary>Phase 2: the only place Tick touches the backend. Runs on the poller thread with no settings
+    /// lock held, but under <see cref="_hardwareIo"/> so <see cref="RestoreAll"/> cannot enter LibreHardwareMonitor
+    /// at the same time.</summary>
     private void ExecuteWork(List<Work> work)
     {
-        foreach (var w in work)
+        if (work.Count == 0) return;
+        lock (_hardwareIo)
         {
-            try
+            foreach (var w in work)
             {
-                if (w.Kind == WorkKind.Write)
+                try
                 {
-                    // RestoreAll may have run (on the exiting thread) since phase 1 latched this write — see the
-                    // generation-latch note on Tick. If so, the channel has already been handed back to the
-                    // device; skip the queued write rather than re-driving it out from under RestoreAll.
-                    if (Volatile.Read(ref _restoreGeneration) != w.Gen) { w.Skipped = true; continue; }
-                    _backend.SetPercent(w.Ch.Id, w.Percent);
+                    if (w.Kind == WorkKind.Write)
+                    {
+                        // RestoreAll may have run (on the exiting thread) since phase 1 latched this write — see the
+                        // generation-latch note on Tick. If so, the channel has already been handed back to the
+                        // device; skip the queued write rather than re-driving it out from under RestoreAll.
+                        if (Volatile.Read(ref _restoreGeneration) != w.Gen) { w.Skipped = true; continue; }
+                        _backend.SetPercent(w.Ch.Id, w.Percent);
+                    }
+                    else _backend.SetAuto(w.Ch.Id);
+                    w.Success = true;
                 }
-                else _backend.SetAuto(w.Ch.Id);
-                w.Success = true;
+                catch (Exception ex) { w.Error = ex; }
             }
-            catch (Exception ex) { w.Error = ex; }
         }
     }
 
@@ -628,16 +680,34 @@ public sealed class FanController
     /// stopped (or from Tick's thread). Safe to call repeatedly — a failed release is retried on the next call.</summary>
     public void RestoreAll()
     {
-        lock (_gate)
+        // Bump before waiting on hardware I/O, and without holding _gate across that wait: phase 1 holds _gate
+        // and then takes _hardwareIo, so waiting for the I/O lock while holding _gate would deadlock. A tick
+        // that has not entered SetPercent yet sees the new generation and skips the write.
+        lock (_gate) { _restoreGeneration++; }
+
+        if (!Monitor.TryEnter(_hardwareIo, HardwareIoTimeout))
         {
-            // Bumped before touching any channel: a Tick concurrently mid-flight (poller.Stop() gave up on a
-            // stuck Tick, App.OnExit calls RestoreAll anyway) uses this to detect the interleave — see Tick.
-            _restoreGeneration++;
-            foreach (var (id, rt) in _rt)
+            // The poller thread is still inside LibreHardwareMonitor. Calling SetAuto now would race that call.
+            // Channels stay InSoftware and the armed marker stays put; phase 3 of the stuck tick (or the next
+            // launch's RecoverFromUncleanShutdown) retries the release. Reader disposal stays the caller's
+            // decision — OnExit still skips it when the poller did not join.
+            Trace.WriteLine("[Stats.FanController] RestoreAll timed out waiting for in-flight hardware I/O; channels stay tracked so a later release can retry");
+            return;
+        }
+        try
+        {
+            lock (_gate)
             {
-                if (rt.InSoftware) ReleaseLocked(id, rt, FanChannelStatus.Idle);
+                foreach (var (id, rt) in _rt)
+                {
+                    if (rt.InSoftware) ReleaseLocked(id, rt, FanChannelStatus.Idle);
+                }
+                UpdateMarkerLocked();
             }
-            UpdateMarkerLocked();
+        }
+        finally
+        {
+            Monitor.Exit(_hardwareIo);
         }
     }
 
@@ -673,7 +743,8 @@ public sealed class FanController
                     pref?.SourceMetricId,
                     pref?.ManualPercent ?? 50f,
                     pref?.Points ?? FanCurve.DefaultPoints,
-                    (IReadOnlyList<string>?)pref?.SourceMetricIds ?? Array.Empty<string>()));
+                    (IReadOnlyList<string>?)pref?.SourceMetricIds ?? Array.Empty<string>(),
+                    pref?.TreatAsPump ?? false));
             }
             return list;
         }

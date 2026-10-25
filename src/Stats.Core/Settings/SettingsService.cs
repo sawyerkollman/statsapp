@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Globalization;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Stats.Core.Fans;
@@ -40,7 +41,10 @@ public sealed class SettingsService
         {
             // Anything at all — a corrupt file, an unreadable directory, a sanitation bug over hand-edited JSON —
             // must leave Stats startable: OnStartup calls Load() before any window exists and never catches.
+            // Copy the bad file aside first. The next successful Save replaces settings.json, and without this
+            // copy that save would throw away the only record of what the user had.
             Trace.WriteLine("[Stats] settings load failed; using defaults: " + ex.Message);
+            PreserveCorruptFile();
             settings = new AppSettings();
             Normalize(settings);
         }
@@ -122,6 +126,9 @@ public sealed class SettingsService
 
         static void Sanitize(FanChannelPref pref)
         {
+            // JsonStringEnumConverter accepts any integer (AllowIntegerValues). A hand-edited Mode that is not
+            // Auto/Manual/Curve would otherwise survive load and leave Tick with no release arm.
+            if (!Enum.IsDefined(pref.Mode)) pref.Mode = FanMode.Auto;
             pref.ManualPercent = Math.Clamp(pref.ManualPercent, 0f, 100f);
             if (!FanCurve.TryCreate(pref.Points, out _))
                 pref.Points = FanCurve.DefaultPoints.ToList();
@@ -129,6 +136,27 @@ public sealed class SettingsService
             if (pref.SourceMetricIds.Count == 0 && !string.IsNullOrWhiteSpace(pref.SourceMetricId))
                 pref.SourceMetricIds.Add(pref.SourceMetricId);
             pref.SourceMetricId = pref.SourceMetricIds.FirstOrDefault();
+        }
+    }
+
+    /// <summary>Copies <c>settings.json</c> to <c>settings.json.corrupt-yyyyMMdd-HHmmss</c> before the caller
+    /// falls back to defaults. Best-effort: a locked or missing file must not turn a recoverable load failure
+    /// into a crash.</summary>
+    private void PreserveCorruptFile()
+    {
+        try
+        {
+            if (!File.Exists(_path)) return;
+            var stamp = DateTime.Now.ToString("yyyyMMdd-HHmmss", CultureInfo.InvariantCulture);
+            var dest = Path.Combine(_directory, "settings.json.corrupt-" + stamp);
+            if (File.Exists(dest))
+                dest = Path.Combine(_directory, "settings.json.corrupt-" + stamp + "-" + Guid.NewGuid().ToString("N")[..8]);
+            File.Copy(_path, dest, overwrite: false);
+            Trace.WriteLine("[Stats] preserved unreadable settings at " + dest);
+        }
+        catch (Exception ex)
+        {
+            Trace.WriteLine("[Stats] could not preserve unreadable settings: " + ex.Message);
         }
     }
 

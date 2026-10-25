@@ -53,6 +53,26 @@ public class StartupTaskCommandsTests
     }
 
     [Fact]
+    public void Create_ProgramFilesX86_IsAllowed()
+    {
+        var args = StartupTaskCommands.Create(@"C:\Program Files (x86)\Stats\Stats.App.exe");
+
+        Assert.Contains("/RL", args);
+        Assert.Contains("HIGHEST", args);
+    }
+
+    [Theory]
+    [InlineData(@"C:\Users\Ada\src\Stats\Stats.App.exe")]
+    [InlineData(@"C:\Program Files\Stats\..\..\Users\Ada\evil.exe")]
+    [InlineData(@"C:\Program Files Evil\Stats.App.exe")]
+    [InlineData(@"Stats.App.exe")]
+    public void Create_PathOutsideProgramFiles_Throws(string path)
+    {
+        var ex = Assert.Throws<ArgumentException>(() => StartupTaskCommands.Create(path));
+        Assert.Contains("Program Files", ex.Message);
+    }
+
+    [Fact]
     public void TaskName_IsStats()
     {
         Assert.Equal("Stats", StartupTaskCommands.TaskName);

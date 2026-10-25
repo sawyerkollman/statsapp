@@ -932,6 +932,71 @@ public class FanControllerTests
     }
 
     [Fact]
+    public void TreatAsPump_FloorsAGenericHeader()
+    {
+        var h = new H();
+        h.C.SetTreatAsPump(Case, true);
+        h.C.SetMode(Case, FanMode.Manual); h.C.SetManualPercent(Case, 10);
+        h.Tick(50);
+        Assert.Equal((Case, 50f), h.WritesFor(Case).Single());
+        Assert.True(h.C.Views().Single(v => v.Id == Case).TreatAsPump);
+    }
+
+    [Fact]
+    public void UndefinedMode_ReleasesInSoftwareChannel_AndPersistsAuto()
+    {
+        var h = new H();
+        h.C.SetMode(Case, FanMode.Manual); h.C.SetManualPercent(Case, 40);
+        h.Tick(50);
+        h.S.FanChannels[Case].Mode = (FanMode)99;
+        h.Tick(50);
+        Assert.Equal(new (string, float?)[] { (Case, 40f), (Case, null) }, h.WritesFor(Case));
+        Assert.Equal(FanMode.Auto, h.S.FanChannels[Case].Mode);
+        Assert.Equal(FanChannelStatus.Idle, h.C.Views().Single(v => v.Id == Case).Status);
+    }
+
+    [Fact]
+    public void SetMode_UndefinedValue_StoresAuto()
+    {
+        var h = new H();
+        h.C.SetMode(Case, (FanMode)99);
+        Assert.Equal(FanMode.Auto, h.S.FanChannels[Case].Mode);
+    }
+
+    [Fact]
+    public void ThermalOverride_CriticalCpu_ForcesEveryChannelToMaxImmediately()
+    {
+        var h = new H();
+        h.C.SetMode(Case, FanMode.Manual); h.C.SetManualPercent(Case, 20);
+        h.Tick(50);
+        Assert.Equal((Case, 20f), h.WritesFor(Case).Single());
+
+        h.Tick(92);
+        Assert.Equal((Case, 100f), h.WritesFor(Case).Last());
+        Assert.Equal((Gpu, 100f), h.WritesFor(Gpu).Single());
+        Assert.Equal((Pump, 100f), h.WritesFor(Pump).Single());
+    }
+
+    [Fact]
+    public void ThermalOverride_FollowsUserCpuCrit_AndHoldsThenSlewsBack()
+    {
+        var h = new H();
+        h.S.ThresholdRules.Add(new ThresholdRule { Group = Stats.Core.Metrics.MetricGroup.Cpu, Unit = "°C", Warn = 60, Crit = 70 });
+        h.C.SetMode(Case, FanMode.Manual); h.C.SetManualPercent(Case, 20);
+        h.Tick(69);
+        Assert.Equal((Case, 20f), h.WritesFor(Case).Single());
+
+        h.Tick(70); // user crit: straight to max, no slew
+        Assert.Equal((Case, 100f), h.WritesFor(Case).Last());
+        h.Tick(68); // 70 - 2 hysteresis: still latched, already at max
+        Assert.Equal((Case, 100f), h.WritesFor(Case).Last());
+        h.Tick(67); // cleared: manual 20 slews down, auto channels release
+        Assert.Equal((Case, 90f), h.WritesFor(Case).Last());
+        Assert.Equal((Gpu, (float?)null), h.WritesFor(Gpu).Last());
+        Assert.Equal((Pump, (float?)null), h.WritesFor(Pump).Last());
+    }
+
+    [Fact]
     public void ManualWrite_NoRestoreAllInterleaving_StillYieldsActiveAndOneWrite()
     {
         var h = new H();
